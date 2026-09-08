@@ -349,7 +349,14 @@ function fileCuaThang_(thang) {
   var nam = Number(String(thang).slice(0, 4));
   var th = Number(String(thang).slice(5, 7));
   var kq = chonDongDinhTuyen_(bangLinkThang_(), nam, th);
-  if (!kq.ok) throw new Error(kq.thongBao + moTaBangLink_(kq));
+  if (!kq.ok) {
+    // Gắn mã lỗi vào chính đối tượng Error. Không gắn thì `doPost` gói lại thành `NGOAI_LE`,
+    // và hai câu gợi ý KHONG_CO_THANG / TRUNG_NHIEU_DONG bên `node/gsheet-web-app.js` thành mã
+    // chết — hàng rào tưởng có mà không bao giờ tới tay người dùng.
+    var e = new Error(kq.thongBao + moTaBangLink_(kq));
+    e.maKeodon = kq.ma;
+    throw e;
+  }
   capNhatMoNeo_(kq.id);
   return { fileId: kq.id, thang: thang, dong: kq.dong };
 }
@@ -427,7 +434,9 @@ function doPost(e) {
     if (hd === 'xuly') return traLoi_(hanhDongXuLy_(body, batDau));
     return traLoi_({ ok: false, loi: 'HANH_DONG_LA', thongBao: 'hanhDong = "' + hd + '"; chỉ nhận: ping, doc, ghi, xuLy' });
   } catch (err) {
-    return traLoi_({ ok: false, loi: 'NGOAI_LE', thongBao: String(err && err.message ? err.message : err) });
+    // Giữ nguyên mã lỗi nghiệp vụ nếu nơi ném có gắn; chỉ rơi về NGOAI_LE khi thật sự không rõ.
+    return traLoi_({ ok: false, loi: (err && err.maKeodon) ? err.maKeodon : 'NGOAI_LE',
+      thongBao: String(err && err.message ? err.message : err) });
   }
 }
 
@@ -613,9 +622,33 @@ function kiemCotDuocGhi_(cot, ten) {
 }
 
 function ghiMotSheet_(sh, donDS, k, tk, viTri, canhBao, thongBao) {
+  // MỘT CỬA DUY NHẤT cho mọi chỉ số cột mà hàm này sẽ ghi vào. Đặt ở ĐẦU hàm chứ không đặt ngay
+  // trước từng lệnh ghi: đặt trước lệnh ghi thì lệnh ghi nào quên là lọt lệnh đó, và người sửa mã
+  // sáu tuần sau không có cách nào biết mình vừa thêm một lệnh chưa qua cửa.
+  // Danh sách này phải phủ ĐÚNG mọi biến được dùng làm tham số cột của getRange trong hàm này.
   ['cot_ngay', 'cot_ma_don', 'cot_ten_viet_tat', 'cot_so_luong',
-    'cot_tong_tien_sp', 'cot_mgg_shop', 'cot_chi_phi', 'cot_thue'].forEach(function (t) {
+    'cot_tong_tien_sp', 'cot_mgg_shop', 'cot_chi_phi', 'cot_thue',
+    'cot_doanh_thu'].forEach(function (t) {
       kiemCotDuocGhi_(k[t], 'keyin.' + t);
+    });
+
+  // Cột Note tính SỚM, ngay tại đây, để đi qua cùng một cửa. Nó đến từ hai nguồn và cả hai đều
+  // chưa từng bị kiểm: cấu hình `keyin.cot_note` (Config.gs:71 chỉ đổi chữ sang số, không kiểm gì)
+  // và `doCotNote_` tự dò theo dòng tiêu đề, thứ phụ thuộc hình dạng sheet của chủ shop chứ không
+  // phụ thuộc mã. Đo 08/9/2026: sheet chỉ có tiêu đề tới cột L thì doCotNote_ trả về M, và
+  // ghiMotSheet_ ghi thẳng chữ `Note` vào M2, đúng ô đặt ARRAYFORMULA.
+  var cNote = kiemCotDuocGhi_(k.cot_note || doCotNote_(sh, k),
+    k.cot_note ? 'keyin.cot_note' : 'cột Note tự dò (doCotNote_)');
+
+  // Cột Note không được trùng bất kỳ cột nào tool tự ghi: trùng cột C là ghi chữ ghi chú đè lên
+  // mã đơn vừa ghi (đo được), khóa chống trùng chết và lần chạy sau nhân đôi toàn bộ đơn.
+  [['cot_ngay', k.cot_ngay], ['cot_ma_don', k.cot_ma_don], ['cot_ten_viet_tat', k.cot_ten_viet_tat],
+    ['cot_so_luong', k.cot_so_luong], ['cot_tong_tien_sp', k.cot_tong_tien_sp],
+    ['cot_mgg_shop', k.cot_mgg_shop], ['cot_chi_phi', k.cot_chi_phi], ['cot_thue', k.cot_thue],
+    ['cot_doanh_thu', k.cot_doanh_thu]].forEach(function (x) {
+      if (Number(cNote) === Number(x[1]))
+        throw new Error('TỪ CHỐI GHI: cột Note đang trỏ vào cột ' + Utils.chuCot(cNote) +
+          ', trùng keyin.' + x[0] + '. Sửa keyin.cot_note rồi chạy lại.');
     });
 
   // KHỬ TRÙNG TẦNG 2 — đọc lại cột mã đơn NGAY TRƯỚC KHI GHI, và đang ở trong LockService của
@@ -634,7 +667,6 @@ function ghiMotSheet_(sh, donDS, k, tk, viTri, canhBao, thongBao) {
       if (daCo[maCu] == null) daCo[maCu] = k.dong_dau + i;
     }
   }
-  var cNote = k.cot_note || doCotNote_(sh, k);
   var ctL = congThucCotL_(sh, k, dongCuoi);
 
   // ---- lọc đơn thật sự mới ----

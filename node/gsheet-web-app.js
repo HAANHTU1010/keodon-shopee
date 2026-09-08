@@ -211,7 +211,13 @@ class WebAppGoogleSheet {
         docHet(res);
       });
       req.on('timeout', () => { req.destroy(new Error('Web App không trả lời sau ' + (TIMEOUT_MS / 1000) + ' giây')); });
-      req.on('error', (e) => tuChoi(new Error('Không gọi được Web App: ' + this.chePhuBiMat(e.message))));
+      // Mất mạng giữa chừng (bài D-12). Câu báo phải nói được ba điều, vì đây là lúc người vận hành
+      // hoang mang nhất: chuyện gì xảy ra, dữ liệu có sao không, và bấm gì tiếp.
+      // Cố ý KHÔNG khẳng định "chưa ghi gì": Apps Script có thể đã ghi xong rồi mới rớt phản hồi
+      // (đo được ở bài T-WA-05: 0 lên 9 dòng trong khi máy vẫn báo lỗi). Nói chắc là nói sai.
+      req.on('error', (e) => tuChoi(new Error('Không gọi được Web App (' + this.chePhuBiMat(e.message) + '). ' +
+        'Gói này CHƯA GHI ĐƯỢC, hoặc chưa biết đã ghi hay chưa. Kiểm tra mạng rồi chạy lại tool: ' +
+        'phần đã ghi vẫn giữ nguyên và sẽ không bị ghi trùng.')));
       req.write(than);
       req.end();
 
@@ -221,7 +227,18 @@ class WebAppGoogleSheet {
         res.on('data', (d) => { buf += d; });
         res.on('end', () => {
           if (res.statusCode >= 400) {
-            return tuChoi(new Error('Web App trả mã ' + res.statusCode + ': ' + this.chePhuBiMat(buf).slice(0, 500)));
+            // Lỗi phía Apps Script (bài D-13). Trước đây chỉ đổ 500 ký tự HTML thô của Google;
+            // người vận hành đọc `Sorry, unable to open the file at this time` bằng tiếng Anh
+            // rồi không biết làm gì. Phải phân biệt được ca quá 6 phút, vì việc phải làm khác hẳn.
+            const noiDung = this.chePhuBiMat(buf);
+            const quaGio = /Exceeded maximum execution time|thời gian thực thi/i.test(noiDung);
+            return tuChoi(new Error('Web App trả mã ' + res.statusCode +
+              ' (lỗi phía Apps Script, không phải lỗi cấu hình máy này). ' +
+              (quaGio
+                ? 'Nguyên nhân: gói chạy quá 6 phút. Việc phải làm: chia nhỏ file thả vào rồi chạy lại. '
+                : 'Việc phải làm: chạy lại sau vài phút; vẫn lỗi thì mở dự án Apps Script xem mục Executions ' +
+                  'và báo người phụ trách. ') +
+              'Tool chưa ghi gì trong lượt này. Nội dung Google trả về: ' + noiDung.slice(0, 300)));
           }
           let kq;
           try { kq = JSON.parse(buf); } catch (e) {

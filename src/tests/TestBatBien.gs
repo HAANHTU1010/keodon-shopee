@@ -397,7 +397,12 @@ var TestBatBien = (function () {
     if (typeof ghiMotSheet_ !== 'function') {
       return { boQua: true, lyDo: 'không nạp được src/ShellAppsScript.gs (vỏ ghi Google Sheet) trong môi trường này' };
     }
-    var cfg = Config.tao({ chung: { che_do_cong_thuc: 'SHEET' } });
+    // Sheet giả không có dòng tiêu đề nào, nên `doCotNote_` sẽ trả về cột D — trùng đúng cột
+    // `Tên viết tắt` mà tool tự ghi, và hàng rào mới ném lỗi ngay (đúng như nó phải làm: ghi ghi chú
+    // đè lên cột D là mất mã hàng). Ở sheet thật, tiêu đề chạy tới O nên Note rơi vào P.
+    // Vì vậy chỉ định thẳng cột Note ở đây, để bài này kiểm đúng thứ nó sinh ra để kiểm:
+    // KHÔNG vùng ghi nào chạm E, F, M, N.
+    var cfg = Config.tao({ chung: { che_do_cong_thuc: 'SHEET' }, keyin: { cot_note: 'P' } });
     var k = cfg.keyin;
     var sh = new SheetGiaLapGoogle('Shopee mall', 6, 15);
     sh._o(2, 3).gt = 'Thông tin ĐH';                       // dòng tiêu đề
@@ -467,11 +472,27 @@ var TestBatBien = (function () {
     // (2) cột `Thông tin ĐH` bị trỏ vào N, và dòng đầu tiên là Ô ĐẦU CỘT (nơi đặt ARRAYFORMULA)
     var b = thuGhiVaoCot({ dong_header: 1, dong_tong: 1, dong_dau: 2, cot_ma_don: 'N', cot_cong_thuc: 'L' }, 'ghi cột C vào N2 — ô đầu cột');
 
+    // (3) LỖ 1 — `cot_doanh_thu` là khóa DUY NHẤT bị Config.gs:74 cố ý loại khỏi phép kiểm trùng
+    //     (`KEYIN_COT.filter(t => t !== 'cot_doanh_thu')`), nên không tầng nào chạm tới nó. Vỏ ghi
+    //     dán công thức vào cả khối (ShellAppsScript.gs:720) VÀ gộp ô dọc (727-729). Gộp ô không
+    //     cần cột đích có sẵn công thức nên nó nổ vô điều kiện với đơn nhiều mặt hàng.
+    var c = thuGhiVaoCot({ cot_doanh_thu: 'M' }, 'ghi công thức doanh thu vào M');
+
+    // (4) LỖ 2 — `cot_note` không nằm trong KEYIN_COT nên phép kiểm trùng của Config không thấy nó,
+    //     và không có lời gọi kiemCotDuocGhi_ nào cho nó. Ca xấu nhất: ô tiêu đề đang trống thì
+    //     ShellAppsScript.gs:747 ghi thẳng chữ `Note` vào đúng ô đặt ARRAYFORMULA.
+    var d = thuGhiVaoCot({ cot_note: 'M' }, 'ghi ghi chú vào M');
+
+    // (5) LỖ 3 — không cần một khóa cột nào cả. `doCotNote_` (ShellAppsScript.gs:502-513) tự dò cột
+    //     trống đầu tiên sau tiêu đề cuối cùng của dòng `dong_header`. Trỏ dong_header vào một dòng
+    //     trống là cột Note rơi về cột A, và ShellAppsScript.gs:747 ghi chữ `Note` vào dòng tổng.
+    var e = thuGhiVaoCot({ dong_header: 3 }, 'cột Note tự dò rơi vào cột cấm');
+
     var chuaChan = [];
-    [a, b].forEach(function (x) { if (!x.loi) chuaChan.push(x.moTa + ': đã ghi ' + x.cham.length + ' vùng vào E/F/M/N mà KHÔNG ném lỗi'); });
+    [a, b, c, d, e].forEach(function (x) { if (!x.loi) chuaChan.push(x.moTa + ': đã ghi ' + x.cham.length + ' vùng vào E/F/M/N mà KHÔNG ném lỗi'); });
     bang(chuaChan.length, 0, 'tầng ghi chưa có hàng rào ném lỗi — ' + chuaChan.join(' | '));
 
-    return { ghiChu: 'hai lệnh ghi cố ý nhắm E và N đều bị chặn bằng lỗi' };
+    return { ghiChu: 'năm lệnh ghi cố ý nhắm E/M/N (kể cả qua cot_doanh_thu, cot_note và cột Note tự dò) đều bị chặn bằng lỗi' };
   }
 
   // ================================================================== INV-4

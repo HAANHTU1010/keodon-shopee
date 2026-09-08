@@ -480,6 +480,18 @@ async function main() {
 
 main().catch(e => {
   console.error('\nLỖI: ' + e.message);
-  if (thamSo('--van-hanh')) console.error('\nTool KHÔNG ghi gì vào file gốc. Làm theo hướng dẫn ở trên rồi bấm chạy lại;\nvẫn lỗi thì chụp màn hình này gửi người phụ trách.');
+  if (thamSo('--van-hanh')) {
+    // Ở chế độ Google Sheet câu 'không ghi gì' là SAI: Apps Script có thể đã ghi xong rồi mới rớt
+    // phản hồi. Đo được ở bài T-WA-05: sheet lên 9 dòng trong khi máy vẫn ném lỗi. Nói chắc là nói sai,
+    // và người vận hành sẽ đi ghi lại lần nữa.
+    var cvG = null;
+    try { cvG = docJson(path.join(path.resolve(thamSo('--van-hanh')), 'CAU_HINH_VAN_HANH.json')); } catch (e) { /* không đọc được thì coi như chế độ Excel */ }
+    var laGoogle = !!(cvG && cvG.google_sheet && cvG.google_sheet.bat === true);
+    console.error(String.fromCharCode(10) + (laGoogle
+      ? 'Tool không đụng file gốc trên máy này. Phần đã ghi lên Google Sheet (nếu có) vẫn giữ nguyên;' + String.fromCharCode(10) +
+        'chạy lại KHÔNG sinh đơn trùng. Làm theo hướng dẫn ở trên rồi bấm chạy lại;'
+      : 'Tool KHÔNG ghi gì vào file gốc. Làm theo hướng dẫn ở trên rồi bấm chạy lại;') +
+      String.fromCharCode(10) + 'vẫn lỗi thì chụp màn hình này gửi người phụ trách.');
+  }
   process.exit(1);
 });

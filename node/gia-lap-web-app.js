@@ -618,7 +618,9 @@ function taoGiaLap(tc) {
 
     // Đứt SAU khi script đã ghi xong: đây là ca hiểm nhất của D-12 — dữ liệu đã vào sheet
     // nhưng máy tính không nhận được phản hồi, chạy lại phải không sinh đơn trùng.
-    if (l.dutSauKhiGhi && hd === 'ghi' &&
+    // Cả hai đường ghi. Trước đây khóa cứng 'ghi' nên ca hiểm nhất của D-12 không dựng được cho
+    // đường `xuLy` — mà `xuLy` mới là đường chạy thật từ bản 2.4.0.
+    if (l.dutSauKhiGhi && (hd === 'ghi' || hd === 'xuly') &&
       (l.dutSauKhiGhi === true || l.dutSauKhiGhi === sim.demGoiGhi)) {
       return { statusCode: 200, headers: { 'content-type': 'application/json' }, body: noiDung, ngat: true };
     }

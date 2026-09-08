@@ -13,8 +13,9 @@
     "test-bat-bien": "node node/test-bat-bien.js",
     "test-dinh-tuyen": "node node/test-dinh-tuyen-thang.js",
     "tao-thang-moi": "node node/tao-thang-moi.js",
-    "test-tat-ca": "npm test && npm run test-bat-bien && npm run test-dinh-tuyen && npm run test-xu-ly",
-    "test-xu-ly": "node node/test-xu-ly-tren-google.js"
+    "test-tat-ca": "npm test && npm run test-bat-bien && npm run test-dinh-tuyen && npm run test-xu-ly && npm run test-web-app",
+    "test-xu-ly": "node node/test-xu-ly-tren-google.js",
+    "test-web-app": "node node/test-web-app.js"
   },
   "dependencies": {
     "exceljs": "^4.4.0",
