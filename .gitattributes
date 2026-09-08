@@ -1,0 +1,13 @@
+# Giữ xuống dòng ổn định giữa các máy. Không có file này thì Git trên Windows tự đổi
+# LF thành CRLF khi lấy về, và mọi lần cập nhật sẽ báo "cả file đều đổi" dù không ai sửa gì.
+* text=auto eol=lf
+
+# File .bat của Windows BẮT BUỘC là CRLF, nếu không cmd.exe báo lỗi lạ.
+# Dự án đã trả giá đúng lỗi này, xem NOTES_DEV.md mục về .bat.
+*.bat text eol=crlf
+
+# File nhị phân, đừng đụng vào.
+*.xlsx binary
+*.xls  binary
+*.docx binary
+*.zip  binary
