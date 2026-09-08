@@ -24,6 +24,21 @@ var KeyIn = (function () {
   /** Cột được gộp dọc cho đơn nhiều dòng (Context 4.2 — đo trên file thật: 71/71 đơn, mỗi cột 71 vùng). */
   var COT_GOP = ['cot_ma_don', 'cot_tong_tien_sp', 'cot_mgg_shop', 'cot_chi_phi', 'cot_thue', 'cot_doanh_thu'];
 
+  /**
+   * Còn dư dưới ngần này dòng công thức là phải kêu (GV-v2.4 mục 1.3). Ghi đè được bằng
+   * `keyin.nguong_sap_het_cong_thuc` trong CAU_HINH_VAN_HANH.json mà không phải sửa mã.
+   * KHÁC hẳn `keyin.nguong_sap_het` (=50): cái kia canh vùng SUM ở dòng tổng và vùng SUMIF của
+   * `Tổng xuất` — hai thứ đã được sửa thành `$4:$2000` nên gần như không kêu nữa. Cái này canh
+   * thứ chưa ai canh: công thức TỪNG DÒNG của bốn cột E, F, M, N và cột L.
+   */
+  var NGUONG_SAP_HET_CONG_THUC = 200;
+
+  /** Câu việc-phải-làm, nguyên văn theo GV-v2.4 mục 1.3. Vỏ Google chép lại y hệt (ShellAppsScript.gs). */
+  var VIEC_KEO_DAI_CONG_THUC = 'kéo dài công thức 4 cột E, F, M, N xuống dòng 2000 trước lần chạy sau';
+
+  /** Đầu câu cảnh báo vùng công thức — cũng là khóa máy đọc được để vỏ gom câu trùng (xem `khoaCanhBaoVungCongThuc`). */
+  var RE_KHOA_VUNG_CT = /^Vùng công thức sheet "(.*)" cột ([A-Z]{1,3}): /;
+
   function o(ss, r, c) {
     var row = ss.giaTri[r - 1];
     return row ? (row[c - 1] == null ? null : row[c - 1]) : null;
@@ -112,6 +127,121 @@ var KeyIn = (function () {
     return { gioiHan: gh, moTa: moTa };
   }
 
+  // ------------------------------------------------------------------ VÙNG CÔNG THỨC E, F, M, N, L
+  //
+  // VÌ SAO PHẢI ĐO THEO CỘT, KHÔNG ĐO THEO VÙNG DÒNG TỔNG. Hai thứ khác nhau và trước nay tool chỉ
+  // canh thứ thứ nhất (`gioiHanDongTong`, `gioiHanTongXuat`). Đo trên file tháng 9 thật ngày 08/9/2026
+  // (`00_DAU_VAO/THANG-9-2026-KINH-DOANH_DA_SUA_CONG_THUC.xlsx`): mỗi cột dừng ở MỘT dòng khác nhau —
+  // `Shopee mall` E tới 417, F tới 418, M và N tới 402; `Offood` E tới 274, F tới 298, M và N tới 254.
+  // Lấy giới hạn chung của cả sheet là nói sai về bốn cột trong năm.
+  //
+  // Đây là CÔNG THỨC TỪNG DÒNG kéo tay, không phải ARRAYFORMULA một ô: nếu là một ô thì số ô công
+  // thức phải bằng đúng 1, thực đo là 414 / 415 / 399 ô. Nguyên nhân vùng bị ăn mòn dần: xóa NỘI DUNG
+  // các dòng đã ghi thì mất luôn công thức của đúng các dòng đó (cách đúng là xóa hẳn cả dòng để các
+  // dòng còn công thức phía dưới dồn lên).
+  //
+  // CÁCH ĐO CHỊU ĐƯỢC CẢ HAI HÌNH DẠNG — chủ dự án có thể đổi sang ARRAYFORMULA bất cứ lúc nào, và
+  // mã này không được khóa cứng vào hình dạng vừa đo được:
+  //   · đúng MỘT ô công thức và nằm ngay dòng đầu vùng dữ liệu → coi như phủ hết cột, không cảnh báo;
+  //   · ngược lại (nhiều ô, hoặc một ô nằm giữa chừng) → giới hạn là DÒNG CUỐI CÙNG còn công thức.
+  // Một ngoại lệ của vế đầu: ô đó bọc `ARRAY_CONSTRAIN(…;1;1)` thì nó chỉ phủ đúng một dòng một cột.
+  // Đó là dấu vết Google để lại khi chuyển công thức mảng của Excel sang Sheet (GV-v2.4 Phụ lục A.1):
+  // nhìn thì giống ARRAYFORMULA mà thật ra vẫn là công thức từng dòng.
+
+  /**
+   * Đo một cột từ danh sách công thức đã đọc sẵn. Tách rời khỏi cách đọc để vỏ Google (đọc bằng
+   * `getFormulasR1C1`) và vỏ Excel (đọc từ ảnh chụp) dùng chung đúng một luật.
+   * @param {Array}  ds       công thức của cột, phần tử 0 ứng với dòng `dongDau`; ô trống là '' hoặc null
+   * @param {number} dongDau  dòng đầu vùng dữ liệu (thường là 4)
+   * @returns {{tuDong:number, so:number, dongDau:(number|null), gioiHan:(number|null), phuHet:boolean}}
+   *          phuHet = coi như phủ hết cột (ARRAYFORMULA một ô) · gioiHan = dòng cuối còn công thức
+   */
+  function doVungCongThuc(ds, dongDau) {
+    var so = 0, dau = null, cuoi = null, vanBanDau = '';
+    for (var i = 0; i < ds.length; i++) {
+      var t = ds[i];
+      if (t == null || String(t) === '') continue;
+      so++;
+      if (dau === null) { dau = dongDau + i; vanBanDau = String(t); }
+      cuoi = dongDau + i;
+    }
+    if (!so) return { tuDong: dongDau, so: 0, dongDau: null, gioiHan: null, phuHet: false };
+    if (so === 1 && dau === dongDau && !/ARRAY_CONSTRAIN/i.test(vanBanDau))
+      return { tuDong: dongDau, so: 1, dongDau: dau, gioiHan: null, phuHet: true };
+    return { tuDong: dongDau, so: so, dongDau: dau, gioiHan: cuoi, phuHet: false };
+  }
+
+  /** Năm cột công thức của sheet gian hàng (E, F, L, M, N theo cấu hình); luôn có cột Doanh Thu. */
+  function cotVungCongThuc(k) {
+    var ds = (k.cot_cong_thuc || []).slice();
+    if (ds.indexOf(k.cot_doanh_thu) < 0) ds.push(k.cot_doanh_thu);
+    return ds.sort(function (a, b) { return a - b; });
+  }
+
+  /** Đo cả năm cột trên ảnh chụp sheet gian hàng. */
+  function vungCongThuc(ss, k) {
+    var n = Math.max(ss.soDong || 0, (ss.congThuc || []).length, (ss.giaTri || []).length);
+    return cotVungCongThuc(k).map(function (c) {
+      var ds = [];
+      for (var r = k.dong_dau; r <= n; r++) ds.push(ct(ss, r, c));
+      var d = doVungCongThuc(ds, k.dong_dau);
+      d.cot = c;
+      return d;
+    });
+  }
+
+  /**
+   * Hai mức cảnh báo (GV-v2.4 mục 1.3 · kế hoạch kiểm thử bài T-48 và D-15):
+   *   ĐỎ  — lô ghi lần này SẼ VƯỢT dòng cuối còn công thức: **vẫn ghi, không chặn**, kèm việc phải làm.
+   *   VÀNG — còn dư dưới `nguong` dòng: nêu đúng tên sheet, đúng tên cột, đúng số dòng còn dư.
+   * TUYỆT ĐỐI KHÔNG tự kéo dài, không tự sửa công thức của chủ shop (D-15 cấm) — chỉ nói ra để người làm.
+   *
+   * @param {string}   tenSheet
+   * @param {Object[]} doDS        kết quả `vungCongThuc` (mỗi phần tử có `.cot`)
+   * @param {number[]} cotToolKeo  các cột chính tool tự chép công thức xuống dòng mới. Cột đó không thể
+   *                               "vượt vùng" được, nên chỉ cảnh báo khi phía trên KHÔNG còn công thức
+   *                               nào để chép — đúng cảnh sheet `Shopee mall` trên Google hiện nay,
+   *                               nơi E4, F4, L4 đã bị xóa mất công thức (GV-v2.4 Phụ lục A.3).
+   * @param {number}   dongDonCuoi dòng dữ liệu cuối TRƯỚC lô này
+   * @param {number}   dongCuoiMoi dòng cuối SAU khi ghi xong lô này
+   * @param {number}   [nguong]    ngưỡng "sắp hết"; để trống là 200
+   */
+  function canhBaoVungCongThuc(tenSheet, doDS, cotToolKeo, dongDonCuoi, dongCuoiMoi, nguong) {
+    var ng = Number(nguong);
+    if (isNaN(ng) || ng <= 0) ng = NGUONG_SAP_HET_CONG_THUC;
+    var keo = cotToolKeo || [];
+    var out = [];
+    (doDS || []).forEach(function (d) {
+      if (d.phuHet) return;                                   // ARRAYFORMULA một ô → phủ hết, không có gì để kêu
+      var dau = 'Vùng công thức sheet "' + tenSheet + '" cột ' + Utils.chuCot(d.cot) + ': ';
+      if (d.so === 0) {
+        out.push(dau + 'KHÔNG CÒN CÔNG THỨC — từ dòng ' + d.tuDong + ' trở xuống không còn ô nào có công thức nên ' +
+          (dongCuoiMoi - dongDonCuoi) + ' dòng mới sẽ trống ở cột này. Vẫn ghi, không chặn: ' + VIEC_KEO_DAI_CONG_THUC + '.');
+        return;
+      }
+      if (keo.indexOf(d.cot) >= 0) return;                    // tool tự chép công thức xuống → cột này không vượt vùng được
+      if (dongCuoiMoi > d.gioiHan) {
+        out.push(dau + 'SẼ VƯỢT — công thức chỉ còn tới dòng ' + d.gioiHan + ', lô này ghi tới dòng ' + dongCuoiMoi +
+          ' nên ' + (dongCuoiMoi - Math.max(d.gioiHan, dongDonCuoi)) + ' dòng mới sẽ trống ở cột này. ' +
+          'Vẫn ghi, không chặn: ' + VIEC_KEO_DAI_CONG_THUC + '.');
+      } else if (d.gioiHan - dongCuoiMoi < ng) {
+        out.push(dau + 'SẮP HẾT — công thức còn tới dòng ' + d.gioiHan + ', đơn đã tới dòng ' + dongCuoiMoi +
+          ', còn dư ' + (d.gioiHan - dongCuoiMoi) + ' dòng.');
+      }
+    });
+    return out;
+  }
+
+  /**
+   * 'tên sheet|CỘT' của một câu cảnh báo vùng công thức, hoặc null nếu không phải câu đó.
+   * Vỏ Node dùng để gom câu trùng: vùng công thức được đo lại ở MỖI khối ghi, mà một lần chạy có
+   * nhiều lô, nên cùng một cột sẽ kêu nhiều lần nếu không gom (`node/chay-google-sheet.js`).
+   */
+  function khoaCanhBaoVungCongThuc(cau) {
+    var m = RE_KHOA_VUNG_CT.exec(String(cau == null ? '' : cau));
+    return m ? m[1] + '|' + m[2] : null;
+  }
+
   /**
    * @param {Object}   ss    ảnh chụp sheet gian hàng { ten, soDong, giaTri[][], congThuc[][], mang[][] }
    * @param {Object}   ssTX  ảnh chụp sheet `Tổng xuất` (hoặc null) — chỉ để cảnh báo vùng SUMIF
@@ -130,7 +260,7 @@ var KeyIn = (function () {
       dongMau: dongCuoi >= k.dong_dau ? dongCuoi : null, cotNote: cNote, cheDoCongThuc: laSheet ? 'SHEET' : 'EXCEL',
       oGhi: [], congThucKeo: [], gopO: [], toVang: [], ghiChu: [], tieuDeNote: null, giaTriTayThay: [],
       viTri: {}, thongKe: { donGhi: 0, donDaCo: 0, dongGhi: 0, dongVang: 0, donGopO: 0, giaTriTayThay: 0 },
-      canhBao: [], thongBao: []
+      canhBao: [], thongBao: [], vungCongThuc: []
     };
     var canTieuDe = Utils.laRong(o(ss, k.dong_header, cNote));
     var r = dongCuoi + 1;
@@ -182,7 +312,14 @@ var KeyIn = (function () {
     if (soTrung > SO_THONG_BAO_TRUNG_TOI_DA) plan.thongBao.push('... và ' + (soTrung - SO_THONG_BAO_TRUNG_TOI_DA) + " đơn khác đã có trong sheet '" + ss.ten + "'");
     plan.dongCuoiMoi = r - 1;
     if (plan.ghiChu.length && canTieuDe) plan.tieuDeNote = { r: k.dong_header, c: cNote, text: k.tieu_de_note };
-    if (plan.dongCuoiMoi > dongCuoi) canhBaoGioiHan(plan, ss, ssTX, k);
+    if (plan.dongCuoiMoi > dongCuoi) {
+      canhBaoGioiHan(plan, ss, ssTX, k);
+      // Đo vùng công thức TRƯỚC khi ghi, theo TỪNG CỘT E, F, M, N, L (T-48). Đo trên ảnh chụp nên
+      // con số là tình trạng thật của file người ta, chưa dính gì tới việc tool sắp kéo công thức.
+      plan.vungCongThuc = vungCongThuc(ss, k);
+      canhBaoVungCongThuc(ss.ten, plan.vungCongThuc, cotCongThuc, dongCuoi, plan.dongCuoiMoi, k.nguong_sap_het_cong_thuc)
+        .forEach(function (c) { plan.canhBao.push(c); });
+    }
     return plan;
   }
 
@@ -249,11 +386,18 @@ var KeyIn = (function () {
 
   return {
     COT_GOP: COT_GOP,
+    NGUONG_SAP_HET_CONG_THUC: NGUONG_SAP_HET_CONG_THUC,
+    VIEC_KEO_DAI_CONG_THUC: VIEC_KEO_DAI_CONG_THUC,
     dongDuLieuCuoi: dongDuLieuCuoi,
     maDonDaCo: maDonDaCo,
     cotNote: cotNote,
     gioiHanDongTong: gioiHanDongTong,
     gioiHanTongXuat: gioiHanTongXuat,
+    doVungCongThuc: doVungCongThuc,
+    cotVungCongThuc: cotVungCongThuc,
+    vungCongThuc: vungCongThuc,
+    canhBaoVungCongThuc: canhBaoVungCongThuc,
+    khoaCanhBaoVungCongThuc: khoaCanhBaoVungCongThuc,
     lapKeHoach: lapKeHoach
   };
 })();

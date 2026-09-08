@@ -10,6 +10,8 @@
  *  - Chạy các bước theo đúng thứ tự lõi trả về; ghi cờ `BUOC_DA_XONG` sau mỗi bước.
  *  - B5a (chèn cột) đặt cờ `B5_DANG_LAM` trước và `B5_DA_CHEN` ngay sau — bước này không chạy lại được.
  *  - Chỉ ghi `DA_KHOI_TAO_...` khi CẢ TÁM phép K-1…K-8 đạt.
+ *  - Dọn tháng cũ bằng `XOA_DONG` (xóa HẲN dòng, dồn lên) chứ không xóa nội dung — xem `xoaDong()`.
+ *    Vỏ phải DỊCH công thức theo số dòng đã dồn; không dịch là sai lặng.
  *
  * === HAI CÁI BẪY CỦA ExcelJS, đo ngày 08/9/2026, đã chống ở đây ===
  *  1. Ô công thức có kết quả lưu sẵn bằng **0** thì `cell.value.result` về `undefined` (ExcelJS bỏ giá trị falsy),
@@ -30,6 +32,23 @@ function napLoiTaoThangMoi() {
   const ten = new Set();
   for (const m of src.matchAll(/^(?:var|function)\s+([A-Za-z_$][\w$]*)/gm)) ten.add(m[1]);
   return new Function(src + '\nreturn {' + [...ten].map(n => `${n}: ${n}`).join(', ') + '};')();   // eslint-disable-line no-new-func
+}
+
+/** `Utils` của lõi, nạp một lần — vỏ cần `dichCongThuc` để dịch công thức khi dồn dòng lên. */
+let _utils = null;
+function utils() { if (!_utils) _utils = napLoiTaoThangMoi().Utils; return _utils; }
+
+/**
+ * Dịch công thức từ dòng `tu` về dòng `den`, và TỪ CHỐI dịch nếu kết quả sinh ra số dòng ≤ 0.
+ * Vì sao phải chặn: một công thức ở dòng 900 trỏ tương đối lên dòng 10 mà dồn lên dòng 4 thì
+ * `dichCongThuc` cho ra `D-886` — Excel không đọc được và ExcelJS ghi ra file hỏng, im lặng.
+ * Google Sheets trong trường hợp đó trả `#REF!`; ở đây ta giữ nguyên văn bản cũ và để phép
+ * tự kiểm K-6/N-11 bắt, an toàn hơn là ghi ra một file không mở được.
+ */
+function dichCT(text, tu, den) {
+  if (!text || tu === den) return text;
+  const ra = utils().dichCongThuc(text, tu, den);
+  return /(^|[^A-Za-z0-9_$])\$?[A-Z]{1,3}\$?(-\d|0(?!\d))/.test(ra) ? text : ra;
 }
 
 // ---------------------------------------------------------------- đọc ô
@@ -166,6 +185,7 @@ class VoThangMoi {
         }
         case 'BO_GOP': boGop(this.ws(t.sheet), t); break;
         case 'XOA_VUNG': xoaVung(this.ws(t.sheet), t); break;
+        case 'XOA_DONG': xoaDong(this.ws(t.sheet), t.r1, t.soDong); break;
         case 'GHI_O': {
           const cell = this.ws(t.sheet).getCell(t.r, t.c);
           cell.value = (t.gt === null || t.gt === undefined || t.gt === '') ? null : t.gt;
@@ -254,14 +274,66 @@ function xoaVung(ws, v) {
   return xoa;
 }
 
-/** Ô nguồn → dạng ghi được ở ô đích (gỡ công thức chia sẻ, dời `ref` của array formula). */
-function giaTriDeChep(nguon, diaChiMoi) {
+/**
+ * Ô nguồn → dạng ghi được ở ô đích (gỡ công thức chia sẻ, dời `ref` của array formula).
+ * `tuDong`/`denDong` khác nhau thì DỊCH công thức theo số dòng đã dồn — bắt buộc khi xóa hẳn dòng.
+ */
+function giaTriDeChep(nguon, diaChiMoi, tuDong, denDong) {
   const v = nguon.value;
   if (v && typeof v === 'object' && (v.formula != null || v.sharedFormula != null)) {
-    const text = String(nguon.formula || v.formula || '');
+    let text = String(nguon.formula || v.formula || '');
+    if (tuDong != null && denDong != null) text = dichCT(text, tuDong, denDong);
     return v.shareType === 'array' ? { formula: text, ref: diaChiMoi, shareType: 'array' } : { formula: text };
   }
   return v === undefined ? null : v;
+}
+
+/**
+ * XÓA HẲN `n` dòng từ dòng `r1` — mọi dòng dưới DỒN LÊN, y như `deleteRows` của Google Sheets.
+ * Đây là thao tác giữ được công thức từng dòng của chủ shop: dòng 801 dồn lên thành dòng 4 và
+ * mang theo đúng công thức của nó, thay vì bị xóa trắng như khi xóa nội dung vùng `A4:O2000`.
+ *
+ * KHÔNG dùng `ws.spliceRows` của ExcelJS: nó dời ô nhưng **không dịch công thức**, nên dòng 900
+ * mang `MATCH($D900;…)` dồn lên dòng 4 mà vẫn trỏ `$D900` — sai lặng, không ai thấy.
+ *
+ * KHÁC BIỆT CÓ CHỦ Ý so với Google Sheets, phải biết khi đọc số:
+ *  · Google co lại mọi vùng của sheet KHÁC đang trỏ vào vùng bị xóa
+ *    (`Tổng xuất`!I4 `SUMIF('Shopee mall'!$M$4:$M$2000;…)` → `$M$4:$M$1500` sau khi xóa 500 dòng).
+ *    Vỏ Excel ở đây KHÔNG co — nghĩa là số đo trên bản `.xlsx` là cận TRÊN của bản Google.
+ *  · Dòng tổng `H3:L3` cũng bị Google co lại; tool ghi đè `SUM(x4:x2000)` ngay sau đó nên hòa.
+ */
+function xoaDong(ws, r1, n) {
+  if (!(n > 0)) return 0;
+  goCongThucChiaSe(ws);
+  const maxR = ws.rowCount;
+  const maxC = Math.max(ws.columnCount, 1);
+  const gop = docGopO(ws);
+  for (const m of gop) { try { ws.unMergeCells(m.text); } catch (e) { /* đã gỡ ở vòng trước */ } }
+
+  for (let r = r1; r + n <= maxR; r++) {
+    const nguon = ws.getRow(r + n), dich = ws.getRow(r);
+    for (let c = 1; c <= maxC; c++) {
+      const o1 = nguon.getCell(c), o2 = dich.getCell(c);
+      o2.value = giaTriDeChep(o1, o2.address, r + n, r);
+      o2.style = JSON.parse(JSON.stringify(o1.style || {}));
+    }
+    if (nguon.height != null) dich.height = nguon.height;
+  }
+  for (let r = Math.max(r1, maxR - n + 1); r <= maxR; r++) {
+    const row = ws.getRow(r);
+    for (let c = 1; c <= maxC; c++) row.getCell(c).value = null;
+  }
+
+  // Ô gộp: nằm trọn trong vùng xóa → bỏ hẳn; nằm dưới → dời lên `n` dòng; cắt ngang → cắt ngắn.
+  const r2 = r1 + n - 1;
+  for (const m of gop) {
+    if (m.r1 >= r1 && m.r2 <= r2) continue;
+    const a = m.r1 > r2 ? m.r1 - n : (m.r1 >= r1 ? r1 : m.r1);
+    const b = m.r2 > r2 ? m.r2 - n : (m.r2 >= r1 ? r1 - 1 : m.r2);
+    if (b < a || (a === b && m.c1 === m.c2)) continue;
+    try { ws.mergeCells(a, m.c1, b, m.c2); } catch (e) { /* chồng lấn với ô gộp đã dựng */ }
+  }
+  return n;
 }
 
 /**
@@ -570,7 +642,8 @@ async function main() {
 
 module.exports = {
   napLoiTaoThangMoi, khoiTaoThangMoi, VoThangMoi, anhChupFile, anhChupSheet, docFile,
-  tinhLai, apGhiDe, goCongThucChiaSe, chenCot, boGop, xoaVung, inBangKiem, chuCot, chiSoCot
+  tinhLai, apGhiDe, goCongThucChiaSe, chenCot, boGop, xoaVung, xoaDong, dichCT,
+  inBangKiem, chuCot, chiSoCot, congThucCua, giaTriThuan, ketQuaDaTinh
 };
 
 if (require.main === module) main().catch(e => { console.error('\nLỖI: ' + e.message + '\n' + e.stack); process.exit(1); });

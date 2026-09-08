@@ -13,6 +13,18 @@
  *    chép thêm một bản là tạo nguồn sự thật thứ hai, đúng thứ mục 2.1 đặc tả cảnh báo.
  *  - B8: không ghi log vào `SỔ LINK THÁNG`; trả danh sách lệch trong kết quả để vỏ ghi ra nhật ký.
  *
+ * === ĐÍNH CHÍNH 08/9/2026 (đợt 2) — DỌN BẰNG CÁCH XÓA HẲN DÒNG ===
+ * Bản trước dọn sheet gian hàng bằng "xóa nội dung `A4:O2000` rồi dựng lại 4 ARRAYFORMULA ở
+ * E4/F4/M4/N4" (mục 4 dòng 127 và bước 12 của đặc tả). ĐO ĐƯỢC là sai:
+ *   · Vỏ tháng mới nhân bản từ tháng 8 có **909 ô công thức** mỗi cột E/F/M/N ở `Shopee mall`
+ *     (dòng 4→912); file tháng 9 THẬT có **414 / 415 / 399 / 399 ô** (dòng 4→417/418/402/402).
+ *     Đây là công thức TỪNG DÒNG, mỗi dòng một cái, kéo tay tới một dòng cố định.
+ *   · Bản trước sinh ra đúng **1 ô** mỗi cột. Cả tháng bốn cột Tên sản phẩm / Đơn vị / Mã hàng /
+ *     Check tồn trống từ dòng 5 xuống, và không có gì báo.
+ * Cách làm mới, đúng như chủ dự án chỉ: **xóa HẲN các dòng chủ shop đã ghi** (`XOA_DONG`).
+ * Dòng dưới dồn lên mang theo công thức của chính nó → giữ nguyên công thức gốc, kể cả chỗ sửa tay.
+ * Tool KHÔNG ghi một công thức nào vào E, F, L, M, N.
+ *
  * Bảy luật cứng (mục 10 đặc tả):
  *  1. `Tổng nhập` khối đầu kỳ để TRỐNG cột `Ngày nhập` — dấu hiệu duy nhất phân biệt đầu kỳ với nhập trong tháng.
  *  2. Ghi đủ 100% mã, kể cả mã tồn 0 (bản làm tay rơi mất `gvs km 1` đúng vì nó tồn 0 ở dòng đầu).
@@ -36,6 +48,7 @@
  *   { loai:'TAO_SHEET',  ten }                                  tạo sheet nếu chưa có
  *   { loai:'BO_GOP',     sheet, r1,c1,r2,c2 }                    bỏ MỌI ô gộp cắt qua hình chữ nhật
  *   { loai:'XOA_VUNG',   sheet, r1,c1,r2,c2 }                    xóa nội dung, GIỮ định dạng
+ *   { loai:'XOA_DONG',   sheet, r1, soDong }                     XÓA HẲN cả dòng, mọi dòng dưới dồn lên
  *   { loai:'GHI_O',      sheet, r,c, gt, dinhDang }              ghi giá trị thuần (gt=null → xóa ô)
  *   { loai:'GHI_CT',     sheet, r,c, text, mang }                ghi công thức (text KHÔNG có dấu `=`)
  *   { loai:'GHI_BANG',   sheet, r1,c1, bang[][] }                ghi cả bảng một lần (theo lô)
@@ -54,17 +67,26 @@ var TaoThangMoi = (function () {
   // ---------------------------------------------------------------- công thức nguyên văn
 
   /**
-   * BỐN ARRAYFORMULA — chép NGUYÊN VĂN từ `01_TAI_LIEU/CONG_THUC_DAN_VAO_GOOGLE_SHEET.md`.
-   * Dấu phân cách tham số là `;` (bản Google Sheet tiếng Việt). Vỏ Excel đổi sang `,` bằng `doiDauPhanCach`.
-   * `{D}` `{M}` là chữ cột "Tên viết tắt" và "Mã hàng" của sheet đích — bốn sheet gian hàng đều là D và M,
-   * riêng `Tiktok` là D và L (mục 8.5 đặc tả: luật theo NỘI DUNG, nên phải chịu được bố cục khác).
+   * === TOOL KHÔNG TỰ VIẾT CÔNG THỨC VÀO CỘT CỦA CHỦ SHOP ===
+   *
+   * Bản trước đặt ở đây bốn hằng `ARRAYFORMULA` chép từ `CONG_THUC_DAN_VAO_GOOGLE_SHEET.md`
+   * rồi ghi vào `E4`,`F4`,`M4`,`N4`. Ba thứ sai cùng lúc, cả ba đều ĐO ĐƯỢC:
+   *
+   *  1. Tài liệu nguồn đã bị BA HỦY ngày 08/9/2026 (xem khung ⛔ đầu file đó và Phụ lục A của
+   *     `05_GIAO_VIEC_DEV_v2.4.md`). Bốn công thức ấy CHƯA TỪNG được dán vào file nào.
+   *  2. E/F/M/N của file thật KHÔNG phải ARRAYFORMULA một ô mà là công thức TỪNG DÒNG
+   *     (`ARRAY_CONSTRAIN(...;1;1)` trên Google, công thức mảng một-ô trên `.xlsx`).
+   *     Đo trên `THANG-9-2026-KINH-DOANH_DA_SUA_CONG_THUC.xlsx`, sheet `Shopee mall`:
+   *     E 414 ô (dòng 4→417) · F 415 ô (4→418) · M 399 ô (4→402) · N 399 ô (4→402).
+   *     Ghi một ô ARRAYFORMULA vào đó là đổi 414 ô công thức của chủ shop lấy 1 ô.
+   *  3. Vùng tra trong bốn hằng đó là `$3:$484`, còn vùng THẬT là `$3:$741` (N) và `$3:$462` (M).
+   *     Nghĩa là công thức tool ghi vào còn tra sai vùng.
+   *
+   * Luật thay thế: **không ghi gì vào E, F, L, M, N.** Việc dọn tháng cũ làm bằng XÓA HẲN DÒNG,
+   * nên công thức từng dòng của chủ shop ở các dòng còn lại được giữ nguyên, kể cả chỗ họ sửa tay.
+   * Ngoại lệ duy nhất: một cột công thức bị xóa hết sạch thì gieo lại DÒNG 4 bằng CHÍNH mẫu công
+   * thức của cột đó (đọc từ file, dịch về dòng 4) — chép lại của chủ shop, không bịa công thức mới.
    */
-  var AF_TEN_SP = 'ARRAYFORMULA(IF(${D}4:${D}' + DAY_VUNG + '="";"";IFERROR(INDEX(\'Tổng tồn kho\'!$C$3:$C$484;MATCH(${D}4:${D}' + DAY_VUNG + ';\'Tổng tồn kho\'!$D$3:$D$484;0));"⚠ chưa có trong danh mục")))';
-  var AF_DON_VI = 'ARRAYFORMULA(IF(${D}4:${D}' + DAY_VUNG + '="";"";IFERROR(INDEX(\'Tổng tồn kho\'!$F$3:$F$484;MATCH(${D}4:${D}' + DAY_VUNG + ';\'Tổng tồn kho\'!$D$3:$D$484;0));"")))';
-  var AF_MA_HANG = 'ARRAYFORMULA(IF(${D}4:${D}' + DAY_VUNG + '="";"";IFERROR(INDEX(\'Tổng tồn kho\'!$E$3:$E$484;MATCH(${D}4:${D}' + DAY_VUNG + ';\'Tổng tồn kho\'!$D$3:$D$484;0));"")))';
-  var AF_CHECK_TON = 'ARRAYFORMULA(IF(${M}4:${M}' + DAY_VUNG + '="";"";IFERROR(INDEX(\'Tổng tồn kho\'!$H$3:$H$484;MATCH(${M}4:${M}' + DAY_VUNG + ';\'Tổng tồn kho\'!$E$3:$E$484;0));"")))';
-  /** Cột Doanh Thu phải giữ công thức TỪNG DÒNG (đơn nhiều sản phẩm có gộp ô ở cột này). */
-  var CT_DOANH_THU = 'IF($H4="";"";$H4-$I4-$J4-$K4)';
 
   /** Đổi `;` → `,` cho vỏ Excel. Chỉ đổi dấu phân cách NGOÀI chuỗi trong nháy kép. */
   function doiDauPhanCach(text, dau) {
@@ -88,12 +110,13 @@ var TaoThangMoi = (function () {
     CHUAN: {
       cotTenVietTat: 'D', cotTenSP: 'E', cotDonVi: 'F', cotMaHang: 'M', cotCheckTon: 'N',
       cotDoanhThu: 'L', cotTong: ['H', 'I', 'J', 'K', 'L'], cotCuoiDon: 'O',
-      ctDoanhThu: CT_DOANH_THU
+      // Cột mang công thức TỪNG DÒNG của chủ shop. Tool không ghi vào, chỉ ĐO và giữ.
+      cotCongThuc: ['E', 'F', 'L', 'M', 'N']
     },
     TIKTOK: {
       cotTenVietTat: 'D', cotTenSP: 'E', cotDonVi: 'F', cotMaHang: 'L', cotCheckTon: 'M',
       cotDoanhThu: 'K', cotTong: ['H', 'I', 'J', 'K'], cotCuoiDon: 'N',
-      ctDoanhThu: 'IF($H4="";"";$H4-$I4-$J4)'   // Tiktok: K = H − I(Chi phí) − J(Thuế), không có MGG Shop
+      cotCongThuc: ['E', 'F', 'K', 'L', 'M']
     }
   };
 
@@ -108,7 +131,10 @@ var TaoThangMoi = (function () {
   var DON_NGOAI = {
     cotTenVietTat: 'E', cotTenSP: 'F', cotDonVi: 'G', cotSoLuong: 'H', cotTienSP: 'I',
     cotChiPhi: 'J', cotMaGiam: 'K', cotPhuong: 'L', cotOanh: 'M', cotMaHang: 'N', cotCheckTon: 'O',
-    cotTong: ['L', 'M'], cotCuoiDon: 'O'
+    cotTong: ['L', 'M'], cotCuoiDon: 'O',
+    // `M` (OANH) CỐ Ý không nằm trong danh sách: `Lợi nhuận`!D7 cộng CẢ `L3` lẫn `M3`,
+    // gieo cùng một công thức vào hai cột là tính doanh số hai lần cho mỗi đơn.
+    cotCongThuc: ['F', 'G', 'L', 'N', 'O']
   };
 
   // ---------------------------------------------------------------- tiện ích đọc ảnh chụp
@@ -176,6 +202,66 @@ var TaoThangMoi = (function () {
       }
     }
     return kq;
+  }
+
+  /**
+   * Khối dòng chủ shop ĐÃ GHI — thứ duy nhất được phép xóa hẳn.
+   *
+   * `dong`  = dòng cuối cùng còn giá trị gõ tay ở **cột khóa** (Tên viết tắt). Mọi dòng đơn thật
+   *           đều có ô này, kể cả dòng con của đơn nhiều sản phẩm.
+   * `dongMoiCot` = dòng cuối cùng còn giá trị gõ tay ở BẤT KỲ cột nào trong `1..cCuoi`.
+   *
+   * Vì sao lấy `dong` (cột khóa) làm mốc xóa chứ không lấy `dongMoiCot`:
+   *   một ô ghi chú lạc ở `O900` sẽ kéo `dongMoiCot` lên 900, và tool sẽ xóa hẳn 897 dòng —
+   *   mất luôn toàn bộ vùng công thức dự trữ của chủ shop, không hoàn tác được. Đo trên tháng 8:
+   *   cả 6 sheet đều có `dong == dongMoiCot`, nên khoanh vào cột khóa hôm nay không bỏ sót gì,
+   *   mà chặn được đúng cái ca hỏng-không-cứu-được.
+   * Ô công thức KHÔNG tính là "đã ghi" — đó là công thức kéo sẵn xuống hàng trăm dòng trống.
+   * Trả `dong` = 0 nghĩa là vỏ chưa ghi dòng nào → KHÔNG xóa dòng nào, công thức nguyên vẹn.
+   */
+  function dongCuoiDuLieu(ss, cCuoi, chuKhoa) {
+    var kq = { dong: 0, dongMoiCot: 0, oLac: [] };
+    if (!ss) return kq;
+    var het = Math.min(soDong(ss), DAY_VUNG), cKhoa = chuKhoa ? C(chuKhoa) : 0;
+    for (var r = 4; r <= het; r++) {
+      if (cKhoa && oCoDuLieu(ss, r, cKhoa)) kq.dong = r;
+      for (var c = 1; c <= cCuoi; c++) {
+        if (oCoDuLieu(ss, r, c)) { kq.dongMoiCot = r; break; }
+      }
+    }
+    if (!cKhoa) kq.dong = kq.dongMoiCot;
+    for (var r3 = kq.dong + 1; r3 <= kq.dongMoiCot && kq.oLac.length < 5; r3++) {
+      for (var c3 = 1; c3 <= cCuoi; c3++) {
+        if (oCoDuLieu(ss, r3, c3)) { kq.oLac.push(L(c3) + r3 + '="' + String(o(ss, r3, c3)).slice(0, 20) + '"'); break; }
+      }
+    }
+    return kq;
+  }
+
+  /** Đếm ô công thức của một cột từ dòng `r1` xuống, và dòng cuối cùng còn công thức. */
+  function vungCongThucCot(ss, chuCot, r1) {
+    var c = C(chuCot), het = soDong(ss), soO = 0, cuoi = 0;
+    for (var r = r1; r <= het; r++) if (ct(ss, r, c) != null) { soO++; cuoi = r; }
+    return { soO: soO, dongCuoi: cuoi };
+  }
+
+  /**
+   * ĐO vùng công thức của một sheet TRƯỚC và SAU khi xóa `dCuoi-3` dòng đầu.
+   * Xóa hẳn dòng thì các dòng dưới DỒN LÊN: ô công thức không mất, chỉ đổi số dòng.
+   * Đây là số liệu để chỉ tiêu nghiệm thu N-10 chấm, và để thấy vùng công thức bị ăn mòn bao nhiêu.
+   */
+  function doVungCongThuc(ss, cotCongThuc, dCuoi) {
+    var d = {};
+    cotCongThuc.forEach(function (chu) {
+      var truoc = vungCongThucCot(ss, chu, 4);
+      var conLai = vungCongThucCot(ss, chu, Math.max(4, dCuoi + 1));
+      var dich = dCuoi >= 4 ? (dCuoi - 3) : 0;
+      d[chu] = {
+        truoc: truoc.soO, truocDongCuoi: truoc.dongCuoi,
+        sau: conLai.soO, sauDongCuoi: conLai.dongCuoi ? conLai.dongCuoi - dich : 0
+      };
+    });
+    return d;
   }
 
   /** Danh sách sheet của tháng mới phải khớp tháng cũ (bỏ qua `Mapping_san_pham` tool tự thêm). */
@@ -344,24 +430,50 @@ var TaoThangMoi = (function () {
     return q.soO > 0;
   }
 
-  function thaoTacDonGianHang(ten, ss, boCuc, dau) {
+  /**
+   * DỌN một sheet gian hàng bằng cách **XÓA HẲN CẢ DÒNG** chủ shop đã ghi, chứ không xóa nội dung.
+   *
+   * Vì sao đổi (đo ngày 08/9/2026, `Shopee mall`):
+   *   · Xóa NỘI DUNG `A4:O2000` xóa luôn công thức từng dòng của E/F/M/N. Vỏ tháng mới nhân bản từ
+   *     tháng 8 có 909 ô công thức mỗi cột (dòng 4→912); sau khi tool chạy chỉ còn **1 ô** ở dòng 4.
+   *     Cả tháng đó bốn cột Tên sản phẩm / Đơn vị / Mã hàng / Check tồn trống từ dòng 5 xuống.
+   *   · Xóa HẲN DÒNG thì dòng dưới dồn lên mang theo công thức của chính nó. Đây đúng cách chủ shop
+   *     vẫn làm tay: file tháng 9 thật có E 414 ô (4→417) — bằng 909 ô của tháng 8 trừ đi đúng số
+   *     dòng đơn tháng 8 đã ghi. Giữ nguyên công thức gốc, kể cả chỗ chủ shop sửa tay
+   *     (cột M tra `$C$3:$G$462` còn E/F tra `$C$3:$G$484` — tool không có cách nào đoán ra).
+   *
+   * Hệ quả phải chấp nhận: vùng công thức **bị ăn mòn** đúng bằng số dòng đơn mỗi tháng.
+   * Tool KHÔNG tự kéo bù, vì kéo bù là tự viết công thức vào file của chủ shop. Việc cảnh báo
+   * "còn bao nhiêu dòng dư" nằm ở lớp cảnh báo vùng công thức, không làm ở đây.
+   *
+   * @param ssCu sheet cùng tên ở tháng cũ — chỉ dùng làm nguồn MẪU dự phòng, không bao giờ ghi vào.
+   */
+  function thaoTacDonGianHang(ten, ss, boCuc, ssCu) {
     var tt = [];
     var cCuoi = C(boCuc.cotCuoiDon);
+    var khoi = dongCuoiDuLieu(ss, cCuoi, boCuc.cotTenVietTat);
+    var dCuoi = khoi.dong;
     // Bỏ ô gộp TRƯỚC khi xóa: quên bước này thì đơn tháng mới ghi đè lên khung gộp cũ, số nhảy lung tung.
     tt.push({ loai: 'BO_GOP', sheet: ten, r1: 4, c1: 1, r2: DAY_VUNG, c2: cCuoi });
-    tt.push({ loai: 'XOA_VUNG', sheet: ten, r1: 4, c1: 1, r2: DAY_VUNG, c2: cCuoi });
-    // Dòng tổng: dựng lại cho phủ hết vùng (bản gốc có vùng lệch nhau — H4:H901, I4:I906…).
+    if (dCuoi >= 4) tt.push({ loai: 'XOA_DONG', sheet: ten, r1: 4, soDong: dCuoi - 3 });
+    // Dòng tổng: dựng lại cho phủ hết vùng (bản gốc có vùng lệch nhau — H4:H901, I4:I906…),
+    // và vì xóa dòng làm co vùng SUM lại đúng bằng số dòng vừa xóa.
     boCuc.cotTong.forEach(function (chu) {
       tt.push({ loai: 'GHI_CT', sheet: ten, r: 3, c: C(chu), text: 'SUM(' + chu + '4:' + chu + DAY_VUNG + ')', mang: false });
     });
-    var D = boCuc.cotTenVietTat, M = boCuc.cotMaHang;
-    function af(mau) { return doiDauPhanCach(mau.replace(/\$\{D\}/g, D).replace(/\$\{M\}/g, M), dau); }
-    tt.push({ loai: 'GHI_CT', sheet: ten, r: 4, c: C(boCuc.cotTenSP), text: af(AF_TEN_SP), mang: true });
-    tt.push({ loai: 'GHI_CT', sheet: ten, r: 4, c: C(boCuc.cotDonVi), text: af(AF_DON_VI), mang: true });
-    tt.push({ loai: 'GHI_CT', sheet: ten, r: 4, c: C(boCuc.cotMaHang), text: af(AF_MA_HANG), mang: true });
-    tt.push({ loai: 'GHI_CT', sheet: ten, r: 4, c: C(boCuc.cotCheckTon), text: af(AF_CHECK_TON), mang: true });
-    tt.push({ loai: 'GHI_CT', sheet: ten, r: 4, c: C(boCuc.cotDoanhThu), text: doiDauPhanCach(boCuc.ctDoanhThu, dau), mang: false });
-    return tt;
+    // Cột công thức: KHÔNG ghi gì. Chỉ khi một cột không còn MỘT ô công thức nào sau khi xóa
+    // mới gieo lại dòng 4 bằng chính mẫu của cột đó — chép của chủ shop, không bịa.
+    var gieo = [];
+    (boCuc.cotCongThuc || []).forEach(function (chu) {
+      if (vungCongThucCot(ss, chu, Math.max(4, dCuoi + 1)).soO > 0) return;
+      var m = mauCongThuc(ss, chu) || mauCongThuc(ssCu, chu);
+      if (!m) return;
+      tt.push({ loai: 'GHI_CT', sheet: ten, r: 4, c: C(chu), text: m.text, mang: m.mang });
+      gieo.push(chu);
+    });
+    var d = doVungCongThuc(ss, boCuc.cotCongThuc || [], dCuoi);
+    gieo.forEach(function (chu) { d[chu].sau = 1; d[chu].sauDongCuoi = 4; d[chu].gieoLai = true; });
+    return { thaoTac: tt, dongCuoiDon: dCuoi, oLac: khoi.oLac, gieoLai: gieo, do: d };
   }
 
   /**
@@ -380,25 +492,33 @@ var TaoThangMoi = (function () {
     return null;
   }
 
-  function thaoTacDonNgoai(ss, ssCu, dau) {
+  /**
+   * `Đơn ngoài` dùng cùng cơ chế XÓA HẲN DÒNG, chỉ khác bố cục cột (mục 4 dòng 8 đặc tả).
+   * Sheet này là chỗ vùng công thức mỏng nhất của cả file — đo tháng 8: `F` và `N` chỉ có 4 ô
+   * (dòng 4→7), `L` có 2 ô (5→6), trong khi đơn đã ghi tới dòng 6. Xóa dòng 4→6 là mọi cột
+   * trừ F/N còn 0 ô → đúng chỗ nhánh "gieo lại dòng 4 bằng mẫu của chính cột đó" phải chạy.
+   */
+  function thaoTacDonNgoai(ss, ssCu) {
     var ten = SHEET_DON_NGOAI, tt = [];
     var cCuoi = C(DON_NGOAI.cotCuoiDon);
+    var khoi = dongCuoiDuLieu(ss, cCuoi, DON_NGOAI.cotTenVietTat);
+    var dCuoi = khoi.dong;
     tt.push({ loai: 'BO_GOP', sheet: ten, r1: 4, c1: 1, r2: DAY_VUNG, c2: cCuoi });
-    tt.push({ loai: 'XOA_VUNG', sheet: ten, r1: 4, c1: 1, r2: DAY_VUNG, c2: cCuoi });
+    if (dCuoi >= 4) tt.push({ loai: 'XOA_DONG', sheet: ten, r1: 4, soDong: dCuoi - 3 });
     DON_NGOAI.cotTong.forEach(function (chu) {
       tt.push({ loai: 'GHI_CT', sheet: ten, r: 3, c: C(chu), text: 'SUM(' + chu + '4:' + chu + DAY_VUNG + ')', mang: false });
     });
-    // Chỉ dựng `L4` (PHƯƠNG). KHÔNG dựng `M4` (OANH): `Lợi nhuận`!D7 cộng CẢ `L3` lẫn `M3`,
-    // đặt cùng một công thức vào hai cột là tính doanh số hai lần cho mỗi đơn.
-    tt.push({ loai: 'GHI_CT', sheet: ten, r: 4, c: C(DON_NGOAI.cotPhuong), text: 'I4-J4', mang: false });
-    // F, G, N, O là công thức tra cứu TỪNG DÒNG (không phải ARRAYFORMULA như bốn sheet gian hàng).
-    // Đặc tả không nói phải dựng lại; nhưng `XOA_VUNG` vừa xóa mất chúng, để trống là mất tính năng.
-    // Giữ nguyên hình dạng của tháng cũ (dịch về dòng 4) — bảo toàn, không tự đổi sang ARRAYFORMULA.
-    [DON_NGOAI.cotTenSP, DON_NGOAI.cotDonVi, DON_NGOAI.cotMaHang, DON_NGOAI.cotCheckTon].forEach(function (chu) {
-      var m = mauCongThuc(ssCu, chu);
-      if (m) tt.push({ loai: 'GHI_CT', sheet: ten, r: 4, c: C(chu), text: m.text, mang: m.mang });
+    var gieo = [];
+    DON_NGOAI.cotCongThuc.forEach(function (chu) {
+      if (vungCongThucCot(ss, chu, Math.max(4, dCuoi + 1)).soO > 0) return;
+      var m = mauCongThuc(ss, chu) || mauCongThuc(ssCu, chu);
+      if (!m) return;
+      tt.push({ loai: 'GHI_CT', sheet: ten, r: 4, c: C(chu), text: m.text, mang: m.mang });
+      gieo.push(chu);
     });
-    return tt;
+    var d = doVungCongThuc(ss, DON_NGOAI.cotCongThuc, dCuoi);
+    gieo.forEach(function (chu) { d[chu].sau = 1; d[chu].sauDongCuoi = 4; d[chu].gieoLai = true; });
+    return { thaoTac: tt, dongCuoiDon: dCuoi, oLac: khoi.oLac, gieoLai: gieo, do: d };
   }
 
   /** Mẫu công thức của một cột: lấy ô có công thức đầu tiên từ dòng 4, dịch về dòng 4. */
@@ -422,8 +542,14 @@ var TaoThangMoi = (function () {
    */
   function thaoTacTongNhap(danhMuc, ssNhapCu, ssNhapMoi, dau) {
     var tt = [], ten = SHEET_NHAP;
+    // Cùng lý do như sheet gian hàng: `Tổng nhập` cũng có công thức TỪNG DÒNG ở C, E, F, G.
+    // Đo tháng 8: 485 ô mỗi cột (dòng 4→488); tháng 9 chủ shop đã kéo lại tới dòng 1000 (997 ô).
+    // Xóa nội dung `A4:L2000` là quét sạch cả 485 ô đó, chỉ còn lại 76 dòng khối đầu kỳ tool ghi;
+    // nhân viên nhập hàng trong tháng từ dòng 80 trở xuống sẽ không có công thức tra Tên/Đơn vị/Giá vốn.
+    var khoiNhap = dongCuoiDuLieu(ssNhapMoi, C('L'), 'D');
+    var dCuoiNhap = khoiNhap.dong;
     tt.push({ loai: 'BO_GOP', sheet: ten, r1: 4, c1: 1, r2: DAY_VUNG, c2: C('L') });
-    tt.push({ loai: 'XOA_VUNG', sheet: ten, r1: 4, c1: 1, r2: DAY_VUNG, c2: C('L') });
+    if (dCuoiNhap >= 4) tt.push({ loai: 'XOA_DONG', sheet: ten, r1: 4, soDong: dCuoiNhap - 3 });
     // C, E, F, G là công thức tra theo D — giữ đúng hình dạng của tháng cũ (mục 5 bước 15).
     var mau = {};
     ['C', 'E', 'F', 'G'].forEach(function (chu) {
@@ -442,7 +568,10 @@ var TaoThangMoi = (function () {
       r++;
     });
     tt.push({ loai: 'GHI_CT', sheet: ten, r: 2, c: C('I'), text: 'SUM(I4:I' + DAY_VUNG + ')', mang: false });
-    return { thaoTac: tt, dongDau: 4, dongCuoi: r - 1, thieuMau: thieu };
+    return {
+      thaoTac: tt, dongDau: 4, dongCuoi: r - 1, thieuMau: thieu, dongCuoiDon: dCuoiNhap, oLac: khoiNhap.oLac,
+      do: doVungCongThuc(ssNhapMoi, ['C', 'E', 'F', 'G'], dCuoiNhap)
+    };
   }
 
   // ---------------------------------------------------------------- B5: đẩy cột `Lợi nhuận`
@@ -583,20 +712,39 @@ var TaoThangMoi = (function () {
 
     // ---- B3: dọn sheet gian hàng ----
     var ttB3 = [];
+    kq.doc.vungCongThuc = {};       // số ô công thức từng cột, TRƯỚC và SAU khi xóa dòng — chỉ tiêu N-10 chấm trên đây
+    /** Ô gõ tay nằm DƯỚI khối đơn: tool cố ý KHÔNG xóa tới đó, phải báo để người xử lý tay. */
+    function baoOLac(t, oLac, dCuoi) {
+      if (!oLac || !oLac.length) return;
+      kq.canhBao.push('Sheet `' + t + '`: có ô gõ tay nằm DƯỚI khối đơn (khối đơn hết ở dòng ' + dCuoi + '): ' +
+        oLac.join(', ') + '. Tool chỉ xóa hẳn tới dòng ' + dCuoi + ' — xóa xuống tận những ô này sẽ nuốt luôn ' +
+        'vùng công thức dự trữ của chủ shop. Hãy tự kiểm rồi xóa tay nếu đó là rác.');
+    }
     SHEET_GIAN_HANG.forEach(function (t) {
       var ss = sheet(anhMoi, t);
       if (!ss) { kq.canhBao.push('Vỏ tháng mới không có sheet `' + t + '` → bỏ qua.'); return; }
-      ttB3 = ttB3.concat(thaoTacDonGianHang(t, ss, BO_CUC.CHUAN, dau));
+      var b = thaoTacDonGianHang(t, ss, BO_CUC.CHUAN, sheet(anhCu, t));
+      ttB3 = ttB3.concat(b.thaoTac);
+      kq.doc.vungCongThuc[t] = { dongCuoiDon: b.dongCuoiDon, gieoLai: b.gieoLai, cot: b.do };
+      baoOLac(t, b.oLac, b.dongCuoiDon);
       var cCN = cotConNo(ss, BO_CUC.CHUAN);
       if (cCN) ttB3.push({ loai: 'GHI_CT', sheet: t, r: 3, c: cCN, text: BO_CUC.CHUAN.cotDoanhThu + '3', mang: false });
       else kq.canhBao.push('Sheet `' + t + '`: không thấy tiêu đề `Còn Nợ` ở dòng 2 → không dựng lại ô tổng Còn Nợ.');
     });
     var ssDN = sheet(anhMoi, SHEET_DON_NGOAI);
-    if (ssDN) ttB3 = ttB3.concat(thaoTacDonNgoai(ssDN, sheet(anhCu, SHEET_DON_NGOAI), dau));
+    if (ssDN) {
+      var bDN = thaoTacDonNgoai(ssDN, sheet(anhCu, SHEET_DON_NGOAI));
+      ttB3 = ttB3.concat(bDN.thaoTac);
+      kq.doc.vungCongThuc[SHEET_DON_NGOAI] = { dongCuoiDon: bDN.dongCuoiDon, gieoLai: bDN.gieoLai, cot: bDN.do };
+      baoOLac(SHEET_DON_NGOAI, bDN.oLac, bDN.dongCuoiDon);
+    }
     // `Tiktok`: luật theo nội dung (mục 8.5).
     var ssTik = sheet(anhMoi, SHEET_TIKTOK);
     if (ssTik && coDonThat(ssTik, BO_CUC.TIKTOK)) {
-      ttB3 = ttB3.concat(thaoTacDonGianHang(SHEET_TIKTOK, ssTik, BO_CUC.TIKTOK, dau));
+      var bTik = thaoTacDonGianHang(SHEET_TIKTOK, ssTik, BO_CUC.TIKTOK, sheet(anhCu, SHEET_TIKTOK));
+      ttB3 = ttB3.concat(bTik.thaoTac);
+      kq.doc.vungCongThuc[SHEET_TIKTOK] = { dongCuoiDon: bTik.dongCuoiDon, gieoLai: bTik.gieoLai, cot: bTik.do };
+      baoOLac(SHEET_TIKTOK, bTik.oLac, bTik.dongCuoiDon);
       var cCNT = cotConNo(ssTik, BO_CUC.TIKTOK);
       if (cCNT) ttB3.push({ loai: 'GHI_CT', sheet: SHEET_TIKTOK, r: 3, c: cCNT, text: BO_CUC.TIKTOK.cotDoanhThu + '3', mang: false });
       kq.thongBao.push('`Tiktok` CÓ đơn thật (K3 khác 0 hoặc có dòng từ A4) → dọn như sheet gian hàng.');
@@ -609,6 +757,8 @@ var TaoThangMoi = (function () {
     if (b4.thieuMau.length) kq.canhBao.push('Không tìm được mẫu công thức cột ' + b4.thieuMau.join(',') +
       ' ở `Tổng nhập` của cả hai file → các cột đó để trống, cần kiểm tay.');
     kq.doc.khoiDauKy = { dongDau: b4.dongDau, dongCuoi: b4.dongCuoi, soDong: dm.ds.length };
+    kq.doc.vungCongThuc[SHEET_NHAP] = { dongCuoiDon: b4.dongCuoiDon, gieoLai: [], cot: b4.do };
+    baoOLac(SHEET_NHAP, b4.oLac, b4.dongCuoiDon);
 
     // ---- B5: đẩy cột `Lợi nhuận` ----
     var b5 = thaoTacLoiNhuan(ln, soThangMoi, ln.nam == null ? namMoi : ln.nam);
@@ -756,6 +906,9 @@ var TaoThangMoi = (function () {
     doiDauPhanCach: doiDauPhanCach,
     oCoDuLieu: oCoDuLieu,
     quetDuLieu: quetDuLieu,
+    dongCuoiDuLieu: dongCuoiDuLieu,
+    vungCongThucCot: vungCongThucCot,
+    doVungCongThuc: doVungCongThuc,
     kiemDieuKien: kiemDieuKien,
     buocBatDau: buocBatDau,
     docDanhMuc: docDanhMuc,

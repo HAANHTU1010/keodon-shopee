@@ -113,6 +113,15 @@ var TOI_DA_DON_MOT_KHOI = 100;
 /** E, F, M, N là ARRAYFORMULA một ô ở dòng tiêu đề — ghi một ô là hỏng cả cột của cả sheet (INV-3). */
 var COT_CAM_GHI = [5, 6, 13, 14];
 
+/**
+ * Cảnh báo vùng công thức (GV-v2.4 mục 1.3). Còn dư dưới ngần này dòng là kêu; ghi đè được bằng
+ * `keyin.nguong_sap_het_cong_thuc`. Phải BẰNG `KeyIn.NGUONG_SAP_HET_CONG_THUC` của vỏ Excel.
+ */
+var NGUONG_SAP_HET_CONG_THUC = 200;
+
+/** Câu việc-phải-làm, nguyên văn GV-v2.4 mục 1.3. Phải BẰNG `KeyIn.VIEC_KEO_DAI_CONG_THUC`. */
+var VIEC_KEO_DAI_CONG_THUC = 'kéo dài công thức 4 cột E, F, M, N xuống dòng 2000 trước lần chạy sau';
+
 // ==================================================================== cài đặt & tiện ích
 
 /**
@@ -584,7 +593,7 @@ function hanhDongGhi_(body, batDau) {
     var ss = SpreadsheetApp.openById(f.fileId);
     var k = cfg.keyin;
     var tk = { donGhi: 0, donDaCo: 0, dongGhi: 0, dongVang: 0, donGopO: 0, mappingThem: 0 };
-    var viTri = {}, canhBao = [], thongBao = [];
+    var viTri = {}, canhBao = [], thongBao = [], daDoVung = {};
 
     lenh.forEach(function (l) {
       var sh = ss.getSheetByName(l.tenSheet);
@@ -593,7 +602,7 @@ function hanhDongGhi_(body, batDau) {
           ' → bỏ qua ' + (l.don || []).length + ' đơn');
         return;
       }
-      ghiMotSheet_(sh, l.don || [], k, tk, viTri, canhBao, thongBao);
+      ghiMotSheet_(sh, l.don || [], k, tk, viTri, canhBao, thongBao, daDoVung);
     });
 
     if (body.mappingThem && body.mappingThem.length)
@@ -621,7 +630,12 @@ function kiemCotDuocGhi_(cot, ten) {
   return Number(cot);
 }
 
-function ghiMotSheet_(sh, donDS, k, tk, viTri, canhBao, thongBao) {
+/**
+ * @param {Object} [daDoVung]  sổ đánh dấu sheet nào đã đo vùng công thức trong LẦN GỌI NÀY. Một lần
+ *                             gọi 'xuLy' ghi nhiều khối trên cùng một sheet; không có sổ này thì mỗi
+ *                             khối lại đo lại và kêu lại đúng một câu. Bỏ trống = đo (dùng cho test).
+ */
+function ghiMotSheet_(sh, donDS, k, tk, viTri, canhBao, thongBao, daDoVung) {
   // MỘT CỬA DUY NHẤT cho mọi chỉ số cột mà hàm này sẽ ghi vào. Đặt ở ĐẦU hàm chứ không đặt ngay
   // trước từng lệnh ghi: đặt trước lệnh ghi thì lệnh ghi nào quên là lọt lệnh đó, và người sửa mã
   // sáu tuần sau không có cách nào biết mình vừa thêm một lệnh chưa qua cửa.
@@ -687,6 +701,10 @@ function ghiMotSheet_(sh, donDS, k, tk, viTri, canhBao, thongBao) {
   var r0Khoi = dongCuoi + 1;
   var soDongTong = 0;
   moi.forEach(function (d) { soDongTong += Math.max(1, (d.dong || []).length); });
+
+  // Đo vùng công thức E, F, M, N, L của CHÍNH sheet này rồi cảnh báo hai mức — trước khi ghi ô nào.
+  // Chỉ đọc, không sửa: T-48 nói cảnh báo, D-15 cấm tự kéo dài công thức của chủ shop.
+  canhBaoVungCongThuc_(sh, k, dongCuoi, dongCuoi + soDongTong, canhBao, daDoVung);
 
   // A, C, D, G, H, I, J, K — mỗi cột một khối liền mạch. KHÔNG đụng B, E, F, M, N.
   var A = [], C = [], D = [], G = [], H = [], I = [], J = [], K = [];
@@ -816,6 +834,94 @@ function congThucCotL_(sh, k, dongCuoi) {
     if (ct) return ct;
   }
   return '';
+}
+
+/**
+ * CẢNH BÁO VÙNG CÔNG THỨC E, F, M, N và L — đo theo TỪNG CỘT, ngay trước khi ghi.
+ * GV-v2.4 mục 1.3 · kế hoạch kiểm thử bài T-48 (mức CHẶN) và D-15.
+ *
+ * VÌ SAO PHẢI CÓ. Trước bản này chế độ Google Sheet không có một lời cảnh báo nào về việc ghi vượt
+ * vùng công thức: `node/chay-google-sheet.js` không gọi `KeyIn.gs`, còn vỏ này thì chỉ canh vùng SUM
+ * ở dòng tổng — thứ đã được sửa thành `$4:$2000` nên không bao giờ kêu nữa. Vượt rồi thì dòng mới
+ * trống trơn bốn cột Tên sản phẩm, Đơn vị, Mã hàng, Check tồn mà không ai biết.
+ *
+ * ĐO ĐƯỢC TRÊN FILE THẬT (08/9/2026, `THANG-9-2026-KINH-DOANH_DA_SUA_CONG_THUC.xlsx`): công thức là
+ * TỪNG DÒNG kéo tay, dừng ở một dòng cố định và mỗi cột một dòng khác nhau — `Shopee mall` E tới 417,
+ * F tới 418, M và N tới 402 (đơn mới tới dòng 96); `Offood` E 274, F 298, M và N 254 (đơn tới 57).
+ * Đối chiếu khối lượng tháng 8 (`Shopee mall` dùng tới dòng 516, `Offood` tới 269) thì cả hai vượt
+ * ngay trong tháng. Vì vậy phải đo THEO CỘT, không đo theo vùng dòng tổng.
+ *
+ * CHỊU ĐƯỢC CẢ HAI HÌNH DẠNG (chủ dự án có thể đổi sang ARRAYFORMULA sau này):
+ *   · đúng MỘT ô công thức, nằm ngay dòng đầu vùng dữ liệu → coi như phủ hết cột, không kêu;
+ *   · ngược lại → giới hạn là DÒNG CUỐI CÙNG còn công thức.
+ * Ngoại lệ của vế đầu: ô bọc `ARRAY_CONSTRAIN(…;1;1)` chỉ phủ đúng một dòng — dấu vết Google để lại
+ * khi chuyển công thức mảng của Excel sang Sheet (GV-v2.4 Phụ lục A.1).
+ *
+ * BẢN SAO CÓ CHỦ Ý của `KeyIn.doVungCongThuc` + `KeyIn.canhBaoVungCongThuc`: `KeyIn.gs` KHÔNG nằm
+ * trong 7 file dán lên Apps Script (xem `thuXuLyRong`), y như `doCotNote_` phải chép lại
+ * `KeyIn.cotNote`. Sửa câu chữ ở một bên thì phải sửa bên kia, nếu không nhật ký hai chế độ nói hai
+ * câu khác nhau cho cùng một việc và người vận hành không tra được.
+ *
+ * VÌ SAO ĐO Ở ĐÂY chứ không ở `docTuXa_`: hành động 'ghi' không đi qua `docTuXa_`. Đây là chỗ DUY NHẤT
+ * cả hai đường ('ghi' và 'xuLy') đều đi qua, lại biết đủ hai vế — dòng cuối thật (đọc trong khóa) và
+ * số dòng lô này sắp ghi.
+ *
+ * TUYỆT ĐỐI KHÔNG tự kéo dài, không tự sửa công thức của chủ shop (D-15). Chỉ nói ra để người ta làm.
+ */
+function canhBaoVungCongThuc_(sh, k, dongDonCuoi, dongCuoiMoi, canhBao, daDo) {
+  var ten = sh.getName();
+  if (daDo && daDo[ten]) return;                    // một lần chạy chỉ đo một lần cho mỗi sheet
+  if (daDo) daDo[ten] = 1;
+
+  var cot = (k.cot_cong_thuc || []).slice();
+  if (cot.indexOf(k.cot_doanh_thu) < 0) cot.push(k.cot_doanh_thu);
+  cot.sort(function (a, b) { return a - b; });
+
+  var het = sh.getLastRow();
+  var ng = Number(k.nguong_sap_het_cong_thuc);
+  if (isNaN(ng) || ng <= 0) ng = NGUONG_SAP_HET_CONG_THUC;
+
+  for (var i = 0; i < cot.length; i++) {
+    var c = cot[i];
+    var d = dongCuoiCongThuc_(sh, c, k.dong_dau, het);
+    // `d.dong === dong_dau` nghĩa là dưới nó không còn ô công thức nào, mà nó lại là dòng đầu vùng
+    // dữ liệu → cả cột chỉ có ĐÚNG MỘT ô công thức, nằm ở đầu cột. Đó là hình dạng ARRAYFORMULA phủ
+    // cả cột: bỏ qua, không có gì để cảnh báo.
+    if (d && d.dong === k.dong_dau && !/ARRAY_CONSTRAIN/i.test(d.text)) continue;
+
+    var dauCau = 'Vùng công thức sheet "' + ten + '" cột ' + Utils.chuCot(c) + ': ';
+    if (!d) {
+      canhBao.push(dauCau + 'KHÔNG CÒN CÔNG THỨC — từ dòng ' + k.dong_dau +
+        ' trở xuống không còn ô nào có công thức nên ' + (dongCuoiMoi - dongDonCuoi) +
+        ' dòng mới sẽ trống ở cột này. Vẫn ghi, không chặn: ' + VIEC_KEO_DAI_CONG_THUC + '.');
+      continue;
+    }
+    // Cột L thì `congThucCotL_` tự chép công thức xuống dòng mới nên không vượt vùng được; ca duy
+    // nhất đáng kêu ở cột này là "phía trên không còn công thức nào để chép", đã xử ngay bên trên.
+    if (c === k.cot_doanh_thu) continue;
+    if (dongCuoiMoi > d.dong) {
+      canhBao.push(dauCau + 'SẼ VƯỢT — công thức chỉ còn tới dòng ' + d.dong + ', lô này ghi tới dòng ' +
+        dongCuoiMoi + ' nên ' + (dongCuoiMoi - (d.dong > dongDonCuoi ? d.dong : dongDonCuoi)) +
+        ' dòng mới sẽ trống ở cột này. Vẫn ghi, không chặn: ' + VIEC_KEO_DAI_CONG_THUC + '.');
+    } else if (d.dong - dongCuoiMoi < ng) {
+      canhBao.push(dauCau + 'SẮP HẾT — công thức còn tới dòng ' + d.dong + ', đơn đã tới dòng ' +
+        dongCuoiMoi + ', còn dư ' + (d.dong - dongCuoiMoi) + ' dòng.');
+    }
+  }
+}
+
+/**
+ * Dòng CUỐI CÙNG còn công thức của một cột, dò ngược từ dòng cuối sheet lên — y hệt cách
+ * `congThucCotL_` đang dò công thức mẫu, và cố ý dùng `getFormulaR1C1` từng ô chứ không đọc cả khối:
+ * đây là bề mặt Apps Script mà mọi sheet giả của bộ test đều dựng đủ, nên bài test chạy đúng mã thật.
+ * @returns {{dong:number, text:string}|null}  null = cả cột không còn ô nào có công thức
+ */
+function dongCuoiCongThuc_(sh, cot, dongDau, dongCuoiSheet) {
+  for (var r = dongCuoiSheet; r >= dongDau; r--) {
+    var t = sh.getRange(r, cot).getFormulaR1C1();
+    if (t) return { dong: r, text: String(t) };
+  }
+  return null;
 }
 
 /** Nối tên hàng mới vào cuối sheet Mapping và tô vàng để người ta thấy mà điền. */
@@ -1052,7 +1158,7 @@ function hanhDongXuLy_(body, batDau) {
   try {
     var k = cfg.keyin;
     var tk = { donGhi: 0, donDaCo: 0, dongGhi: 0, dongVang: 0, donGopO: 0, mappingThem: 0 };
-    var viTri = {};
+    var viTri = {}, daDoVung = {};
 
     // Nối tên hàng mới vào Mapping TRƯỚC khi ghi đơn. Nếu hết giờ giữa chừng, các tên đó đã nằm sẵn
     // trong sheet, lần gọi sau đọc lại Mapping sẽ thấy có rồi và KHÔNG nối trùng (khóa chống trùng
@@ -1074,7 +1180,7 @@ function hanhDongXuLy_(body, batDau) {
         // Khối ĐẦU TIÊN của cả lần gọi luôn được chạy: nếu không, một lần gọi có thể trả về "chưa
         // làm gì" mãi mãi và phía máy tính quay vòng vô tận mà không tiến thêm ô nào.
         if (daLamViecGi && quaGioXuLy_(batDau, body.nguongGiay)) { conLai += khoiDS[j].length; continue; }
-        ghiMotSheet_(sh, khoiDS[j], k, tk, viTri, canhBao, thongBao);
+        ghiMotSheet_(sh, khoiDS[j], k, tk, viTri, canhBao, thongBao, daDoVung);
         daLamViecGi = true;
       }
       if (conLai) sheetConLai.push({ tenSheet: l.tenSheet, soDon: conLai });

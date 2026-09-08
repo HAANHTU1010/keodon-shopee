@@ -20,6 +20,12 @@
  *
  * Chọn đường: khóa `duong` trong `03_VAN_HANH/CAU_HINH_VAN_HANH.json` → `google_sheet.duong`.
  *
+ * CẢNH BÁO VÙNG CÔNG THỨC (GV-v2.4 mục 1.3 · bài T-48). File này KHÔNG gọi `KeyIn.gs` — nó dựng lệnh
+ * ghi thẳng — nên trước bản này chế độ Google không có một lời cảnh báo nào về việc ghi vượt vùng
+ * công thức E, F, M, N. Phép đo nay nằm ở `canhBaoVungCongThuc_` của `src/ShellAppsScript.gs` (đo
+ * ngay trước khi ghi, trong khóa), còn ở đây là hai việc của vỏ máy: GOM câu trùng giữa các lô
+ * (`gomCanhBaoVungCongThuc`) và IN ra màn hình ngay tại chỗ chạy (`inCanhBaoVungCongThuc`).
+ *
  * File tháng nào là đích thì do chính Web App quyết, tra bảng link trong sheet `Thông tin shop `
  * của file mỏ neo (GV-v2.3 mục 1). Máy này KHÔNG giữ id file tháng nào cả — 2-3 máy nhân viên mà
  * mỗi máy giữ một id là sớm muộn có máy ghi vào file tháng cũ.
@@ -101,6 +107,45 @@ function bangCuaSheet(lop, x, dongHeaderMongDoi) {
   return napVoGoogle(lop).bangCuaSheet_(x, dongHeaderMongDoi);
 }
 
+// ==================================================================== cảnh báo vùng công thức
+
+/**
+ * Gom câu cảnh báo vùng công thức E, F, M, N, L (GV-v2.4 mục 1.3 · bài T-48).
+ *
+ * Vỏ Google đo lại vùng công thức ở MỖI khối ghi (`canhBaoVungCongThuc_` trong `ghiMotSheet_`), mà một
+ * lần chạy có nhiều lô và có thể có nhiều lượt gọi tiếp, nên cùng một (sheet, cột) sẽ kêu vài lần.
+ * Giữ câu ĐẦU TIÊN của mỗi (sheet, cột): đó là câu đo trên file tháng lúc chưa ghi ô nào — cũng là
+ * câu mà đường 'ghi' và đường 'xuLy' nói giống hệt nhau dù hai đường chia lô khác nhau.
+ * Câu của mọi loại khác giữ nguyên, không đụng tới.
+ */
+function gomCanhBaoVungCongThuc(lop, ds) {
+  const khoaCua = (lop && lop.KeyIn && lop.KeyIn.khoaCanhBaoVungCongThuc) || null;
+  if (!khoaCua) return (ds || []).slice();
+  const daCo = {};
+  return (ds || []).filter((c) => {
+    const kh = khoaCua(c);
+    if (!kh) return true;
+    if (daCo[kh]) return false;
+    daCo[kh] = 1;
+    return true;
+  });
+}
+
+/**
+ * In cảnh báo vùng công thức ra MÀN HÌNH ngay tại chỗ chạy, không đợi bảng tóm tắt cuối.
+ *
+ * Đây là nửa việc mà chế độ Google còn thiếu hẳn: file này không gọi `KeyIn.gs`, nên trước bản này
+ * toàn bộ cơ chế cảnh báo vượt vùng công thức chỉ tồn tại ở chế độ Excel. Bật Google Sheet là mất sạch.
+ */
+function inCanhBaoVungCongThuc(lop, ds, in_) {
+  const khoaCua = (lop && lop.KeyIn && lop.KeyIn.khoaCanhBaoVungCongThuc) || null;
+  if (!khoaCua) return;
+  const cau = (ds || []).filter((c) => khoaCua(c));
+  if (!cau.length) return;
+  in_('  ! VÙNG CÔNG THỨC — việc của người, tool không tự sửa công thức của chủ shop:');
+  cau.forEach((c) => in_('    ! ' + c));
+}
+
 // ==================================================================== chạy thật
 
 /**
@@ -163,9 +208,11 @@ async function duongXuLy(web, tuyChon, thang, ngayGhi, in_) {
   });
 
   in_('File tháng: ' + (kq.tenFile || '(không rõ tên)') + ' · ' + kq.soLo + ' lô · ' + kq.soLanGoi + ' lượt gọi');
+  const canhBaoLo = gomCanhBaoVungCongThuc(tuyChon.lop, kq.canhBao);
+  inCanhBaoVungCongThuc(tuyChon.lop, canhBaoLo, in_);
   return {
     thongKe: kq.thongKe,
-    canhBao: (canhBaoCauHinh ? [canhBaoCauHinh] : []).concat(kq.canhBao),
+    canhBao: (canhBaoCauHinh ? [canhBaoCauHinh] : []).concat(canhBaoLo),
     thongBao: kq.thongBao,
     viTri: kq.viTri, tenFile: kq.tenFile, soLo: kq.soLo, soLanGoi: kq.soLanGoi,
     mapTomTat: kq.mapTomTat, duong: 'xuLy', daGhi: kq.thongKe.donGhi > 0
@@ -200,9 +247,11 @@ async function duongGhiCu(web, tuyChon, thang, ngayGhi, in_) {
 
   in_('Gửi lệnh ghi ' + goi.thongKe.donGhi + ' đơn (' + goi.thongKe.dongGhi + ' dòng) …');
   const kq = await web.ghi(thang, goi.lenh, goi.mappingThem);
+  const canhBaoLo = gomCanhBaoVungCongThuc(lop, goi.canhBao.concat(kq.canhBao || []));
+  inCanhBaoVungCongThuc(lop, canhBaoLo, in_);
   return {
     thongKe: Object.assign({}, goi.thongKe, { donDaCoTuXa: kq.thongKe.donDaCo, mappingThem: kq.thongKe.mappingThem }),
-    canhBao: goi.canhBao.concat(kq.canhBao || []),
+    canhBao: canhBaoLo,
     thongBao: kq.thongBao || [], viTri: kq.viTri || {}, tenFile: kq.tenFile, soLo: kq.soLo,
     mapTomTat: lop.MapListing.tomTat(goi.map), duong: 'ghi', daGhi: true
   };
@@ -222,5 +271,6 @@ function demDong(cacFile) {
 
 module.exports = {
   chayLenGoogleSheet, dungGoiGhi, bangCuaSheet, thangCua, ngayCua,
-  napVoGoogle, chuanDuong, demDon, demDong
+  napVoGoogle, chuanDuong, demDon, demDong,
+  gomCanhBaoVungCongThuc, inCanhBaoVungCongThuc
 };

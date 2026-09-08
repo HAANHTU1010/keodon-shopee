@@ -665,6 +665,136 @@ var TestSuite = (function () {
     phai(nhatKy(kq2).indexOf(TOM_TAT) >= 0, 'nhật ký cũng phải có dòng số liệu Mapping');
   }
 
+  // ------------------------------------------------------------------ vùng công thức E, F, M, N, L
+
+  /** Các câu cảnh báo vùng công thức trong kết quả một lần chạy (lọc theo khóa máy đọc được của KeyIn). */
+  function cauVungCongThuc(kq) {
+    return kq.canhBao.filter(function (c) { return KeyIn.khoaCanhBaoVungCongThuc(c) != null; });
+  }
+
+  /**
+   * T-48 (kế hoạch kiểm thử, mức CHẶN) và D-15 — CẢNH BÁO KHI SẮP GHI VƯỢT VÙNG CÔNG THỨC E, F, M, N.
+   *
+   * Đo trên file tháng 9 thật ngày 08/9/2026: mỗi cột dừng ở một dòng khác nhau (`Shopee mall` E 417,
+   * F 418, M và N 402; `Offood` E 274, F 298, M và N 254) trong khi đơn mới chỉ tới dòng 96 và 57.
+   * Đối chiếu khối lượng tháng 8 (516 và 269 dòng) thì cả hai vượt ngay trong tháng, và vượt rồi thì
+   * dòng mới trống trơn bốn cột Tên sản phẩm, Đơn vị, Mã hàng, Check tồn.
+   *
+   * Ba tình huống, chạy ở chế độ SHEET vì đó là chế độ tool KHÔNG được chạm E, F, M, N:
+   *   (a) còn dư nhiều  → im lặng, không kêu oan;
+   *   (b) còn dư dưới ngưỡng → VÀNG, nêu đúng tên sheet, đúng tên cột, đúng số dòng còn dư;
+   *   (c) lô này sẽ vượt → ĐỎ, VẪN GHI ĐỦ ĐƠN (không chặn), kèm đúng câu việc phải làm.
+   * D-15 cấm tự kéo dài / tự sửa công thức của chủ shop, nên bài này cũng kiểm bốn cột đó KHÔNG bị đụng.
+   */
+  function T34_canhBaoVuotVungCongThucBonCot() {
+    var SHEET = { chung: { che_do_cong_thuc: 'SHEET' } };
+    var COT = ['E', 'F', 'M', 'N'];
+
+    // (a) công thức tới dòng 400, ghi tới dòng 7 → còn dư 393 > 200 → không được kêu
+    var bcA = boiCanh({ cauHinh: SHEET, congThucToi: 400, dongTongToi: 2000 });
+    var kqA = chay(bcA, [file(bcA, [TestData.don({ maDon: 'VCTA000000001' })])]);
+    bang(kqA.donGhi, 1, '(a) vẫn ghi đơn');
+    bangMang(cauVungCongThuc(kqA), [], '(a) còn dư 393 dòng thì tuyệt đối không được kêu');
+
+    // (b) công thức tới dòng 100, ghi tới dòng 7 → còn dư 93 < 200 → VÀNG cho đúng 4 cột
+    var bcB = boiCanh({ cauHinh: SHEET, congThucToi: 100, dongTongToi: 2000 });
+    var kqB = chay(bcB, [file(bcB, [TestData.don({ maDon: 'VCTB000000001' })])]);
+    var vang = cauVungCongThuc(kqB);
+    bang(vang.length, 4, '(b) đúng 4 câu, một câu một cột E/F/M/N: ' + vang.join(' | '));
+    bangMang(vang.map(function (c) { return KeyIn.khoaCanhBaoVungCongThuc(c); }),
+      COT.map(function (c) { return 'Shopee mall|' + c; }), '(b) đúng tên sheet và đúng tên cột');
+    vang.forEach(function (c) {
+      phai(String(c).indexOf('SẮP HẾT') >= 0, '(b) phải là mức vàng: ' + c);
+      phai(String(c).indexOf('còn dư 93 dòng') >= 0, '(b) phải nêu ĐÚNG số dòng còn dư: ' + c);
+      phai(String(c).indexOf('dòng 100') >= 0, '(b) phải nêu đúng dòng cuối còn công thức: ' + c);
+    });
+    // cột L không nằm trong danh sách kêu: tool tự chép công thức xuống nên không vượt vùng được
+    phai(bcB.kho.o('Shopee mall', 7, 12).congThuc != null, '(b) cột L vẫn được kéo như thường');
+
+    // (c) công thức chỉ tới dòng 8, ghi 5 đơn xuống dòng 7–11 → ĐỎ, nhưng KHÔNG được chặn
+    var bcC = boiCanh({ cauHinh: SHEET, congThucToi: 8, dongTongToi: 2000 });
+    var dons = [];
+    for (var i = 1; i <= 5; i++) dons.push(TestData.don({ maDon: 'VCTC00000000' + i }));
+    var kqC = chay(bcC, [file(bcC, dons)]);
+    bang(kqC.donGhi, 5, '(c) SẼ VƯỢT vẫn phải ghi đủ 5 đơn — cảnh báo chứ không chặn');
+    bang(kqC.dongGhi, 5, '(c) đủ 5 dòng');
+    bang(bcC.kho.o('Shopee mall', 11, 3).gt, 'VCTC000000005', '(c) đơn cuối nằm đúng dòng 11');
+    var do_ = cauVungCongThuc(kqC);
+    bang(do_.length, 4, '(c) đúng 4 câu đỏ: ' + do_.join(' | '));
+    do_.forEach(function (c) {
+      phai(String(c).indexOf('SẼ VƯỢT') >= 0, '(c) phải là mức đỏ: ' + c);
+      phai(String(c).indexOf('lô này ghi tới dòng 11') >= 0, '(c) nêu đúng dòng lô này ghi tới: ' + c);
+      phai(String(c).indexOf('Vẫn ghi, không chặn') >= 0, '(c) nói rõ là không chặn: ' + c);
+      phai(String(c).indexOf(KeyIn.VIEC_KEO_DAI_CONG_THUC) >= 0, '(c) thiếu câu việc phải làm: ' + c);
+    });
+    // D-15: cảnh báo thì cảnh báo, tuyệt đối không tự kéo dài công thức của chủ shop
+    COT.forEach(function (ch) {
+      var c = Utils.chiSoCot(ch);
+      [9, 10, 11].forEach(function (r) {
+        bang(bcC.kho.o('Shopee mall', r, c).congThuc, null, ch + r + ': không được tự kéo dài công thức');
+        bang(bcC.kho.o('Shopee mall', r, c).gt, null, ch + r + ': không được ghi giá trị');
+      });
+    });
+    return { ghiChu: '4 cột × 3 tình huống · câu đỏ: ' + do_[0] };
+  }
+
+  /**
+   * Phép đo phải chịu được CẢ HAI hình dạng công thức, không khóa cứng vào hình dạng đo được hôm nay:
+   * chủ dự án có thể đổi E, F, M, N sang ARRAYFORMULA bất cứ lúc nào.
+   *   · công thức TỪNG DÒNG (hình dạng thật hiện nay) → giới hạn là dòng cuối cùng còn công thức;
+   *   · ARRAYFORMULA một ô ở đầu cột → coi như phủ hết cột, không kêu;
+   *   · một ô ở đầu cột nhưng bọc `ARRAY_CONSTRAIN(…;1;1)` → vẫn là công thức TỪNG DÒNG, chỉ phủ 1 dòng
+   *     (dấu vết Google để lại khi chuyển công thức mảng của Excel sang Sheet — GV-v2.4 Phụ lục A.1).
+   */
+  function T35_doVungCongThucChiuHaiHinhDang() {
+    var CT = "INDEX('Tổng tồn kho'!$C$3:$G$482, MATCH($D4,'Tổng tồn kho'!$D$3:$D$482,0),1)";
+    var AF = 'ARRAYFORMULA(IF($D$4:$D="","",INDEX(...)))';
+    var AC = 'ARRAY_CONSTRAIN(ARRAYFORMULA(INDEX(...MATCH(M4...))), 1, 1)';
+
+    var a = KeyIn.doVungCongThuc([CT, CT, CT, '', ''], 4);          // từng dòng, kéo tới dòng 6
+    bang(a.gioiHan, 6, 'từng dòng: giới hạn là dòng cuối còn công thức');
+    bang(a.so, 3, 'đếm đúng số ô công thức');
+    bang(a.phuHet, false, 'từng dòng thì không phủ hết cột');
+
+    var b = KeyIn.doVungCongThuc([AF, '', '', ''], 4);              // ARRAYFORMULA một ô ở đầu cột
+    bang(b.phuHet, true, 'một ô ở đầu cột → coi như phủ hết cột');
+    bang(b.gioiHan, null, 'phủ hết thì không có giới hạn để kêu');
+
+    var c = KeyIn.doVungCongThuc([AC, '', '', ''], 4);              // một ô nhưng bọc ARRAY_CONSTRAIN
+    bang(c.phuHet, false, 'ARRAY_CONSTRAIN(…;1;1) chỉ phủ đúng một dòng, không phải ARRAYFORMULA tràn');
+    bang(c.gioiHan, 4, 'giới hạn đúng bằng dòng của ô đó');
+
+    var d = KeyIn.doVungCongThuc(['', '', ''], 4);                  // bị xóa sạch (Phụ lục A.3)
+    bang(d.so, 0, 'không còn ô nào có công thức');
+    bang(d.gioiHan, null, 'không đo được giới hạn');
+    bang(d.phuHet, false, 'trống rỗng không phải là phủ hết');
+
+    var e = KeyIn.doVungCongThuc([CT, '', CT, ''], 4);              // thủng giữa chừng
+    bang(e.gioiHan, 6, 'thủng giữa vẫn lấy dòng cuối cùng còn công thức');
+    bang(e.dongDau, 4, 'nhớ cả dòng đầu tiên còn công thức');
+
+    var f = KeyIn.doVungCongThuc(['', AF, ''], 4);                  // một ô nhưng KHÔNG ở đầu cột
+    bang(f.phuHet, false, 'một ô nằm giữa chừng thì không suy ra được là phủ hết');
+    bang(f.gioiHan, 5, 'giới hạn là chính dòng đó');
+
+    // đo theo CỘT trên ảnh chụp sheet: 5 cột, mỗi cột một con số riêng
+    var bc = boiCanh({ congThucToi: 8 });
+    var ss = bc.kho.docSheet('Shopee mall');
+    var ds = KeyIn.vungCongThuc(ss, bc.cfg.keyin);
+    bangMang(ds.map(function (x) { return Utils.chuCot(x.cot); }), ['E', 'F', 'L', 'M', 'N'], 'đo đủ 5 cột');
+    ds.forEach(function (x) { bang(x.gioiHan, 8, 'cột ' + Utils.chuCot(x.cot) + ': công thức kéo tới dòng 8'); });
+
+    // đổi cột E sang hình dạng ARRAYFORMULA một ô → cột đó thôi kêu, bốn cột kia vẫn kêu như cũ
+    var bc2 = boiCanh({ cauHinh: { chung: { che_do_cong_thuc: 'SHEET' } }, congThucToi: 8, dongTongToi: 2000 });
+    var s2 = bc2.kho.sheets['Shopee mall'];
+    for (var r = 5; r <= 8; r++) s2.congThuc[r - 1][4] = null;      // xóa E5..E8
+    s2.congThuc[3][4] = AF;                                        // E4 = ARRAYFORMULA một ô
+    var kq2 = chay(bc2, [file(bc2, [TestData.don({ maDon: 'HDANG0000001' }), TestData.don({ maDon: 'HDANG0000002' })])]);
+    bangMang(cauVungCongThuc(kq2).map(function (x) { return KeyIn.khoaCanhBaoVungCongThuc(x); }),
+      ['Shopee mall|F', 'Shopee mall|M', 'Shopee mall|N'], 'cột E hình ARRAYFORMULA thì không kêu, ba cột kia vẫn kêu');
+    bang(kq2.donGhi, 2, 'vẫn ghi đủ đơn');
+  }
+
   var DANH_SACH = [
     ['T-01', 'Chống trùng: chạy 3 lần ra một kết quả', T01_chongTrungChay3Lan],
     ['T-02', 'Tự nhận loại file: tab "Tất cả" bỏ đơn hủy/hoàn, tab "Chờ lấy hàng" xử lý hết', T02_tuNhanLoaiFile],
@@ -698,7 +828,9 @@ var TestSuite = (function () {
     ['T-30', 'Nạp file 900 dòng: đúng số, gộp 300 đơn, dưới 6 phút', T30_file900Dong],
     ['T-31', 'File hỏng không làm hỏng file khác; file lỗi sang LOI', T31_fileHongKhongLamHongFileKhac],
     ['T-32', 'D-06: Mapping chưa ai ghi CÓ → vẫn ghi đủ đơn, toàn dòng vàng, nhưng cảnh báo ĐẦU TIÊN nói thẳng kết quả chưa dùng được', T32_mappingChuaAiTickVanGhiNhungNoiThang],
-    ['T-33', 'Dòng vàng trên 50% cũng kêu đúng tỷ lệ; số liệu Mapping hiện ra mọi lần chạy', T33_nguongDongVangVaSoLieuMappingLuonHien]
+    ['T-33', 'Dòng vàng trên 50% cũng kêu đúng tỷ lệ; số liệu Mapping hiện ra mọi lần chạy', T33_nguongDongVangVaSoLieuMappingLuonHien],
+    ['T-34', 'T-48/D-15: cảnh báo vùng công thức E, F, M, N — dư nhiều im lặng · dư ít vàng · sẽ vượt đỏ mà vẫn ghi đủ đơn', T34_canhBaoVuotVungCongThucBonCot],
+    ['T-35', 'Đo vùng công thức chịu được cả hai hình dạng: từng dòng · ARRAYFORMULA một ô · ARRAY_CONSTRAIN', T35_doVungCongThucChiuHaiHinhDang]
   ];
 
   function chayTatCa() {
