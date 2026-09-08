@@ -6,7 +6,7 @@
  *   2. Phần dưới đây — các bất biến BẮT BUỘC phải có file thật hoặc phải quét mã nguồn:
  *        INV-5  băm file gốc trước/sau một lần chạy thật
  *        INV-7  quét log và mã nguồn tìm chuỗi bí mật, URL Web App
- *        INV-9  băm thư mục `src/tests/` để BA đối chiếu giữa các đợt
+ *        INV-9  băm `src/tests/` trên đĩa so với băm đã commit, nêu đích danh file test đã đổi
  *        INV-10 không đọc quá cột C và không đọc trên dòng 8 của sheet `Thông tin shop `
  *
  * Chạy: `node node/test-bat-bien.js`. Thoát mã 1 nếu có bất biến bị vi phạm.
@@ -15,6 +15,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const { execFileSync } = require('child_process');
 const { napLoi, SRC } = require('./nap-loi');
 const { KhoTracking, duongDanOut, docBangXlsx, TEN_SHEET_MAPPING } = require('./kho-tracking');
 const { NguonThuMuc } = require('./nguon-thu-muc');
@@ -151,22 +152,90 @@ test('INV-10', 'Sheet `Thông tin shop ` chỉ được đọc cột A, B, C và
 
 // ---------------------------------------------------------------- INV-9
 
-test('INV-9', 'Băm thư mục `src/tests/` để BA đối chiếu giữa các đợt (không sửa test để cho qua)', async () => {
+/**
+ * Chạy một lệnh git ngay trong thư mục mã. Ném lỗi nếu máy không có git hoặc lệnh trả mã khác 0.
+ * stderr hứng vào ống riêng để chữ đỏ của git không lẫn vào bảng kết quả test.
+ */
+function chayGit() {
+  const thamSo = Array.prototype.slice.call(arguments);
+  return execFileSync('git', thamSo, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }).trim();
+}
+
+/**
+ * Có git, có repo, và repo đã có ít nhất một commit chưa?
+ * Trả `null` nếu đủ điều kiện để so. Trả LÝ DO BẰNG CHỮ nếu thiếu, để bài test bỏ qua chứ không báo đạt giả:
+ * kế hoạch kiểm thử tính test bỏ qua mà không nêu lý do là test hỏng.
+ */
+function lyDoKhongSoDuocVoiCommit() {
+  try { chayGit('--version'); } catch (e) { return 'máy chưa cài git nên không có mốc commit nào để so'; }
+  try { chayGit('rev-parse', '--git-dir'); } catch (e) { return 'thư mục mã chưa phải một repo git nên không có mốc commit nào để so'; }
+  try { chayGit('rev-parse', '--verify', 'HEAD'); } catch (e) { return 'repo git chưa có commit nào nên chưa có mốc để so'; }
+  return null;
+}
+
+test('INV-9', 'Không sửa test để cho qua: băm src/tests/ trên đĩa đối chiếu băm đã commit, nêu đích danh file đã đổi', async () => {
+  // VÌ SAO BÀI NÀY TỒN TẠI: một bộ test chỉ đáng tin chừng nào không ai lặng lẽ sửa nó cho vừa với mã.
+  // Bản trước của bài này chỉ in băm rồi khẳng định "có ít nhất 4 file test", tức là tự nó KHÔNG phát
+  // hiện được gì; bảng băm chỉ có nghĩa khi BA chịu khó so tay giữa hai đợt.
+  // Sửa test là việc bình thường của dev, nên KHÁC COMMIT KHÔNG PHẢI LÀ HỎNG. Nhiệm vụ của bài này là
+  // gọi đúng tên file đã đổi để BA đối chiếu với mục 5 của báo cáo. Im lặng mới là hỏng.
   const thu = path.join(SRC, 'tests');
+  phai(fs.existsSync(thu) && fs.statSync(thu).isDirectory(), 'không thấy thư mục src/tests/, bộ test bất biến không còn chỗ đứng');
   const ds = fs.readdirSync(thu).filter((f) => /\.gs$/i.test(f)).sort();
-  const dong = [];
+
+  // Bảng băm sha256 giữ nguyên như các đợt trước, BA đang dùng nó để đối chiếu bằng mắt.
   const gop = crypto.createHash('sha256');
+  const bangBam = [];
   for (const f of ds) {
     const b = bam(path.join(thu, f));
     gop.update(f + ':' + b);
-    dong.push('    ' + f.padEnd(22) + ' ' + b.slice(0, 16) + '…');
+    bangBam.push('    ' + f.padEnd(22) + ' ' + b.slice(0, 16) + '…');
   }
   console.log('  Băm từng file test:');
-  dong.forEach((d) => console.log(d));
+  bangBam.forEach((d) => console.log(d));
   console.log('    ' + 'TỔNG THỂ'.padEnd(22) + ' ' + gop.digest('hex').slice(0, 16) + '…');
   phai(ds.length >= 4, 'phải có ít nhất 4 file test, thấy ' + ds.length);
-  return ds.length + ' file test trong src/tests/ đã băm — BA giữ bảng này để so đợt sau';
+
+  const lyDo = lyDoKhongSoDuocVoiCommit();
+  if (lyDo) {
+    console.log('  Không so được với commit: ' + lyDo);
+    return { boQua: true, lyDo: lyDo + '. Mới in được bảng băm ' + ds.length + ' file, chưa khẳng định được test có bị sửa hay không' };
+  }
+
+  // Băm ĐÃ COMMIT lấy bằng `git ls-tree`, băm TRÊN ĐĨA lấy bằng `git hash-object`. Cố ý dùng cùng một
+  // cách băm của git cho cả hai vế: .gitattributes đang chuẩn hóa xuống dòng về LF, nên đem sha256 thô
+  // của byte trên đĩa so với blob trong commit sẽ báo "đổi cả 5 file" trên máy Windows dù không ai sửa gì.
+  const dauCommit = chayGit('rev-parse', '--short', 'HEAD');
+  const ngayCommit = chayGit('log', '-1', '--format=%cd', '--date=format:%Y-%m-%d %H:%M');
+  const bamCommit = {};
+  for (const d of chayGit('ls-tree', 'HEAD', '--', 'src/tests/').split('\n')) {
+    const m = d.match(/^\d+ blob ([0-9a-f]{40})\t(.+)$/);
+    if (m) bamCommit[path.posix.basename(m[2])] = m[1];
+  }
+
+  const daDoi = [], themMoi = [], daXoa = [], bangSo = [];
+  for (const f of ds) {
+    const tren = chayGit('hash-object', '--', 'src/tests/' + f);
+    const trong = bamCommit[f];
+    if (!trong) { themMoi.push(f); bangSo.push('    ' + f.padEnd(22) + ' THÊM MỚI, commit chưa có file này'); continue; }
+    if (trong === tren) { bangSo.push('    ' + f.padEnd(22) + ' giống commit'); continue; }
+    daDoi.push(f);
+    bangSo.push('    ' + f.padEnd(22) + ' ĐÃ ĐỔI: commit ' + trong.slice(0, 12) + '… → đĩa ' + tren.slice(0, 12) + '…');
+  }
+  for (const f of Object.keys(bamCommit).sort()) {
+    if (ds.indexOf(f) < 0) { daXoa.push(f); bangSo.push('    ' + f.padEnd(22) + ' ĐÃ XÓA khỏi đĩa, commit vẫn còn'); }
+  }
+  console.log('  So với commit gần nhất ' + dauCommit + ' (' + ngayCommit + '):');
+  bangSo.forEach((d) => console.log(d));
+
+  const soKhac = daDoi.length + themMoi.length + daXoa.length;
+  if (!soKhac)
+    return ds.length + ' file test giống hệt commit ' + dauCommit + ' (' + ngayCommit + '), không ai đụng vào test trong đợt này';
+  const ten = daDoi.concat(themMoi.map((f) => f + ' (mới)')).concat(daXoa.map((f) => f + ' (đã xóa)'));
+  return ds.length + ' file test, ' + soKhac + ' file khác commit ' + dauCommit + ': ' + ten.join(', ') +
+    '. Khác commit KHÔNG phải lỗi, nhưng BA phải thấy đúng các file này ở mục 5 báo cáo';
 });
+
 
 // ---------------------------------------------------------------- chạy
 
@@ -184,8 +253,11 @@ async function chayTatCa() {
   // phần cần file thật
   for (const t of TESTS) {
     try {
-      const ghiChu = await t.fn();
-      kq.push({ ma: t.ma, ten: t.ten, dat: true, ghiChu: ghiChu || '' });
+      const r = await t.fn();
+      // Bài test trả `{ boQua, lyDo }` khi thiếu điều kiện chạy (INV-9 lúc máy chưa cài git). Cùng quy ước
+      // với TestBatBien.gs. Bỏ qua PHẢI kèm lý do bằng chữ, bỏ qua không lý do bị tính là test hỏng.
+      if (r && typeof r === 'object' && r.boQua) kq.push({ ma: t.ma, ten: t.ten, dat: false, boQua: true, ghiChu: r.lyDo || '' });
+      else kq.push({ ma: t.ma, ten: t.ten, dat: true, ghiChu: r || '' });
     } catch (e) {
       kq.push({ ma: t.ma, ten: t.ten, dat: false, loi: e && e.message ? e.message : String(e) });
     }

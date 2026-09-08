@@ -404,11 +404,13 @@ function doPost(e) {
   var hd = String(body.hanhDong || '').trim().toLowerCase();
   var mongDoi = body.phienBanMongDoi == null ? '' : String(body.phienBanMongDoi);
 
-  // Lệch bản thì TỪ CHỐI GHI. Chỉ chặn nhánh 'ghi': 'ping' và 'doc' phải chạy được để người ta
-  // nhìn thấy con số lệch mà đi triển khai lại, chặn luôn cả hai thì chỉ còn lỗi "không gọi được".
-  // Chiều ngược lại (Google đang chạy bản CŨ, chưa có đoạn này) do phía máy tính bắt: nó so
-  // `phienBan` trong phản hồi trước khi gửi lệnh ghi — bản cũ không trả trường đó là đủ để dừng.
-  if (hd === 'ghi' && mongDoi && mongDoi !== PHIEN_BAN) {
+  // Lệch bản thì TỪ CHỐI GHI. Chặn cả hai nhánh có ghi ('ghi' và 'xuLy'); 'ping' và 'doc' phải chạy
+  // được để người ta nhìn thấy con số lệch mà đi triển khai lại, chặn luôn cả hai thì chỉ còn lỗi
+  // "không gọi được". Chiều ngược lại (Google đang chạy bản CŨ, chưa có đoạn này) do phía máy tính bắt:
+  // nó so `phienBan` trong phản hồi trước khi gửi lệnh ghi — bản cũ không trả trường đó là đủ để dừng.
+  // Với 'xuLy' còn một chiều nữa: bản cũ không biết hành động này nên trả HANH_DONG_LA, phía máy tính
+  // dịch mã đó thành đúng câu "hãy Deploy lại" chứ không im lặng coi như đã ghi.
+  if ((hd === 'ghi' || hd === 'xuly') && mongDoi && mongDoi !== PHIEN_BAN) {
     return traLoi_({ ok: false, loi: 'LECH_PHIEN_BAN', thongBao: thongBaoLechPhienBan_(PHIEN_BAN, mongDoi) });
   }
 
@@ -422,7 +424,8 @@ function doPost(e) {
     }
     if (hd === 'doc') return traLoi_(hanhDongDoc_(body, batDau));
     if (hd === 'ghi') return traLoi_(hanhDongGhi_(body, batDau));
-    return traLoi_({ ok: false, loi: 'HANH_DONG_LA', thongBao: 'hanhDong = "' + hd + '"; chỉ nhận: ping, doc, ghi' });
+    if (hd === 'xuly') return traLoi_(hanhDongXuLy_(body, batDau));
+    return traLoi_({ ok: false, loi: 'HANH_DONG_LA', thongBao: 'hanhDong = "' + hd + '"; chỉ nhận: ping, doc, ghi, xuLy' });
   } catch (err) {
     return traLoi_({ ok: false, loi: 'NGOAI_LE', thongBao: String(err && err.message ? err.message : err) });
   }
@@ -440,12 +443,26 @@ function hanhDongDoc_(body, batDau) {
   var thang = chuanHoaThang_(body.thang) || thangHienTai_();
   var f = fileCuaThang_(thang);
   var ss = SpreadsheetApp.openById(f.fileId);
-  var k = cfg.keyin;
   var canhBao = [];
 
   var tenSheets = (body.sheets && body.sheets.length) ? body.sheets
     : Object.keys(cfg.gianHang).map(function (m) { return cfg.gianHang[m].sheet; });
 
+  var tuXa = docTuXa_(ss, cfg, tenSheets, thang, canhBao);
+  return {
+    ok: true, hanhDong: 'doc', thang: thang, fileId: f.fileId, tenFile: ss.getName(),
+    sheets: tuXa.sheets, mapping: tuXa.mapping, tonKho: tuXa.tonKho,
+    canhBao: canhBao, giay: (new Date().getTime() - batDau) / 1000
+  };
+}
+
+/**
+ * Ba thứ lớp 2 cần trước khi tính được gì: mã đơn ĐÃ CÓ trên từng sheet gian hàng, sheet Mapping,
+ * sheet tồn kho. Tách riêng để hành động 'doc' (máy tự tính) và hành động 'xuLy' (script tự tính)
+ * dùng CHUNG một hàm — hai đường mà đọc bằng hai đoạn mã khác nhau là sớm muộn lệch nhau một chỗ.
+ */
+function docTuXa_(ss, cfg, tenSheets, thang, canhBao) {
+  var k = cfg.keyin;
   var sheets = {};
   tenSheets.forEach(function (ten) {
     var sh = ss.getSheetByName(ten);
@@ -469,22 +486,29 @@ function hanhDongDoc_(body, batDau) {
       maDon: maDon
     };
   });
-
-  return {
-    ok: true, hanhDong: 'doc', thang: thang, fileId: f.fileId, tenFile: ss.getName(),
-    sheets: sheets,
-    mapping: docBangMapping_(ss, canhBao),
-    tonKho: docTonKho_(ss, cfg, canhBao),
-    canhBao: canhBao, giay: (new Date().getTime() - batDau) / 1000
-  };
+  return { sheets: sheets, mapping: docBangMapping_(ss, canhBao), tonKho: docTonKho_(ss, cfg, canhBao) };
 }
 
-/** Cột Note = cột trống đầu tiên bên phải tiêu đề cuối cùng (GV-v2.2 mục 1.4). */
+/**
+ * Cột Note = cột đã mang tiêu đề `Note` từ lần chạy trước; chưa có thì là cột trống đầu tiên bên phải
+ * tiêu đề cuối cùng (GV-v2.2 mục 1.4). Luật này chép đúng `KeyIn.cotNote` để hai vỏ không lệch nhau.
+ *
+ * TRIỆU CHỨNG khi thiếu vế đầu (đo được 08/9/2026 khi so hai đường ghi trên 401 đơn thật): lần ghi
+ * thứ nhất đặt tiêu đề `Note` vào cột P, lần ghi thứ hai thấy P đã có tiêu đề nên coi P là "cột cuối
+ * cùng có tiêu đề" và nhảy sang Q, lần thứ ba sang R… Mỗi lô, mỗi lần chạy lại đẻ thêm một cột Note
+ * mới trong sheet của chủ shop, còn ghi chú của các dòng vàng thì nằm rải ra bốn năm cột khác nhau.
+ * Lỗi này có sẵn từ bản 2.3.0 và trúng cả hành động 'ghi' cũ (từ lô thứ hai trở đi), không riêng 'xuLy'.
+ */
 function doCotNote_(sh, k) {
   var het = Math.max(sh.getLastColumn(), k.cot_doanh_thu);
   var tieuDe = sh.getRange(k.dong_header, 1, 1, het).getDisplayValues()[0];
   var cuoi = 0;
-  for (var i = 0; i < tieuDe.length; i++) if (String(tieuDe[i] || '').trim()) cuoi = i + 1;
+  for (var i = 0; i < tieuDe.length; i++) {
+    var v = String(tieuDe[i] == null ? '' : tieuDe[i]).trim();
+    if (!v) continue;
+    if (v === String(k.tieu_de_note)) return i + 1;     // đã có cột Note từ lần chạy trước
+    cuoi = i + 1;
+  }
   return cuoi + 1;
 }
 
@@ -780,6 +804,288 @@ function themDongMapping_(ss, dong, canhBao) {
   return bang.length;
 }
 
+// ==================================================================== hành động XỬ LÝ (lớp 2 + lớp 3 + ghi)
+//
+// Toàn bộ khối này là phần được CHUYỂN TỪ MÁY NHÂN VIÊN SANG ĐÂY. Trước đây `node/chay-google-sheet.js`
+// gọi `doc`, tự chạy lớp 2 và lớp 3 rồi mới gọi `ghi` — nghĩa là mỗi lần sửa cách tính thuế, cách chọn
+// lô hay cách gộp ô đều phải đi cập nhật từng máy. Từ bản 2.4.0, máy chỉ gửi bảng dòng đã qua lớp 1.
+//
+// `dungKeHoachGhi_` là HÀM THUẦN: không gọi SpreadsheetApp, không đọc đồng hồ, không đọc thuộc tính.
+// Cùng dữ liệu vào thì cùng kế hoạch ra. Nhờ vậy `node/chay-google-sheet.js` gọi được CHÍNH hàm này
+// cho đường 'ghi' cũ — hai đường dùng chung một lõi, không phải hai bản chép tay dễ lệch nhau.
+
+/**
+ * Đổi {header, dong} của một sheet phụ thành bảng 2 chiều mà lõi đọc được (dòng đầu là tiêu đề).
+ * Lõi đọc danh mục theo `cfg.danhMuc.dong_header` nên phải chèn lại đúng số dòng trống phía trên,
+ * nếu không `DanhMuc.doc` bắt đầu đọc lệch một dòng và mất mặt hàng đầu bảng.
+ */
+function bangCuaSheet_(x, dongHeaderMongDoi) {
+  if (!x) return null;
+  var bang = [x.header || []];
+  var chen = Math.max(0, (dongHeaderMongDoi || 1) - 1);
+  for (var i = 0; i < chen; i++) bang.unshift([]);
+  (x.dong || []).forEach(function (d) { bang.push(d); });
+  return bang;
+}
+
+/**
+ * Đổi kết quả của lõi (Normalize.xuLy → don[]) thành lệnh ghi.
+ * Giữ nguyên hình dạng dữ liệu mà `KeyIn.gs` dùng, chỉ bỏ những gì tầng ghi không cần.
+ */
+function lenhTuDon_(tenSheet, donDS, ngayGhi) {
+  return {
+    tenSheet: tenSheet,
+    don: (donDS || []).map(function (d) {
+      return {
+        maDon: String(d.maDon),
+        ngay: ngayGhi || null,
+        tien: { H: d.tien.H, I: d.tien.I, J: d.tien.J, K: d.tien.K },
+        // Tô vàng khi chưa nhận ra mã (lyDo) HOẶC ghép được nhưng có điều cần biết, ví dụ tồn 0.
+        // Đúng một luật với KeyIn.gs để hai vỏ không lệch nhau.
+        dong: (d.dong || []).map(function (x) {
+          return {
+            tenVietTat: x.tenVietTat || '',
+            soLuong: x.soLuong,
+            vang: !!(x.lyDo || x.ghiChu),
+            note: x.ghiChu || ''
+          };
+        })
+      };
+    })
+  };
+}
+
+/**
+ * LỚP 2 + LỚP 3 — hàm thuần, không chạm Google.
+ *
+ * @param {Object} cfg      cấu hình đã chuẩn hóa
+ * @param {Array}  cacFile  [{ maGianHang, tenFile, dong }] — kết quả lớp 1 của từng file xuất
+ * @param {Object} tuXa     { sheets, mapping, tonKho } — ảnh chụp file tháng (docTuXa_ hoặc hành động 'doc')
+ * @param {Object} tuyChon  { ngayGhi }
+ * @returns { lenh, mappingThem, thongKe, canhBao, map }
+ */
+function dungKeHoachGhi_(cfg, cacFile, tuXa, tuyChon) {
+  var tc = tuyChon || {};
+  var canhBao = [];
+
+  // ---- lớp 2: danh mục kho + Mapping ----
+  var dm = DanhMuc.doc(bangCuaSheet_(tuXa.tonKho, cfg.danhMuc.dong_header), cfg.danhMuc);
+  if (!dm.soDong) throw new Error('Sheet "' + cfg.danhMuc.ten_sheet + '" trên Google Sheet không đọc được dòng danh mục nào ' +
+    '(cột tên viết tắt trống?) — dừng, vì chạy tiếp thì mọi đơn đều bị tô vàng oan.');
+  if (!dm.soCoTon) {
+    canhBao.push('Sheet "' + cfg.danhMuc.ten_sheet + '" không đọc được cột Tổng tồn → quy tắc chọn lô theo tồn tạm lấy mã đầu tiên');
+  }
+  var bangMap = tuXa.mapping ? bangCuaSheet_(tuXa.mapping, 1) : null;
+  if (!bangMap) throw new Error('File tháng trên Google Sheet chưa có sheet "Mapping sản phẩm" — tạo sheet đó rồi chạy lại');
+  var map = MapListing.docBang(bangMap, dm, cfg);
+  map.canhBao.forEach(function (c) { canhBao.push(c); });
+
+  // LƯỢT GỌI TIẾP SAU KHI HẾT GIỜ (chỉ đường 'xuLy' dùng tới).
+  // Triệu chứng nếu bỏ đoạn này, đo được 08/9/2026 trên 402 đơn thật: chạy một hơi và chạy làm 5 lượt
+  // cho ra hai file lệch nhau ĐÚNG MỘT Ô ở cột Note. Vì lượt trước vừa nối tên hàng mới vào Mapping,
+  // lượt sau đọc lại sheet thấy dòng đó đã có (chưa ai điền) nên xếp là "chưa điền Tên viết tắt"
+  // thay vì "tên hàng mới". Cùng nghĩa, cùng dòng vàng, nhưng khác chữ — mà khác chữ là chia lô đã
+  // đổi kết quả, và lúc đó không ai dám khẳng định chia lô là vô hại nữa.
+  if (tc.tenMoiTruocDo && tc.tenMoiTruocDo.length) {
+    var truocDo = {};
+    tc.tenMoiTruocDo.forEach(function (x) { truocDo[x] = 1; });
+    map.dong.forEach(function (d) { if (!d.__muc && truocDo[d.__khoa]) d.__lyDo = 'TEN_MOI'; });
+  }
+
+  // ---- lớp 2: từng file — bổ sung tên mới vào Mapping rồi gom dòng thành đơn ----
+  var tatCaDon = [], tenMoi = 0;
+  (cacFile || []).forEach(function (f) {
+    var gh = Config.gianHang(cfg, f.maGianHang);
+    tenMoi += MapListing.boSungTenMoi(map, f.dong, gh.ten, tc.ngayGhi || null, f.tenFile).length;
+    var n = Normalize.xuLy(f.dong, map, cfg);
+    n.canhBao.forEach(function (c) { canhBao.push(c); });
+    n.don.forEach(function (d) { d.ngayGhi = tc.ngayGhi || null; d.tenGianHienThi = gh.ten; tatCaDon.push(d); });
+  });
+
+  // ---- KHỬ TRÙNG TẦNG 1: theo mã đơn đọc được lúc chụp ảnh file tháng ----
+  // Tầng 2 nằm trong `ghiMotSheet_`, đọc lại cột mã đơn bên trong LockService ngay trước khi ghi.
+  // Phải có đủ hai tầng: danh sách dưới đây chụp TRƯỚC khi lấy khóa, tới lúc ghi thì máy khác có thể
+  // đã nối thêm đơn. Không tin một tầng. (Đường 'xuLy' vẫn giữ đúng hai tầng đó, chỉ khác là cả hai
+  // tầng nay cùng nằm trên Google — tầng 1 ngoài khóa, tầng 2 trong khóa.)
+  var thongKe = { donGhi: 0, donDaCo: 0, donTrungTrongGoi: 0, dongGhi: 0, dongVang: 0, donGopO: 0, tenMoi: tenMoi };
+  var theoSheet = {}, thuTuSheet = [], daNhan = {};
+  tatCaDon.forEach(function (don) {
+    var gh = Config.gianHang(cfg, don.maGianHang);
+    var ss = tuXa.sheets && tuXa.sheets[gh.sheet];
+    if (!ss) {
+      canhBao.push('File tháng trên Google Sheet không có sheet "' + gh.sheet + '" → bỏ qua đơn ' + don.maDon);
+      return;
+    }
+    if (ss.maDon && ss.maDon[String(don.maDon)] != null) { thongKe.donDaCo++; return; }
+    // D-16: cùng một mã đơn nằm trong HAI file xuất thả cùng lượt (ví dụ file "Chờ lấy hàng" và
+    // file "Tất cả" của cùng gian hàng) — chưa có trên Sheet nên tầng trên không bắt được, phải
+    // chặn ở đây. Khoá gồm cả tên sheet vì T-29: hai gian hàng được phép trùng mã đơn.
+    var khoa = gh.sheet + ' ' + String(don.maDon);
+    if (daNhan[khoa]) {
+      thongKe.donTrungTrongGoi++;
+      canhBao.push('Đơn ' + don.maDon + ' xuất hiện nhiều lần trong lượt này → chỉ ghi một lần');
+      return;
+    }
+    daNhan[khoa] = 1;
+    if (!theoSheet[gh.sheet]) { theoSheet[gh.sheet] = []; thuTuSheet.push(gh.sheet); }
+    theoSheet[gh.sheet].push(don);
+    thongKe.donGhi++;
+    thongKe.dongGhi += don.dong.length;
+    thongKe.dongVang += don.dong.filter(function (x) { return x.lyDo || x.ghiChu; }).length;   // cùng luật với KeyIn.gs
+    if (don.dong.length > 1) thongKe.donGopO++;
+  });
+
+  var lenh = thuTuSheet.map(function (ten) { return lenhTuDon_(ten, theoSheet[ten], tc.ngayGhi || null); });
+  var mappingThem = map.soThem > 0 ? MapListing.sangBang(map).slice(-map.soThem) : [];
+  var khoaTenMoi = (map.tenMoi || []).map(function (d) { return d.__khoa; });
+  return {
+    lenh: lenh, mappingThem: mappingThem, thongKe: thongKe, canhBao: canhBao, map: map,
+    khoaTenMoi: khoaTenMoi
+  };
+}
+
+/**
+ * Đã chạy quá ngưỡng tự dừng chưa. Tách riêng để test bơm được ngưỡng nhỏ mà không phải chờ 4 phút.
+ * Ngưỡng gửi từ ngoài chỉ được phép NHỎ HƠN: một gói gửi lên `nguongGiay: 999` mà được nghe theo là
+ * tự tay tháo hàng rào 6 phút, rồi Google cắt ngang giữa lúc flush và không ai biết đã ghi tới đâu.
+ */
+function quaGioXuLy_(batDau, nguong) {
+  return (new Date().getTime() - batDau) / 1000 >= nguongThuc_(nguong);
+}
+
+/** Ngưỡng thật sự áp dụng, sau khi chặn trần. Dùng chung cho cả câu thông báo để không nói sai số. */
+function nguongThuc_(nguong) {
+  var n = Number(nguong);
+  return (isNaN(n) || n < 0 || n > NGUONG_GIAY_XU_LY) ? NGUONG_GIAY_XU_LY : n;
+}
+
+/** Cắt danh sách đơn của một sheet thành các khối ≤ TOI_DA_DON_MOT_KHOI, không cắt ngang một đơn. */
+function chiaKhoiDon_(donDS, toiDa) {
+  var n = Math.max(1, Number(toiDa) || TOI_DA_DON_MOT_KHOI);
+  var khoi = [];
+  for (var i = 0; i < (donDS || []).length; i += n) khoi.push(donDS.slice(i, i + n));
+  return khoi.length ? khoi : [[]];
+}
+
+/**
+ * hanhDong = 'xuLy' — MỘT lần gọi làm hết: đọc file tháng → lớp 2 → lớp 3 → ghi.
+ *
+ * body: {
+ *   thang, ngayGhi, lo: {so, tong},
+ *   cacFile: [ { maGianHang, tenFile, dong: [ dòng đã qua lớp 1 ] } ],
+ *   tenMoiTruocDo?          khóa các tên hàng mới đã nối vào Mapping ở lượt gọi trước (xem dungKeHoachGhi_)
+ *   cauHinh?, nguongGiay?   (nguongGiay chỉ để test; chỉ được phép NHỎ HƠN NGUONG_GIAY_XU_LY)
+ * }
+ * trả: { ok, thang, fileId, tenFile, lo, thongKe:{donGhi,donDaCo,dongGhi,dongVang,donGopO,tenMoi,...},
+ *        xong, sheetDaXong, sheetConLai, khoaTenMoi, viTri, canhBao, thongBao, giay }
+ */
+function hanhDongXuLy_(body, batDau) {
+  var cfg = Config.tao(body.cauHinh || {});
+  var thang = chotThang_(body.thang);          // T-53: không ghi lùi, không ghi trước
+  var f = fileCuaThang_(thang);
+
+  var cacFile = body.cacFile || [];
+  var demDon = {};
+  cacFile.forEach(function (x) {
+    (x.dong || []).forEach(function (d) { demDon[x.maGianHang + '|' + d.maDonSan] = 1; });
+  });
+  var tongDon = Object.keys(demDon).length;
+  if (tongDon > TOI_DA_DON_MOT_LO)
+    throw new Error('Gói có ' + tongDon + ' đơn, quá ' + TOI_DA_DON_MOT_LO +
+      ' đơn một lô. Vỏ Node phải chia lô nhỏ hơn.');
+
+  var ss = SpreadsheetApp.openById(f.fileId);
+  var canhBao = [], thongBao = [];
+
+  // ---- (1) ĐỌC — y hệt hành động 'doc', chỉ lấy sheet của các gian hàng có mặt trong gói ----
+  var tenSheets = [];
+  cacFile.forEach(function (x) {
+    var s = Config.gianHang(cfg, x.maGianHang).sheet;
+    if (tenSheets.indexOf(s) < 0) tenSheets.push(s);
+  });
+  if (!tenSheets.length) tenSheets = Object.keys(cfg.gianHang).map(function (m) { return cfg.gianHang[m].sheet; });
+  var tuXa = docTuXa_(ss, cfg, tenSheets, thang, canhBao);
+
+  // ---- (2) LỚP 2 + LỚP 3 — hàm thuần, chưa chạm ô nào ----
+  var goi = dungKeHoachGhi_(cfg, cacFile, tuXa, {
+    ngayGhi: body.ngayGhi || null,
+    tenMoiTruocDo: body.tenMoiTruocDo || []
+  });
+  goi.canhBao.forEach(function (c) { canhBao.push(c); });
+
+  // ---- (3) GHI ----
+  var khoa = LockService.getScriptLock();
+  if (!khoa.tryLock(30000)) throw new Error('Một lệnh ghi khác đang chạy, thử lại sau vài giây');
+
+  try {
+    var k = cfg.keyin;
+    var tk = { donGhi: 0, donDaCo: 0, dongGhi: 0, dongVang: 0, donGopO: 0, mappingThem: 0 };
+    var viTri = {};
+
+    // Nối tên hàng mới vào Mapping TRƯỚC khi ghi đơn. Nếu hết giờ giữa chừng, các tên đó đã nằm sẵn
+    // trong sheet, lần gọi sau đọc lại Mapping sẽ thấy có rồi và KHÔNG nối trùng (khóa chống trùng
+    // của MapListing là (Gian hàng, Tên trên Shopee, Phân loại), không phải số lần chạy).
+    if (goi.mappingThem.length) tk.mappingThem = themDongMapping_(ss, goi.mappingThem, canhBao);
+
+    var sheetDaXong = [], sheetConLai = [], daLamViecGi = false;
+    for (var i = 0; i < goi.lenh.length; i++) {
+      var l = goi.lenh[i];
+      var sh = ss.getSheetByName(l.tenSheet);
+      if (!sh) {
+        canhBao.push('Không có sheet "' + l.tenSheet + '" trong file tháng ' + thang +
+          ' → bỏ qua ' + (l.don || []).length + ' đơn');
+        continue;
+      }
+      var khoiDS = chiaKhoiDon_(l.don || [], TOI_DA_DON_MOT_KHOI);
+      var conLai = 0;
+      for (var j = 0; j < khoiDS.length; j++) {
+        // Khối ĐẦU TIÊN của cả lần gọi luôn được chạy: nếu không, một lần gọi có thể trả về "chưa
+        // làm gì" mãi mãi và phía máy tính quay vòng vô tận mà không tiến thêm ô nào.
+        if (daLamViecGi && quaGioXuLy_(batDau, body.nguongGiay)) { conLai += khoiDS[j].length; continue; }
+        ghiMotSheet_(sh, khoiDS[j], k, tk, viTri, canhBao, thongBao);
+        daLamViecGi = true;
+      }
+      if (conLai) sheetConLai.push({ tenSheet: l.tenSheet, soDon: conLai });
+      else sheetDaXong.push(l.tenSheet);
+    }
+
+    SpreadsheetApp.flush();
+
+    var xong = sheetConLai.length === 0;
+    if (!xong) {
+      thongBao.push('Dừng gọn ở ' + Math.round((new Date().getTime() - batDau) / 1000) + ' giây (ngưỡng ' +
+        nguongThuc_(body.nguongGiay) + ' giây, quota Google là 360) — ' +
+        'phần đã ghi giữ nguyên, gọi lại để ghi nốt ' +
+        sheetConLai.map(function (x) { return x.soDon + ' đơn của "' + x.tenSheet + '"'; }).join(', ') + '.');
+    }
+
+    return {
+      ok: true, hanhDong: 'xuLy', thang: thang, fileId: f.fileId, tenFile: ss.getName(),
+      lo: body.lo || null,
+      // Con số báo về là số THẬT SỰ ĐÃ GHI trong lần gọi này (không phải số dự kiến), trừ `donDaCo`
+      // gộp cả hai tầng khử trùng và `tenMoi` là số tên mới lớp 2 phát hiện.
+      thongKe: {
+        donGhi: tk.donGhi, dongGhi: tk.dongGhi, dongVang: tk.dongVang, donGopO: tk.donGopO,
+        donDaCo: goi.thongKe.donDaCo + tk.donDaCo,
+        donDaCoTang1: goi.thongKe.donDaCo, donDaCoTang2: tk.donDaCo,
+        donTrungTrongGoi: goi.thongKe.donTrungTrongGoi,
+        tenMoi: goi.thongKe.tenMoi, mappingThem: tk.mappingThem,
+        donDuKien: goi.thongKe.donGhi, dongDuKien: goi.thongKe.dongGhi
+      },
+      mapTomTat: MapListing.tomTat(goi.map),
+      // Khóa của mọi tên hàng mới đã nối vào Mapping (kể cả của các lượt trước). Máy gửi lại nguyên
+      // danh sách này ở lượt sau để chia lô không đổi một chữ nào trong cột Note — xem chú thích
+      // `tenMoiTruocDo` trong `dungKeHoachGhi_`.
+      khoaTenMoi: (body.tenMoiTruocDo || []).concat(goi.khoaTenMoi),
+      xong: xong, sheetDaXong: sheetDaXong, sheetConLai: sheetConLai,
+      viTri: viTri, canhBao: canhBao, thongBao: thongBao,
+      giay: (new Date().getTime() - batDau) / 1000
+    };
+  } finally {
+    khoa.releaseLock();
+  }
+}
+
 // ==================================================================== chạy tay để kiểm tra
 
 /**
@@ -791,6 +1097,29 @@ function thuDinhTuyenThang() {
   var f = fileCuaThang_(thang);
   var tin = 'Bản ' + PHIEN_BAN + ' · tháng ' + thang + ' → "' +
     SpreadsheetApp.openById(f.fileId).getName() + '" (dòng ' + f.dong + ')';
+  Logger.log(tin);
+  return tin;
+}
+
+/**
+ * Chạy NGAY SAU MỖI LẦN DEPLOY: bắt lỗi "quên dán ba file lớp 2 vào dự án Apps Script".
+ * Không ghi gì, không mở file tháng nào — chỉ hỏi bốn đối tượng lõi có mặt chưa.
+ * Thiếu file thì lần chạy thật đầu tiên mới hỏng, mà lúc đó nhân viên đã thả file và đang chờ.
+ */
+function thuXuLyRong() {
+  // `typeof <tên chưa khai báo>` là biểu thức DUY NHẤT không ném ReferenceError trong JavaScript —
+  // đó là lý do dùng typeof ở đây thay vì thử gọi hàm rồi bắt lỗi.
+  var thieu = [];
+  if (typeof Utils === 'undefined') thieu.push('Utils.gs');
+  if (typeof SCHEMA === 'undefined') thieu.push('Schema.gs');
+  if (typeof CaiDat === 'undefined') thieu.push('CaiDat.gs');
+  if (typeof Config === 'undefined') thieu.push('Config.gs');
+  if (typeof DanhMuc === 'undefined') thieu.push('DanhMuc.gs');
+  if (typeof MapListing === 'undefined') thieu.push('MapListing.gs');
+  if (typeof Normalize === 'undefined') thieu.push('Normalize.gs');
+  var tin = thieu.length
+    ? 'THIẾU FILE trong dự án Apps Script: ' + thieu.join(', ') + ' — hành động xuLy sẽ hỏng. Dán nốt rồi Deploy lại.'
+    : 'Bản ' + PHIEN_BAN + ' · đủ 7 file lõi · hành động xuLy dùng được.';
   Logger.log(tin);
   return tin;
 }

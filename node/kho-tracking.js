@@ -392,13 +392,31 @@ async function docBangXlsx(duongDan, tenSheet) {
 }
 
 /** `<thư mục>/<tên gốc>_AUTO_<yyyymmdd_HHMM>.xlsx`; bỏ hậu tố _AUTO_ cũ; trùng phút → _2, _3… */
+/**
+ * Đường dẫn file kết quả. Tên giữ nguyên dạng `<gốc>_AUTO_<yyyymmdd_HHMM>[_n].xlsx`.
+ *
+ * VÌ SAO PHẢI GIÀNH TÊN BẰNG CÁCH TẠO FILE RỖNG: nhãn thời gian chỉ phân giải tới PHÚT.
+ * Bản cũ chỉ `existsSync` rồi mới ghi ở bước sau — giữa hai bước đó một máy khác có thể
+ * giành mất tên. Với thư mục kết quả dùng chung (bài D-11 của kế hoạch kiểm thử) thì hai máy
+ * chạy cùng phút sẽ cùng thấy 'chưa có', cùng chọn một tên, và máy ghi sau đè mất máy ghi trước.
+ * `flag: 'wx'` tạo file chỉ khi CHƯA có, và phép kiểm cùng phép tạo là một thao tác của hệ điều hành,
+ * nên không còn khe hở. File rỗng này sẽ bị chính bước lưu ghi đè lên.
+ */
 function duongDanOut(duongDanGoc, thuMucOut, thoiDiem, lop) {
   const goc = path.basename(duongDanGoc, path.extname(duongDanGoc)).replace(/(_AUTO_\d{8}_\d{4}(_\d+)?)+$/, '');
   const nhan = lop.Utils.nhanThoiDiem(thoiDiem || new Date());
-  let p = path.join(thuMucOut, `${goc}_AUTO_${nhan}.xlsx`);
-  let n = 1;
-  while (fs.existsSync(p) || path.resolve(p) === path.resolve(duongDanGoc)) { n++; p = path.join(thuMucOut, `${goc}_AUTO_${nhan}_${n}.xlsx`); }
-  return p;
+  fs.mkdirSync(thuMucOut, { recursive: true });
+  for (let n = 1; n <= 500; n++) {
+    const p = path.join(thuMucOut, goc + '_AUTO_' + nhan + (n === 1 ? '' : '_' + n) + '.xlsx');
+    if (path.resolve(p) === path.resolve(duongDanGoc)) continue;   // không bao giờ trỏ vào file gốc
+    try {
+      fs.closeSync(fs.openSync(p, 'wx'));   // giành tên; đã có ai giành thì ném EEXIST
+      return p;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+    }
+  }
+  throw new Error('Thư mục kết quả đã có 500 file cùng nhãn thời gian ' + nhan + ' — dọn bớt rồi chạy lại.');
 }
 
 module.exports = { KhoTracking, duongDanOut, docBangXlsx, utcSangLocal, localSangUtc, giaTriThuan, congThucCua, TEN_SHEET_MAPPING };

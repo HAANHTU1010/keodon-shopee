@@ -484,44 +484,79 @@ var TestBatBien = (function () {
    * hàng ra một file ai cũng mở được, và không thu hồi lại được. Đây là loại lỗi im lặng: không ai báo,
    * chỉ đến lúc file lọt ra ngoài mới biết.
    *
-   * CÁCH KIỂM: danh sách 9 cột lấy THẲNG từ `cfg.cotPII` trong mã (không gõ tay — gõ tay là test và mã lệch nhau
+   * CÁCH KIỂM: danh sách 9 cột lấy THẲNG từ `cfg.cotCamDocTuFileXuat` (không gõ tay, gõ tay là test và mã lệch nhau
    * lúc Shopee đổi tên cột). Chạy trên bảng nguồn có sẵn cột cá nhân giả, rồi soi toàn bộ dấu vết một lần chạy:
    * sheet, Mapping, cảnh báo, nhật ký, kế hoạch ghi. Cộng regex bắt số điện thoại 10 chữ số trong nhật ký.
    */
   function INV4_khongDungCotThongTinNguoiMua() {
     var bc = boiCanh();
-    var cotPII = bc.cfg.cotPII;
-    bang(cotPII.length, 9, 'cấu hình phải khai đủ 9 cột thông tin người mua');
+    var camDoc = bc.cfg.cotCamDocTuFileXuat;      // 9 cột cấm đọc từ file xuất Shopee
+    var quaChung = bc.cfg.tenCotQuaChung;         // tập con: tên quá chung, không quét theo TÊN
+    bang(camDoc.length, 9, 'cấu hình phải khai đủ 9 cột cấm đọc từ file xuất Shopee');
+
+    // `cfg.cotPII` là tên cũ của cùng danh sách đó. Cổng `kiemPII` trong node/gsheet-web-app.js soát gói
+    // bằng đúng khóa này TRƯỚC KHI gửi lên mạng. Ai trỏ `cotPII` sang danh sách đã trừ bớt là mở toang
+    // cổng đó mà không một dòng lỗi nào hiện ra, nên chốt hai danh sách phải trùng khít ngay tại đây.
+    bang(JSON.stringify(bc.cfg.cotPII), JSON.stringify(camDoc),
+      'cfg.cotPII phải là ĐÚNG danh sách cấm đọc, không được trỏ sang danh sách đã trừ bớt');
+
     TestData.PII_COT.forEach(function (c) {
-      phai(cotPII.indexOf(c) >= 0, 'cột cá nhân giả "' + c + '" phải nằm trong cfg.cotPII, nếu không fixture không chứng minh được gì');
+      phai(camDoc.indexOf(c) >= 0, 'cột cá nhân giả "' + c + '" phải nằm trong cfg.cotCamDocTuFileXuat, nếu không fixture không chứng minh được gì');
     });
-    // 9 cột PII không được nằm trong danh sách cột tool đọc — chặn từ gốc, trước cả khi đọc file
+    // 9 cột cấm không được nằm trong danh sách cột tool đọc — chặn từ gốc, trước cả khi đọc file
     var docNhamm = [];
     Object.keys(bc.cfg.cot).forEach(function (t) {
-      (bc.cfg.cot[t] || []).forEach(function (c) { if (cotPII.indexOf(c) >= 0) docNhamm.push(t + ' → "' + c + '"'); });
+      (bc.cfg.cot[t] || []).forEach(function (c) { if (camDoc.indexOf(c) >= 0) docNhamm.push(t + ' → "' + c + '"'); });
     });
     bang(docNhamm.length, 0, 'cấu hình đọc trúng cột cá nhân: ' + docNhamm.join(', '));
 
     var kq = chay(bc, [file(bc, baDonThu())]);
     var dauVet = moiDauVet(bc, kq);
 
-    var lot = [];
-    // Quét theo TÊN CỘT có một chỗ mù: `Ghi chú` vừa là cột ghi chú của NGƯỜI MUA trong file xuất,
-    // vừa là cột hợp lệ của sheet `Mapping sản phẩm` do chính tool sở hữu và bắt buộc phải ghi.
-    // Thấy chuỗi đó trong dấu vết KHÔNG chứng minh được là rò dữ liệu khách. Vì vậy trừ đúng các tên
-    // trùng với tiêu đề sheet tool sở hữu, và CHỐT danh sách trùng lại — mai sau phát sinh tên trùng
-    // mới thì test này phải kêu, để người viết phải nghĩ lại chứ không âm thầm mở rộng chỗ mù.
-    // Hàng rào thật nằm ở hai phép còn lại: tool không ĐỌC cột cá nhân nào (kiểm ngay phía trên),
-    // và không GIÁ TRỊ cá nhân nào lọt ra (PII_GIA_TRI + regex số điện thoại phía dưới).
-    var TEN_TRUNG_DA_BIET = ['Ghi chú'];
-    var trung = cotPII.filter(function (c) { return SCHEMA.MAPPING.indexOf(c) >= 0; });
-    bang(trung.join(' | '), TEN_TRUNG_DA_BIET.join(' | '), 'danh sách tên cột trùng giữa 9 cột người mua và tiêu đề sheet Mapping');
-    cotPII.forEach(function (c) {
-      if (TEN_TRUNG_DA_BIET.indexOf(c) >= 0) return;
-      if (dauVet.indexOf(c) >= 0) lot.push('tên cột "' + c + '"');
+    // ---- lớp quét theo TÊN CỘT, và cái giá phải trả cho nó ----
+    // Quét theo tên có một chỗ mù: vài tên cột của Shopee trùng đúng từ vựng hợp lệ mà tool BẮT BUỘC
+    // phải ghi ra. `Ghi chú` là tiêu đề một cột của sheet `Mapping sản phẩm` do chính tool sở hữu;
+    // `Quận` nằm lọt trong `TP / Quận / Huyện` và trong mọi địa chỉ tiếng Việt. Thấy các chuỗi ấy
+    // trong dấu vết KHÔNG chứng minh được là rò dữ liệu khách. Danh sách trừ hao nay là dữ liệu cấu
+    // hình (`cfg.tenCotQuaChung`), không còn là mảng viết cứng nằm lẫn trong test.
+    //
+    // Đổi lại, mỗi tên xin được trừ phải TỰ CHỨNG MINH nó chung thật, bằng một trong hai lý do kiểm được:
+    //   (a) trùng đúng tiêu đề sheet `Mapping sản phẩm` (SCHEMA.MAPPING), hoặc
+    //   (b) nằm lọt trong một tên cột cấm đọc khác, nên quét riêng nó là quét thừa.
+    // Ai định làm im một cảnh báo bằng cách nhét `Số điện thoại` vào danh sách sẽ vấp ngay phép này.
+    var voLy = [];
+    quaChung.forEach(function (c) {
+      phai(camDoc.indexOf(c) >= 0,
+        'cfg.tenCotQuaChung khai "' + c + '" mà nó không phải cột cấm đọc — danh sách này chỉ được là tập con');
+      var laTieuDeMapping = SCHEMA.MAPPING.indexOf(c) >= 0;
+      var namTrongTenKhac = false;
+      camDoc.forEach(function (k) { if (k !== c && k.indexOf(c) >= 0) namTrongTenKhac = true; });
+      if (!laTieuDeMapping && !namTrongTenKhac) voLy.push(c);
     });
+    bang(voLy.length, 0, 'tên bị loại khỏi phép quét mà không có lý do kiểm được: ' + voLy.join(', '));
+
+    // Chiều ngược lại: MỌI tên trùng tiêu đề sheet Mapping đều phải được khai TRƯỚC ở cfg.tenCotQuaChung.
+    // Không khai thì đợt sau test báo dương tính giả, và người ta lại đi vá chỗ ngọn ngay trong test.
+    var trungChuaKhai = camDoc.filter(function (c) { return SCHEMA.MAPPING.indexOf(c) >= 0 && quaChung.indexOf(c) < 0; });
+    bang(trungChuaKhai.length, 0, 'tên cột trùng tiêu đề sheet Mapping mà chưa khai ở cfg.tenCotQuaChung: ' + trungChuaKhai.join(', '));
+
+    // Ba cột cá nhân của fixture PHẢI còn nằm trong phần quét theo tên, nếu không phép quét thành cảnh rỗng
+    var tenQuet = camDoc.filter(function (c) { return quaChung.indexOf(c) < 0; });
+    TestData.PII_COT.forEach(function (c) {
+      phai(tenQuet.indexOf(c) >= 0, 'cột cá nhân giả "' + c + '" bị loại khỏi phép quét theo tên — phép quét mất đối chứng');
+    });
+    phai(tenQuet.length >= 6, 'còn quá ít tên để quét theo tên: ' + tenQuet.length + '/' + camDoc.length + ' — chỗ mù đã nuốt gần hết phép quét');
+
+    var lot = [];
+    tenQuet.forEach(function (c) { if (dauVet.indexOf(c) >= 0) lot.push('tên cột "' + c + '"'); });
     TestData.PII_GIA_TRI.forEach(function (v) { if (dauVet.indexOf(v) >= 0) lot.push('giá trị cá nhân'); });
     bang(lot.length, 0, 'lọt dữ liệu người mua: ' + lot.join(', '));
+
+    // đối chứng dương cho chính phép quét theo tên: thả đủ `tenQuet` vào một dấu vết giả thì phải bắt hết.
+    // Thiếu dòng này thì một `tenQuet` rỗng cũng luôn báo 0 chỗ lọt, và phép quét trên thành vô nghĩa.
+    var dauVetGia = 'nhat ky ' + tenQuet.join(' ') + ' het';
+    var batDuoc = tenQuet.filter(function (c) { return dauVetGia.indexOf(c) >= 0; });
+    bang(batDuoc.length, tenQuet.length, 'phép quét theo tên phải bắt được đủ tên khi chúng thật sự có mặt trong dấu vết');
 
     // regex số điện thoại 10 chữ số (0xxxxxxxxx) trong nhật ký và cảnh báo — kiểu rò khó thấy nhất
     // Regex số điện thoại 10 chữ số trong nhật ký và cảnh báo — kiểu rò khó thấy nhất, vì tên và địa chỉ
@@ -545,7 +580,8 @@ var TestBatBien = (function () {
     TestData.PII_GIA_TRI.forEach(function (v) { phai(bangNguon.indexOf(v) >= 0, 'bảng nguồn thử phải chứa "' + v + '"'); });
 
     return { ghiChu: 'soi ' + dauVet.length + ' ký tự dấu vết (sheet + Mapping + cảnh báo + nhật ký + kế hoạch ghi) · ' +
-      cotPII.length + ' tên cột + ' + TestData.PII_GIA_TRI.length + ' giá trị cá nhân + regex SĐT: 0 lần khớp' };
+      tenQuet.length + '/' + camDoc.length + ' tên cột quét theo tên (bỏ ' + quaChung.length + ' tên quá chung: ' + quaChung.join(', ') + ') + ' +
+      TestData.PII_GIA_TRI.length + ' giá trị cá nhân + regex SĐT: 0 lần khớp' };
   }
 
   // ================================================================== INV-6
@@ -673,7 +709,7 @@ var TestBatBien = (function () {
     ['INV-2', 'Không thêm sheet nào ngoài Mapping_san_pham', INV2_khongThemSheetLa],
     ['INV-3', 'Vỏ ghi Google Sheet không ghi giá trị/công thức vào E, F, M, N', INV3a_voGhiSheetKhongChamEFMN],
     ['INV-3', 'Tầng ghi PHẢI NÉM LỖI khi lệnh ghi nhắm E/F/M/N ở chế độ SHEET (kể cả ô đầu cột)', INV3b_tangGhiPhaiNemLoi],
-    ['INV-4', 'Không đọc/ghi/in 9 cột thông tin người mua (danh sách lấy từ cfg.cotPII) + regex SĐT', INV4_khongDungCotThongTinNguoiMua],
+    ['INV-4', 'Không đọc/ghi/in 9 cột thông tin người mua (cfg.cotCamDocTuFileXuat, trừ cfg.tenCotQuaChung khi quét theo tên) + regex SĐT', INV4_khongDungCotThongTinNguoiMua],
     ['INV-6', 'Không tự sửa công thức của người (so từng chuỗi ngoài vùng dòng mới)', INV6_khongSuaCongThucCuaNguoi],
     ['INV-8', 'Dòng tổng (dòng 3) bất khả xâm phạm', INV8_dongTongBatKhaXamPham]
   ];

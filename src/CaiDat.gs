@@ -9,6 +9,30 @@
  */
 var CaiDat = (function () {
 
+  /**
+   * 9 cột dữ liệu cá nhân người mua trong file xuất Shopee. TOOL KHÔNG ĐƯỢC ĐỌC (Context 5.6).
+   * Dùng ở hai chỗ: lớp 1 chặn ngay lúc đọc file (adapter chỉ lấy cột có tên trong `cot`), và cổng
+   * `kiemPII` của `node/gsheet-web-app.js` soát gói trước khi gửi lên mạng. Phép quét rò rỉ theo
+   * GIÁ TRỊ dùng đủ cả 9 tên này. Shopee thêm cột cá nhân mới thì thêm vào đây.
+   */
+  var COT_CAM_DOC_TU_FILE_XUAT = [
+    'Người Mua', 'Tên Người nhận', 'Số điện thoại', 'Tỉnh/Thành phố', 'TP / Quận / Huyện',
+    'Quận', 'Địa chỉ nhận hàng', 'Nhận xét từ Người mua', 'Ghi chú'
+  ];
+
+  /**
+   * Tập con của danh sách trên: tên quá chung, KHÔNG được dùng để quét rò rỉ theo TÊN CỘT.
+   *
+   * Triệu chứng thật đã xảy ra: `Ghi chú` trùng đúng tên một cột hợp lệ của sheet `Mapping sản phẩm`
+   * do chính tool sở hữu và bắt buộc phải ghi, nên INV-4 báo dương tính giả và người viết trước phải
+   * trừ hao bằng một danh sách viết cứng ngay trong test. `Quận` thì nằm lọt trong `TP / Quận / Huyện`
+   * và trong mọi địa chỉ tiếng Việt, thấy nó trong nhật ký cũng không chứng minh được điều gì.
+   *
+   * Chỉ TẮT PHÉP QUÉT THEO TÊN. Hai tên này vẫn nằm trong danh sách cấm đọc, và giá trị của chúng
+   * vẫn bị quét đủ. Thêm tên vào đây là mở một chỗ mù, INV-4 bắt phải có lý do kiểm được.
+   */
+  var TEN_COT_QUA_CHUNG = ['Ghi chú', 'Quận'];
+
   function cauHinhMacDinh() {
     return {
       chung: {
@@ -105,8 +129,19 @@ var CaiDat = (function () {
       /** Trạng thái bị bỏ khi đọc file tab "Tất cả" (GV-v2.2 mục 1.1). Tab "Chờ lấy hàng" không bao giờ có các trạng thái này. */
       trangThaiBo: ['DA_HUY', 'DA_HOAN', 'DANG_HOAN', 'THAT_BAI'],
 
-      /** 9 cột dữ liệu cá nhân người mua — adapter chỉ đọc cột có tên trong `cot`, danh sách này để test chứng minh (Context 5.6). */
-      cotPII: ['Người Mua', 'Tên Người nhận', 'Số điện thoại', 'Tỉnh/Thành phố', 'TP / Quận / Huyện', 'Quận', 'Địa chỉ nhận hàng', 'Nhận xét từ Người mua', 'Ghi chú']
+      /** Cột CẤM ĐỌC từ file xuất Shopee. Chặn ở lớp 1, và là danh sách quét rò rỉ theo GIÁ TRỊ. */
+      cotCamDocTuFileXuat: COT_CAM_DOC_TU_FILE_XUAT.slice(),
+
+      /** Tên cột quá chung, KHÔNG quét theo TÊN vì trùng từ vựng hợp lệ của file tracking. Tập con của khóa trên. */
+      tenCotQuaChung: TEN_COT_QUA_CHUNG.slice(),
+
+      /**
+       * Tên cũ của `cotCamDocTuFileXuat`, giữ nguyên nghĩa và giữ nguyên đủ 9 tên.
+       * `node/gsheet-web-app.js` và `node/chay-google-sheet.js` còn gọi `cfg.cotPII` để dựng cổng chặn
+       * trước khi gửi gói lên mạng. Trỏ khóa này sang danh sách đã trừ bớt là mở toang cổng đó.
+       * Ghi đè bằng CAU_HINH_VAN_HANH.json thì phải sửa CẢ HAI khóa, gộp cấu hình thay hẳn từng mảng.
+       */
+      cotPII: COT_CAM_DOC_TU_FILE_XUAT.slice()
     };
   }
 

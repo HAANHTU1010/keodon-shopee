@@ -37,8 +37,23 @@ function cacFileXlsx(thuMuc, loc) {
   if (!thuMuc || !fs.existsSync(thuMuc)) return [];
   return fs.readdirSync(thuMuc)
     .filter(f => /\.xlsx$/i.test(f) && !f.startsWith('~$') && (!loc || loc(f)))
-    .map(f => ({ f, p: path.join(thuMuc, f), t: fs.statSync(path.join(thuMuc, f)).mtimeMs }))
+    .map(f => ({ f, p: path.join(thuMuc, f), t: fs.statSync(path.join(thuMuc, f)).mtimeMs,
+      co: fs.statSync(path.join(thuMuc, f)).size }))
+    // Bỏ file 0 byte. `duongDanOut` giành tên bằng cách tạo một file rỗng (chống hai máy cùng phút
+    // chọn trúng một tên). Lần chạy nào không ghi gì thì file rỗng đó bị xóa ngay, nhưng nếu tool
+    // bị tắt ngang thì nó còn lại — và nhặt nhầm nó làm file tracking đầu vào là mất sạch dữ liệu.
+    .filter(x => x.co > 0)
     .sort((a, b) => b.t - a.t);
+}
+
+/**
+ * `duongDanOut` giành sẵn tên file kết quả bằng một file 0 byte. Lần chạy nào không ghi gì
+ * (không có đơn mới, hoặc tự kiểm tra hỏng) thì phải trả lại cái tên đó, nếu không thư mục
+ * kết quả đầy file rỗng và lần sau dễ nhặt nhầm làm đầu vào.
+ */
+function xoaChoDaGianh(duongDan) {
+  try { if (duongDan && fs.existsSync(duongDan) && fs.statSync(duongDan).size === 0) fs.unlinkSync(duongDan); }
+  catch (e) { /* xóa không được thì thôi, phép lọc 0 byte ở `cacFileXlsx` vẫn che được */ }
 }
 
 /** Bảng Mapping khởi tạo: dùng khi file tracking chưa có sheet `Mapping sản phẩm`. */
@@ -233,6 +248,7 @@ async function chayDev() {
     kq = lop.chayDongBo(nguon, kho, { thoiDiem, ngayGhi, cfg, hoanThanhSau: true });
   } finally {
     if (kq && !kq.boQua && kq.soFile) await kho.luu();
+    else xoaChoDaGianh(out);   // không lưu gì thì trả lại cái tên đã giành, đừng để file 0 byte
   }
   // Lưu xong xuôi (tự kiểm tra đã đạt) mới chuyển file nguồn sang 4_DA_XU_LY. Lưu hỏng thì file
   // vẫn nằm trong thư mục thả để bấm chạy lại — không bắt người vận hành đi tìm file.
@@ -348,6 +364,7 @@ async function chayVanHanh(thuMuc) {
     kq = lop.chayDongBo(nguon, kho, { thoiDiem, ngayGhi, cfg, hoanThanhSau: true });
   } finally {
     if (kq && !kq.boQua && kq.soFile) await kho.luu();
+    else xoaChoDaGianh(out);   // không lưu gì thì trả lại cái tên đã giành, đừng để file 0 byte
   }
   // Lưu xong xuôi (tự kiểm tra đã đạt) mới chuyển file nguồn sang 4_DA_XU_LY. Lưu hỏng thì file
   // vẫn nằm trong thư mục thả để bấm chạy lại — không bắt người vận hành đi tìm file.

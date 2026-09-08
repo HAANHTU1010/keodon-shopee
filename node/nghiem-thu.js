@@ -325,6 +325,15 @@ async function main() {
     ['Ô gộp mới cho đơn nhiều dòng: đúng 6 cụm C,H,I,J,K,L', 'CHIJKL × ' + chuMoc('so_don_gop_o'),
       (kieuGop.join(',') || '(không có)') + ' × ' + gopMoi.soDon,
       MOC == null ? null : (kieuGop.length === 1 && kieuGop[0] === 'CHIJKL' && gopMoi.soDon === MOC.so_don_gop_o)]
+    ,
+    // B-08 của KE_HOACH_KIEM_THU: danh sách đơn lệch phải ĐÚNG ba mã đã ghi thành văn, không thừa
+    // không thiếu. Trước 08/9/2026 chỉ tiêu này được IN ra mà KHÔNG chấm, nên thừa hoặc thiếu một mã
+    // lệch vẫn ra 'TẤT CẢ CHỈ TIÊU ĐẠT' — đúng kiểu xanh giả mà mục 0.2 của kế hoạch cấm.
+    ['Danh sách đơn lệch tiền đúng bằng danh sách đã ghi thành văn',
+      (MOC && MOC.don_lech_da_biet && MOC.don_lech_da_biet.length ? MOC.don_lech_da_biet.join(', ') : '?'),
+      (lech.length ? lech.map(x => x.ma).sort().join(', ') : '(không đơn nào lệch)'),
+      (MOC == null || !MOC.don_lech_da_biet || !MOC.don_lech_da_biet.length ? null
+        : lech.map(x => x.ma).sort().join('|') === MOC.don_lech_da_biet.slice().sort().join('|'))]
   ]);
 
   console.log('\n| Chỉ tiêu | Phải ra | Bản JS | |\n|---|---|---|---|');

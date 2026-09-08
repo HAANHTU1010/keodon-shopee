@@ -95,6 +95,28 @@ var Config = (function () {
     cfg.trangThaiHoan = th;
     cfg.trangThaiBo = (cfg.trangThaiBo || []).map(function (x) { return String(x).trim().toUpperCase(); });
 
+    // ---- ba danh sách cột người mua phải nhất quán ----
+    // VÌ SAO KIỂM Ở ĐÂY: `tao()` gộp sâu và MẢNG THÌ THAY HẲN, nên một dòng
+    // `cau_hinh: {"cotPII": [...]}` trong CAU_HINH_VAN_HANH.json là đủ để thay trắng danh sách
+    // cấm đọc. Cổng chặn trước khi gửi lên mạng (`kiemPII`) đọc đúng `cfg.cotPII`, nên trò đó mở
+    // toang cửa mà không một dòng lỗi nào hiện ra lúc vận hành. Bài INV-4 chỉ bắt được với cấu
+    // hình mặc định, không bắt được cấu hình của máy thật. Hỏng thì phải hỏng ngay tại đây.
+    var camDoc = cfg.cotCamDocTuFileXuat || [];
+    var quaChung = cfg.tenCotQuaChung || [];
+    if (!camDoc.length) throw new Error('Cấu hình thiếu danh sách cột cấm đọc từ file xuất (cotCamDocTuFileXuat)');
+    cfg.cotPII = cfg.cotPII || [];
+    if (cfg.cotPII.slice().sort().join('|') !== camDoc.slice().sort().join('|')) {
+      throw new Error('cotPII phải trùng khít cotCamDocTuFileXuat. Đang lệch: cotPII có ' + cfg.cotPII.length +
+        ' tên, cotCamDocTuFileXuat có ' + camDoc.length + ' tên. Đây là cổng chặn dữ liệu người mua rời máy, không được nới.');
+    }
+    var laVoDanh = quaChung.filter(function (t) { return camDoc.indexOf(t) < 0; });
+    if (laVoDanh.length) {
+      throw new Error('tenCotQuaChung phải là tập con của cotCamDocTuFileXuat; tên lạ: ' + laVoDanh.join(', '));
+    }
+    if (quaChung.length >= camDoc.length) {
+      throw new Error('tenCotQuaChung đang bằng hoặc rộng hơn cả danh sách cấm đọc → phép quét theo tên bị tắt sạch');
+    }
+
     return cfg;
   }
 
