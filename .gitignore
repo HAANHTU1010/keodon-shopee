@@ -1,0 +1,38 @@
+# =====================================================================================
+# REPO NÀY CÔNG KHAI. Mọi thứ dưới đây ở lại máy, không bao giờ được đẩy lên.
+# Chốt ngày 08/9/2026 sau khi quét và tìm thấy doanh thu thật nằm ngay trong mã.
+# =====================================================================================
+
+# --- thư viện, sinh lại được bằng `npm install` ---
+node_modules/
+
+# --- BÍ MẬT: chuỗi bí mật Web App, link /exec ---
+# (`CAU_HINH_VAN_HANH.json` nằm ở 03_VAN_HANH, ngoài repo này — nêu ở đây để ai đọc cũng biết)
+.clasp.json
+*.local.json
+
+# --- SỐ LIỆU THẬT CỦA SHOP: doanh thu, giá trị tồn kho, mốc nghiệm thu ---
+# Bản mẫu `moc-nghiem-thu.mau.json` thì được đẩy lên, bản có số thật thì không.
+moc-nghiem-thu.json
+
+# --- DỮ LIỆU KHÁCH: file xuất Shopee có tên, số điện thoại, địa chỉ người mua ---
+da-xu-ly/*/*.xlsx
+du-lieu-vao/*/*.xlsx
+out/*.xlsx
+out/nghiem-thu/
+*.xlsx
+*.xls
+*.csv
+*.docx
+
+# --- TÀI LIỆU NỘI BỘ gửi BA: chứa doanh thu thật, mã đơn thật, chi tiết kinh doanh ---
+# Chúng là sản phẩm bàn giao cho BA, không cần để chạy tool, và `CAP_NHAT.bat` cũng
+# chỉ chép `src/`, `node/`, `package.json` nên chưa bao giờ nằm trong gói cập nhật.
+BAO_CAO_DEV_*.md
+NOTES_DEV.md
+HUONG_DAN_CHAY_THU.md
+DOI_CHIEU_KE_HOACH_KIEM_THU.md
+README.md
+
+# --- giữ chỗ thư mục ---
+!.keep

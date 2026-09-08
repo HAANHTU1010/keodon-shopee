@@ -1,0 +1,23 @@
+{
+  "name": "keodon-apps-script",
+  "version": "2.3.0",
+  "private": true,
+  "description": "Kéo đơn Shopee về file tracking — một lõi hai vỏ (Excel trên máy · Google Sheet qua Web App Apps Script)",
+  "scripts": {
+    "chay-thu": "node node/chay-thu.js",
+    "van-hanh": "node node/chay-thu.js --van-hanh ../../03_VAN_HANH",
+    "nghiem-thu": "node node/nghiem-thu.js",
+    "test": "node node/chay-test.js",
+    "test-loi": "node -e \"require('./node/nap-loi').napLoi().TestSuite.chayTatCa().forEach(function(r){console.log((r.dat?'ĐẠT  ':r.boQua?'BỎ QUA':'HỎNG ')+' '+r.ma+' '+r.ten+(r.loi?String.fromCharCode(10)+'   -> '+r.loi:''))})\"",
+    "test-node": "node node/test-node.js",
+    "test-bat-bien": "node node/test-bat-bien.js",
+    "test-dinh-tuyen": "node node/test-dinh-tuyen-thang.js",
+    "tao-thang-moi": "node node/tao-thang-moi.js",
+    "test-tat-ca": "npm test && npm run test-bat-bien && npm run test-dinh-tuyen"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.1",
+    "xlsx": "^0.18.5"
+  }
+}
