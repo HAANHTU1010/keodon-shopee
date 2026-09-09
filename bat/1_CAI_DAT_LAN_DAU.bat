@@ -88,7 +88,7 @@ echo [1/6] Node.js: OK ^(%NODEV%^)
 rem ---- 2. Khai bao kho ma GitHub -----------------------------------------
 rem  Day la viec cua NGUOI PHU TRACH KY THUAT, khong phai cua nhan vien.
 rem  Thieu no thi khong keo ma ve duoc, nen dung han o day.
-"%NODE%" -e "var fs=require('fs');var s=fs.readFileSync(process.argv[1],'utf8').replace(/^\uFEFF/,'');var c=JSON.parse(s);var u=c.cap_nhat||{};var a=String(u.chu_tai_khoan||'').trim();var b=String(u.ten_repo||'').trim();if(a&&b){console.log('      Kho ma: '+a+'/'+b);process.exit(0);}var t=[];if(!a)t.push('chu_tai_khoan');if(!b)t.push('ten_repo');console.log('      Con trong: '+t.join(', '));process.exit(2);" "%CFG%"
+"%NODE%" -e "var fs=require('fs');var s=fs.readFileSync(process.argv[1],'utf8').replace(/^\uFEFF/,'');var c=JSON.parse(s);var u=c.cap_nhat||{};var a=String(u.chu_tai_khoan||'').trim();var b=String(u.ten_repo||'').trim();if(a.length>0&&b.length>0){console.log('      Kho ma: '+a+'/'+b);process.exit(0);}var t=[];if(a.length===0){t.push('chu_tai_khoan');}if(b.length===0){t.push('ten_repo');}console.log('      Con trong: '+t.join(', '));process.exit(2);" "%CFG%"
 set "MACFG=%ERRORLEVEL%"
 if "%MACFG%"=="0" goto cfg_ok
 if "%MACFG%"=="2" (
@@ -166,7 +166,7 @@ rem  cau hinh ma tao, khong go thang trong file .bat nay duoc.
 rem ---- 4. Link Web App va chuoi bi mat ------------------------------------
 rem  Thieu thi NHAC chu khong chan: may van coi nhu da cai xong, chi la chua
 rem  chay len Google duoc.
-"%NODE%" -e "var fs=require('fs');var s=fs.readFileSync(process.argv[1],'utf8').replace(/^\uFEFF/,'');var c=JSON.parse(s);var g=c.google_sheet||{};var t=[];if(!String(g.web_app_url||'').trim())t.push('web_app_url');if(!String(g.chuoi_bi_mat||'').trim())t.push('chuoi_bi_mat');if(t.length===0)process.exit(0);console.log('      Con trong: '+t.join(', '));process.exit(2);" "%CFG%"
+"%NODE%" -e "var fs=require('fs');var s=fs.readFileSync(process.argv[1],'utf8').replace(/^\uFEFF/,'');var c=JSON.parse(s);var g=c.google_sheet||{};var t=[];var u=String(g.web_app_url||'').trim();var m=String(g.chuoi_bi_mat||'').trim();if(u.length===0){t.push('web_app_url');}if(m.length===0){t.push('chuoi_bi_mat');}if(t.length===0)process.exit(0);console.log('      Con trong: '+t.join(', '));process.exit(2);" "%CFG%"
 set "MAGS=%ERRORLEVEL%"
 if "%MAGS%"=="0" (
   echo [4/6] Link Web App va chuoi bi mat: OK

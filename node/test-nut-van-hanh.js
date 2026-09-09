@@ -75,6 +75,41 @@ NUT_BAT_BUOC.forEach((ten, i) => {
   });
 });
 
+/**
+ * Dấu `!` trong file bật `setlocal enabledelayedexpansion`.
+ *
+ * cmd.exe nuốt sạch mọi thứ nằm GIỮA HAI dấu `!` và thay bằng rỗng. Trong một dòng
+ * `node -e "...JS..."` thì đó là cắt xén mã nguồn giữa chừng — và tai hại nhất là phần
+ * còn lại vẫn có thể là JavaScript HỢP LỆ, chạy êm với nghĩa ngược hẳn.
+ *
+ * Đã trả giá thật: bước 4 của `1_CAI_DAT_LAN_DAU.bat` viết
+ *   if(!String(g.web_app_url||'').trim())t.push('web_app_url');if(!String(g.chuoi_bi_mat…
+ * cmd cắt từ `!` thứ nhất tới `!` thứ hai, còn lại `if(String(g.chuoi_bi_mat…).trim())` —
+ * mất dấu phủ định. Kết quả LẬT NGƯỢC: cấu hình rỗng thì báo OK, điền đủ thì báo CHƯA ĐIỀN.
+ * Cái bẫy này đã được ghi trong `DONG_GOI_GIAO_NHAN_VIEN.md` từ trước mà vẫn dính lại,
+ * vì tài liệu không chặn được ai — chỉ bài test mới chặn được.
+ *
+ * Dạng duy nhất được phép là `set "TEN=!TEN_BIEN!"` — chính là cú pháp delayed expansion.
+ */
+const DUOC_PHEP = /^\s*set "[A-Za-z_]\w*=![A-Za-z_]\w*!"\s*$/;
+const DONG_NODE = /(?:%NODE%|\bnode\b)[^\n]*\s-e\s/i;
+
+test('N-28 không dấu `!` nào trong đoạn JS truyền cho node -e (cmd nuốt mất, lật ngược logic)', () => {
+  const xau = [];
+  for (const ten of NUT_BAT_BUOC) {
+    const s = fs.readFileSync(path.join(THU_MUC, ten), 'latin1');
+    if (!/enabledelayedexpansion/i.test(s)) continue;
+    s.split('\n').forEach((d, k) => {
+      const c = d.replace(/\r$/, '');
+      if (c.indexOf('!') < 0) return;
+      if (DONG_NODE.test(c)) xau.push(ten + ' dòng ' + (k + 1) + ': `!` nằm trong đoạn JS của node -e');
+      else if (!DUOC_PHEP.test(c)) xau.push(ten + ' dòng ' + (k + 1) + ': `!` không phải dạng !TÊN_BIẾN!');
+    });
+  }
+  if (xau.length) throw new Error(xau.join(' | '));
+  return NUT_BAT_BUOC.length + ' nút, mọi `!` còn lại đều là !TÊN_BIẾN! hợp lệ';
+});
+
 test('N-27 không nút nào còn gọi tên cũ của nút khác', () => {
   const CU = [/(?<![0-9_])CHAY_TOOL\.bat/, /3_CHAY_TOOL\.bat/, /2_TAO_FILE_THANG_MOI\.bat/,
     /(?<![0-9_])TAO_FILE_THANG_MOI\.bat/, /(?<![0-9_])CAP_NHAT\.bat/, /CAI_DAT_1_LAN\.bat/];
