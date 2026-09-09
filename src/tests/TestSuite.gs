@@ -795,6 +795,164 @@ var TestSuite = (function () {
     bang(kq2.donGhi, 2, 'vẫn ghi đủ đơn');
   }
 
+  // ------------------------------------------------------------------ bảy bài CHẶN còn thiếu (GV-v2.5 mục 5.2)
+
+  /**
+   * KT-T-24 — HỆ SỐ QUY ĐỔI. Vì sao bài này tồn tại:
+   * Shopee bán theo listing ("thùng 12 hộp"), kho trừ theo đơn vị lẻ ("hộp"). Cột `Hệ số` của sheet
+   * Mapping là cầu nối duy nhất giữa hai cách đếm đó. Fixture đã có sẵn dòng hệ số từ lâu nhưng
+   * KHÔNG bài nào so `G = SL × Hệ số`, nên phép nhân này chưa từng được canh.
+   *
+   * Triệu chứng thật nếu vi phạm: bỏ phép nhân → khách mua 2 thùng, kho chỉ trừ 2 hộp thay vì 24;
+   * sổ tồn phình lên 22 hộp không có thật, tới lúc bán tiếp thì bán vào hàng không còn.
+   * Nhân nhầm chiều (nhân cả vào tiền) thì cột H gấp 12 lần, sai luôn cơ sở tính thuế.
+   *
+   * Đối chứng âm đã chạy: đổi `soLuong: sl * muc.heSo` thành `soLuong: sl` (Normalize.gs) → bài này HỎNG.
+   */
+  function T36_heSoQuyDoi() {
+    var themMap = [
+      { 'Gian hàng': 'Shopee mall', 'Tên trên Shopee': 'Thùng 12 hộp quy về hộp lẻ', 'Phân loại': '',
+        'Tên viết tắt': 'hộp lẻ', 'Hệ số': 12, 'Xác nhận': 'CÓ' }
+    ];
+    var bc = boiCanh({ themMapping: themMap });
+    var kq = chay(bc, [file(bc, [
+      TestData.don({ maDon: 'HS00000000001', dongs: [{ ten: 'Thùng 12 hộp quy về hộp lẻ', sl: 2, gia: 480000 }] }),
+      TestData.don({ maDon: 'HS00000000002', dongs: [{ ten: 'Thùng 12 hộp quy về hộp lẻ', sl: 3, gia: 480000 }] }),
+      TestData.don({ maDon: 'HS00000000003', dongs: [{ ten: 'Bột Ngũ Cốc 5 Loại Hạt Damtuh', sl: 2, gia: 305000 }] })
+    ])]);
+    var k = bc.kho, T = 'Shopee mall';
+    bang(kq.dongGhi, 3, 'ba đơn một mặt hàng → ba dòng, hệ số không sinh thêm dòng (đó là việc của Cấu phần)');
+
+    // mốc của đề bài: SL Shopee 2 × Hệ số 12 = 24
+    bang(k.o(T, 7, 7).gt, 24, 'G = SL × Hệ số (2 × 12)');
+    bang(k.o(T, 7, 4).gt, 'hộp lẻ', 'D lấy Tên viết tắt của dòng Mapping');
+    // điểm thứ hai để "cộng thay vì nhân" (2+12=14, 3+12=15) không lọt qua
+    bang(k.o(T, 8, 7).gt, 36, 'G = 3 × 12');
+    // dòng không khai Hệ số → mặc định 1, không được nhân bừa
+    bang(k.o(T, 9, 7).gt, 2, 'Hệ số trống → hệ số 1, G = SL');
+
+    // Hệ số CHỈ đổi số lượng. Tiền giữ nguyên theo giá Shopee, nếu không thì cơ sở tính thuế sai gấp 12 lần.
+    bang(k.o(T, 7, 8).gt, 960000, 'H = giá ưu đãi × SL Shopee, KHÔNG nhân hệ số');
+    bang(k.o(T, 8, 8).gt, 1440000, 'H đơn thứ hai cũng không dính hệ số');
+    phai(!k.dongVang(T, 7) && !k.dongVang(T, 8), 'ghép được thì không tô vàng');
+
+    // cùng phép tính ở mức hàm, để biết chỗ hỏng nằm ở lớp 2 hay lớp 3
+    var dm = DanhMuc.doc(TestData.danhMucBang());
+    var map = MapListing.docBang(TestData.mappingBang(themMap), dm, bc.cfg);
+    var mr = MapListing.tra(map, 'SP_MALL', 'Thùng 12 hộp quy về hộp lẻ', '');
+    bang(mr.__muc.heSo, 12, 'Mapping đọc ra hệ số 12');
+    var dg = Normalize.dongGhiTuDongXuat({ maGianHang: 'SP_MALL', tenListing: 'Thùng 12 hộp quy về hộp lẻ',
+      tenPhanLoai: '', soLuongListing: 2 }, map);
+    bang(dg.length, 1, 'một dòng xuất → một dòng ghi');
+    bang(dg[0].soLuong, 24, 'Normalize nhân hệ số ngay ở lớp 2');
+    return { ghiChu: 'SL 2 × Hệ số 12 = 24 · SL 3 × 12 = 36 · hệ số trống = 1; tiền không dính hệ số' };
+  }
+
+  /**
+   * KT-T-27 — CÓ CẢ `Hệ số` LẪN `Cấu phần` THÌ DÙNG `Cấu phần`, BỎ QUA `Hệ số`.
+   * Vì sao bài này tồn tại: trước 08/9 không dòng Mapping nào của fixture có ĐỒNG THỜI hai thứ, nên
+   * đảo hai nhánh `if` trong `MapListing.danhGia` vẫn xanh hết bảng. Luật nằm ở Context 6.3 và ở chính
+   * chú thích trong mã, nhưng chú thích không phải hàng rào.
+   *
+   * Triệu chứng thật nếu vi phạm: nhân viên điền Cấu phần cho combo nhưng ô `Hệ số` vẫn còn số 12 mà
+   * tool tự điền lúc append dòng mới (xem `MapListing.boSungTenMoi`: `row['Hệ số'] = 1`, người sửa thành 12).
+   * Chạy nhánh Hệ số thì combo bị quy về MỘT mã với số lượng gấp bội, hai mã còn lại của combo không bị
+   * trừ kho lần nào. Kho vừa hụt vừa thừa, không lần ra được từ sổ.
+   *
+   * Đối chứng âm đã chạy: đảo hai nhánh (`else if (tvt)` lên trước `else if (cauPhanText)`) → bài này HỎNG.
+   */
+  function T37_cauPhanDeHeSo() {
+    var themMap = [
+      // dòng "bẩn" đúng kiểu gặp thật: người điền Cấu phần nhưng KHÔNG xóa Tên viết tắt và Hệ số cũ
+      { 'Gian hàng': 'Shopee mall', 'Tên trên Shopee': 'Combo vừa có Hệ số vừa có Cấu phần', 'Phân loại': '',
+        'Tên viết tắt': 'hộp lẻ', 'Hệ số': 12, 'Cấu phần': 'khăn gừng x 1; kvs x 2', 'Xác nhận': 'CÓ' }
+    ];
+    var bc = boiCanh({ themMapping: themMap });
+    var kq = chay(bc, [file(bc, [TestData.don({ maDon: 'CH00000000001',
+      dongs: [{ ten: 'Combo vừa có Hệ số vừa có Cấu phần', sl: 2, gia: 300000 }] })])]);
+    var k = bc.kho, T = 'Shopee mall';
+
+    bang(kq.dongGhi, 2, 'bung theo Cấu phần → 2 dòng (đi nhánh Hệ số thì chỉ ra 1 dòng)');
+    bangMang([k.o(T, 7, 4).gt, k.o(T, 8, 4).gt], ['khăn gừng', 'kvs'], 'D lấy mã của Cấu phần');
+    bangMang([k.o(T, 7, 7).gt, k.o(T, 8, 7).gt], [2, 4], 'G = SL cấu phần × SL mua (1×2 và 2×2)');
+
+    // ba câu chốt thẳng vào cái sai nguy hiểm nhất: trừ kho gấp bội theo Hệ số
+    phai(k.o(T, 7, 4).gt !== 'hộp lẻ' && k.o(T, 8, 4).gt !== 'hộp lẻ', 'Tên viết tắt của nhánh Hệ số KHÔNG được xuất hiện');
+    phai(k.o(T, 7, 7).gt !== 24 && k.o(T, 8, 7).gt !== 24, 'không dòng nào mang số lượng 24 = 2 × Hệ số 12');
+    bang(Number(k.o(T, 7, 7).gt) + Number(k.o(T, 8, 7).gt), 6, 'tổng số lượng trừ kho = 6, không phải 24');
+    phai(!k.dongVang(T, 7) && !k.dongVang(T, 8), 'cấu phần hợp lệ thì không tô vàng');
+
+    // mức hàm: dòng Mapping phải được đánh giá là cấu phần, và hệ số bị hạ về 1 chứ không giữ 12
+    var dm = DanhMuc.doc(TestData.danhMucBang());
+    var map = MapListing.docBang(TestData.mappingBang(themMap), dm, bc.cfg);
+    var mr = MapListing.tra(map, 'SP_MALL', 'Combo vừa có Hệ số vừa có Cấu phần', '');
+    phai(mr.__muc && mr.__muc.cauPhan, 'dòng Mapping được đánh giá theo Cấu phần');
+    bang(mr.__muc.cauPhan.length, 2, 'hai cấu phần');
+    bang(mr.__muc.heSo, 1, 'Hệ số bị bỏ qua (hạ về 1), không mang số 12 đi tiếp');
+    phai(!mr.__muc.item, 'nhánh Cấu phần không gắn item đơn lẻ của Tên viết tắt');
+    // tool KHÔNG được xóa số người đã gõ, chỉ là không dùng tới
+    bang(Number(mr['Hệ số']), 12, 'ô Hệ số của người vẫn nguyên 12 trong sheet Mapping');
+    return { ghiChu: 'cùng dòng có Hệ số 12 và Cấu phần "khăn gừng x 1; kvs x 2" → 2 dòng G = 2 và 4, không có 24' };
+  }
+
+  /**
+   * KT-T-07 — HAI CỘT CHỈ KHÁC NHAU HOA/THƯỜNG.
+   * Vì sao bài này tồn tại: file xuất Shopee thật có ĐỦ CẢ HAI cột
+   *   `Tổng số tiền Người mua thanh toán`  (chữ N hoa — số CẤP DÒNG, tool phải lấy cột này)
+   *   `Tổng số tiền người mua thanh toán`  (chữ n thường — số CẤP ĐƠN đã trừ khuyến mãi sàn)
+   * Đo trên `00_DAU_VAO/Order.toship.20260807_20260906.xlsx`: cột 28 và cột 45, lệch nhau ở 10/12 dòng,
+   * ví dụ đơn `2609046JTM11PM` là 610.000 và 494.100.
+   *
+   * Triệu chứng thật nếu vi phạm: so tên cột kiểu bỏ phân biệt hoa thường thì H lấy nhầm số cấp đơn.
+   * H sai kéo theo cơ sở tính thuế `H − I` sai TỪNG DÒNG, nên cột K sai, cột L sai, và số của cả tháng
+   * lệch âm thầm — không dòng nào đỏ, không cảnh báo nào nổi lên.
+   */
+  function T38_haiCotKhacHoaThuong() {
+    var COT_DUNG = 'Tổng số tiền Người mua thanh toán';     // chữ N hoa — cột đang khai trong cấu hình
+    var COT_BAY = 'Tổng số tiền người mua thanh toán';      // chữ n thường — cột mồi, KHÔNG được lấy
+    var SO_BAY = 494100;                                    // số thật của cột mồi ở đơn 2609046JTM11PM
+
+    // luật nền: TÊN CỘT giữ nguyên hoa thường, còn GIÁ TRỊ mới được so kiểu bỏ phân biệt
+    phai(Utils.tenCot(COT_DUNG) !== Utils.tenCot(COT_BAY), 'chuẩn hóa tên cột KHÔNG được bỏ phân biệt hoa thường');
+    bang(Utils.chuanHoaChuoi(COT_DUNG), Utils.chuanHoaChuoi(COT_BAY), 'ngược lại, chuẩn hóa GIÁ TRỊ thì có bỏ phân biệt');
+    var cm = Utils.lapChiMucCot([COT_BAY, COT_DUNG]);
+    bang(cm[COT_BAY], 0, 'chỉ mục cột giữ được cột thường ở vị trí 0');
+    bang(cm[COT_DUNG], 1, 'và cột hoa ở vị trí 1 — hai khóa khác nhau');
+
+    // chèn cột mồi vào bảng nguồn, thử cả hai thứ tự: mồi đứng TRƯỚC và đứng SAU cột đúng
+    function thu(moiDungTruoc) {
+      var bc = boiCanh();
+      var f = file(bc, [TestData.don({ maDon: 'HT00000000001',
+        dongs: [{ ten: 'Bột Ngũ Cốc 5 Loại Hạt Damtuh', sl: 2, gia: 305000 }] })], 'hoa-thuong.xlsx');
+      var iDung = f.bang[0].indexOf(COT_DUNG);
+      phai(iDung >= 0, 'bảng nguồn thử phải có cột ' + COT_DUNG);
+      var chen = moiDungTruoc ? iDung : iDung + 1;
+      f.bang.forEach(function (dong, i) { dong.splice(chen, 0, i === 0 ? COT_BAY : String(SO_BAY.toFixed(2))); });
+      bang(f.bang[0].filter(function (c) { return Utils.chuanHoaChuoi(c) === Utils.chuanHoaChuoi(COT_DUNG); }).length, 2,
+        'bảng thử có đúng hai cột chỉ khác hoa/thường');
+
+      var kq = chay(bc, [f]);
+      bang(kq.soFileLoi, 0, 'hai cột trùng tên sau khi hạ hoa thường vẫn không được coi là lỗi file');
+      var k = bc.kho, T = 'Shopee mall';
+      bang(k.o(T, 7, 8).gt, 610000, 'H lấy đúng cột đã chỉ định (' + (moiDungTruoc ? 'mồi đứng trước' : 'mồi đứng sau') + ')');
+      phai(k.o(T, 7, 8).gt !== SO_BAY, 'H tuyệt đối không được là số của cột mồi');
+      return k.o(T, 7, 8).gt;
+    }
+    bang(thu(true), 610000, 'mồi đứng trước cột đúng');
+    bang(thu(false), 610000, 'mồi đứng sau cột đúng');
+
+    // đổi cấu hình sang chính cột mồi thì phải lấy được số của cột mồi — chứng minh phép chọn cột
+    // đi theo cấu hình chứ không phải ăn may vì cột nào cũng ra cùng một số.
+    var bc2 = boiCanh({ cauHinh: { cot: { tienKhachTra: [COT_BAY] } } });
+    var f2 = file(bc2, [TestData.don({ maDon: 'HT00000000002',
+      dongs: [{ ten: 'Bột Ngũ Cốc 5 Loại Hạt Damtuh', sl: 2, gia: 305000 }] })], 'doi-cau-hinh.xlsx');
+    bang(f2.bang[0].indexOf(COT_BAY) >= 0, true, 'đổi cấu hình thì bảng nguồn sinh ra cột mồi');
+    var kq2 = chay(bc2, [f2]);
+    bang(kq2.soFileLoi, 0, 'đọc được file khi cấu hình trỏ sang cột thường');
+    bang(bc2.kho.o('Shopee mall', 7, 8).gt, 610000, 'lấy đúng cột được khai trong cấu hình');
+    return { ghiChu: 'file thật có cả hai cột (28 và 45), lệch 10/12 dòng — ví dụ 610.000 vs 494.100' };
+  }
+
   var DANH_SACH = [
     ['T-01', 'Chống trùng: chạy 3 lần ra một kết quả', T01_chongTrungChay3Lan],
     ['T-02', 'Tự nhận loại file: tab "Tất cả" bỏ đơn hủy/hoàn, tab "Chờ lấy hàng" xử lý hết', T02_tuNhanLoaiFile],
@@ -830,7 +988,10 @@ var TestSuite = (function () {
     ['T-32', 'D-06: Mapping chưa ai ghi CÓ → vẫn ghi đủ đơn, toàn dòng vàng, nhưng cảnh báo ĐẦU TIÊN nói thẳng kết quả chưa dùng được', T32_mappingChuaAiTickVanGhiNhungNoiThang],
     ['T-33', 'Dòng vàng trên 50% cũng kêu đúng tỷ lệ; số liệu Mapping hiện ra mọi lần chạy', T33_nguongDongVangVaSoLieuMappingLuonHien],
     ['T-34', 'T-48/D-15: cảnh báo vùng công thức E, F, M, N — dư nhiều im lặng · dư ít vàng · sẽ vượt đỏ mà vẫn ghi đủ đơn', T34_canhBaoVuotVungCongThucBonCot],
-    ['T-35', 'Đo vùng công thức chịu được cả hai hình dạng: từng dòng · ARRAYFORMULA một ô · ARRAY_CONSTRAIN', T35_doVungCongThucChiuHaiHinhDang]
+    ['T-35', 'Đo vùng công thức chịu được cả hai hình dạng: từng dòng · ARRAYFORMULA một ô · ARRAY_CONSTRAIN', T35_doVungCongThucChiuHaiHinhDang],
+    ['T-36', 'KT-T-24: Hệ số quy đổi — SL Shopee 2 × Hệ số 12 = 24; tiền KHÔNG dính hệ số', T36_heSoQuyDoi],
+    ['T-37', 'KT-T-27: dòng Mapping có cả Hệ số lẫn Cấu phần → dùng Cấu phần, BỎ QUA Hệ số (sai là trừ kho gấp bội)', T37_cauPhanDeHeSo],
+    ['T-38', 'KT-T-07: hai cột chỉ khác hoa/thường cùng tồn tại → lấy đúng cột đã chỉ định', T38_haiCotKhacHoaThuong]
   ];
 
   function chayTatCa() {

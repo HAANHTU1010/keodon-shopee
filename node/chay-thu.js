@@ -201,6 +201,12 @@ function tomTat(kq, cfg) {
   const d = nang.slice();
   d.push(`Đọc ${kq.soFile} file (${kq.soFileLoi} lỗi) · ${kq.soDonDoc} đơn / ${kq.soDongDoc} dòng hàng`);
   if (kq.donBoQuaHuyHoan) d.push(`Bỏ ${kq.donBoQuaHuyHoan} đơn hủy/hoàn (file tab "Tất cả")`);
+  // D-17: file tab "Tất cả" mà mọi đơn đều hủy/hoàn. Lọc xong không còn gì để ghi. Dòng "GHI THÊM 0 đơn"
+  // một mình thì mơ hồ — người vận hành không phân biệt được "tool hỏng" với "file này vốn không có đơn nào
+  // hợp lệ". Phải nói thẳng, và nói rằng KHÔNG ghi gì (chứ không phải ghi hụt).
+  if (kq.soFile && kq.soDonDoc === 0 && kq.donBoQuaHuyHoan > 0) {
+    d.push(`0 đơn hợp lệ sau khi lọc — mọi đơn trong file đều là đơn hủy/hoàn, tool không ghi gì vào file tracking.`);
+  }
   d.push(`GHI THÊM ${kq.donGhi} đơn (${kq.dongGhi} dòng, ${kq.donGopO} đơn nhiều hàng đã gộp ô) · bỏ qua ${kq.donDaCo} đơn đã có`);
   d.push(`DÒNG VÀNG cần người xem: ${kq.dongVang}` + (kq.dongVang ? ` — mở file kết quả, đọc cột "${cfg.keyin.tieu_de_note}"` : ''));
   if (kq.tenMoi) d.push(`Mapping sản phẩm: thêm ${kq.tenMoi} tên hàng mới chờ điền`);
@@ -302,17 +308,152 @@ function chonFileTracking(cv, thoiDiem) {
   return { goc: ungVien[0].p, lyDo: ungVien[0].lyDo };
 }
 
-async function chayVanHanh(thuMuc) {
-  const vh = path.resolve(thuMuc);
-  const fileCfg = path.join(vh, 'CAU_HINH_VAN_HANH.json');
-  if (!fs.existsSync(fileCfg)) throw new Error('Không tìm thấy ' + fileCfg + '\n  Chạy CAI_DAT_1_LAN.bat trước.');
-  const cv = docJson(fileCfg);
-  cv.__thuMuc = vh;
+// ------------------------------------------------- bố cục thư mục của vỏ vận hành (GV-v2.6 mục 1)
+
+/**
+ * Bố cục MỚI của thư mục giao cho nhân viên (`Tool_nhập_liệu`). Chỉ khác bố cục cũ ở ĐƯỜNG DẪN:
+ *
+ *   1. Thư mục gian hàng mang TÊN SHEET (`Shopee mall`) thay cho mã (`SP_MALL`) — nhân viên khỏi
+ *      phải nhớ ánh xạ mã ↔ sheet. Ánh xạ nằm ở khóa `thu_muc_gian_hang` của CAU_HINH_VAN_HANH.json.
+ *   2. File chạy xong nằm ngay trong `<thư mục gian hàng>/đã xử lý/`, không còn `4_DA_XU_LY` riêng.
+ *      File hỏng vào `<thư mục gian hàng>/đã xử lý/LOI/`.
+ *
+ * MÃ gian hàng (`SP_MALL`…) KHÔNG đổi và không được đổi: Web App trên Google dựng cấu hình từ
+ * `src/CaiDat.gs` của chính nó rồi tra sheet theo MÃ. Đổi mã ở máy này là Web App không nhận ra.
+ *
+ * Lớp này KHÔNG đụng bốn chốt an toàn (`kiemTraThaSaiCho`, `kiemTraTrungGianHang`,
+ * `kiemTraGianQuaMapping`, `kiemTraTrackingBanTruoc`) và không đụng phép đọc file — chúng dùng
+ * nguyên bản của `NguonThuMuc`. Ở đây chỉ có phép nối đường dẫn.
+ */
+class NguonThuMucTheoShop extends NguonThuMuc {
+  constructor(thuMucTha, tenThuMuc, tenDaXuLy) {
+    super(thuMucTha, thuMucTha);
+    this.tenThuMuc = tenThuMuc || {};
+    this.tenDaXuLy = tenDaXuLy || 'đã xử lý';
+  }
+
+  /** mã gian hàng → tên thư mục trên đĩa; chưa khai thì dùng luôn mã (không đoán bừa). */
+  tenCua(ma) { return this.tenThuMuc[ma] || ma; }
+  thuMucCua(ma) { return path.join(this.vao, this.tenCua(ma)); }
+  tenHopLe(cfg) { return Object.keys(cfg.gianHang).map(m => this.tenCua(m)); }
+
+  /** Dựng sẵn thư mục thả + thư mục `đã xử lý` cho từng gian hàng, để nhân viên thấy chỗ mà thả. */
+  taoThuMuc(cfg) {
+    Object.keys(cfg.gianHang).forEach(m => fs.mkdirSync(path.join(this.thuMucCua(m), this.tenDaXuLy), { recursive: true }));
+  }
+
+  layFileMoi(cfg) {
+    const files = [];
+    for (const gian of Object.keys(cfg.gianHang)) {
+      const d = this.thuMucCua(gian);
+      for (const f of NguonThuMuc.xlsxTrong(d)) {
+        const p = path.join(d, f);
+        files.push({
+          san: 'SHOPEE', maGianHang: gian, tenFile: f, duongDan: p,
+          docBang: () => NguonThuMuc.docBang(p, cfg.chung.ten_sheet_du_lieu)
+        });
+      }
+    }
+    return files;
+  }
+
+  fileBoQua(cfg) {
+    const ds = [];
+    for (const gian of Object.keys(cfg.gianHang)) {
+      const d = this.thuMucCua(gian);
+      if (!fs.existsSync(d)) continue;
+      fs.readdirSync(d)
+        .filter(f => !/\.xlsx$/i.test(f) && !f.startsWith('~$') && !NguonThuMuc.laFileHeThong(f)
+          && fs.statSync(path.join(d, f)).isFile())
+        .forEach(f => ds.push(this.tenCua(gian) + '/' + f));
+    }
+    // Thư mục con KHÔNG khớp tên gian hàng nào: file thả vào đó sẽ không bao giờ được đọc. Phải
+    // nhắc ra màn hình — im lặng bỏ qua nghĩa là mất đơn mà không ai biết (NOTES_DEV mục 4.4).
+    const hopLe = this.tenHopLe(cfg);
+    if (fs.existsSync(this.vao)) {
+      for (const ten of fs.readdirSync(this.vao)) {
+        const d = path.join(this.vao, ten);
+        if (!fs.statSync(d).isDirectory() || hopLe.indexOf(ten) >= 0) continue;
+        const xlsx = NguonThuMuc.xlsxTrong(d);
+        if (xlsx.length) ds.push(ten + '/ (' + xlsx.length + ' file .xlsx trong thư mục KHÔNG PHẢI tên gian hàng; tên hợp lệ: ' + hopLe.join(', ') + ')');
+      }
+    }
+    return ds;
+  }
+
+  dongDangCho(cfg) {
+    return Object.keys(cfg.gianHang)
+      .map(g => this.tenCua(g) + ' ' + NguonThuMuc.xlsxTrong(this.thuMucCua(g)).length)
+      .map((x, i) => x + (i === 0 ? ' file' : ''))
+      .join(' · ');
+  }
+
+  danhDauDaXuLy(f) { this._chuyen(f, path.join(this.thuMucCua(f.maGianHang), this.tenDaXuLy)); }
+  danhDauLoi(f) { this._chuyen(f, path.join(this.thuMucCua(f.maGianHang), this.tenDaXuLy, 'LOI')); }
+}
+
+/**
+ * Đọc đường dẫn thư mục từ CAU_HINH_VAN_HANH.json. Chọn bố cục theo đúng MỘT dấu hiệu:
+ *   · có khóa `thu_muc_da_xu_ly`  → bố cục CŨ (một thư mục `4_DA_XU_LY` riêng, thư mục gian hàng mang mã)
+ *   · không có                    → bố cục MỚI của GV-v2.6 mục 1
+ * Nhờ vậy các bài test đang khai đủ bốn khóa `thu_muc_*` chạy y như cũ, không phải sửa một dòng nào.
+ */
+function docDuongDan(cv, vh) {
   cv.__thaFile = path.resolve(vh, cv.thu_muc_tha_file || '1_THA_FILE_XUAT');
   cv.__fileTracking = path.resolve(vh, cv.thu_muc_file_tracking || '2_FILE_TRACKING');
-  cv.__ketQua = path.resolve(vh, cv.thu_muc_ket_qua || '3_KET_QUA');
-  cv.__daXuLy = path.resolve(vh, cv.thu_muc_da_xu_ly || '4_DA_XU_LY');
-  [cv.__thaFile, cv.__fileTracking, cv.__ketQua, cv.__daXuLy].forEach(d => fs.mkdirSync(d, { recursive: true }));
+  // Không còn `3_KET_QUA`: chế độ Google chỉ sinh nhật ký, và nhật ký nằm trong thư mục `Cấu hình`.
+  cv.__ketQua = path.resolve(vh, cv.thu_muc_ket_qua || path.join('Cấu hình', 'nhật ký'));
+  cv.__boCucCu = !!cv.thu_muc_da_xu_ly;
+  cv.__tenThuMucGian = cv.thu_muc_gian_hang || {};
+  cv.__tenDaXuLy = cv.ten_thu_muc_da_xu_ly || 'đã xử lý';
+  cv.__daXuLy = cv.__boCucCu
+    ? path.resolve(vh, cv.thu_muc_da_xu_ly)
+    : path.join(cv.__thaFile, '<tên gian hàng>', cv.__tenDaXuLy);
+  fs.mkdirSync(cv.__thaFile, { recursive: true });
+  fs.mkdirSync(cv.__ketQua, { recursive: true });
+  if (cv.__boCucCu) fs.mkdirSync(cv.__daXuLy, { recursive: true });
+  return cv;
+}
+
+/**
+ * Tìm `CAU_HINH_VAN_HANH.json`. Bố cục cũ để nó ngay gốc thư mục vận hành; bố cục v2.6 để nó trong
+ * thư mục `Cấu hình`. Tên thư mục đó có dấu tiếng Việt nên file `.bat` (bắt buộc ASCII thuần, xem
+ * NOTES_DEV mục 4.1) không gõ thẳng được — vỏ Node tự dò một cấp thư mục con.
+ */
+function timFileCauHinh(vh) {
+  const ngay = path.join(vh, 'CAU_HINH_VAN_HANH.json');
+  if (fs.existsSync(ngay)) return ngay;
+  if (!fs.existsSync(vh)) return ngay;
+  const con = fs.readdirSync(vh, { withFileTypes: true })
+    .filter(d => d.isDirectory())
+    .map(d => path.join(vh, d.name, 'CAU_HINH_VAN_HANH.json'))
+    .filter(p => fs.existsSync(p));
+  if (con.length === 1) return con[0];
+  if (con.length > 1) {
+    throw new Error('Có ' + con.length + ' file CAU_HINH_VAN_HANH.json trong ' + vh + ':\n' +
+      con.map(p => '      · ' + p).join('\n') + '\n' +
+      '  Chỉ được có đúng một. Xóa hoặc đổi tên các bản thừa rồi bấm chạy lại.');
+  }
+  return ngay;
+}
+
+/** Nguồn file trên máy, dựng theo đúng bố cục đã đọc được. */
+function taoNguon(cv, cfg) {
+  if (cv.__boCucCu) return new NguonThuMuc(cv.__thaFile, cv.__daXuLy);
+  const n = new NguonThuMucTheoShop(cv.__thaFile, cv.__tenThuMucGian, cv.__tenDaXuLy);
+  n.taoThuMuc(cfg);
+  return n;
+}
+
+async function chayVanHanh(thuMuc) {
+  const vh = path.resolve(thuMuc);
+  const fileCfg = timFileCauHinh(vh);
+  if (!fs.existsSync(fileCfg)) throw new Error('Không tìm thấy CAU_HINH_VAN_HANH.json trong ' + vh + '\n' +
+    '  File đó phải nằm trong thư mục "Cấu hình", cạnh ba file .bat.\n' +
+    '  Bấm đúp 1_CAI_DAT_LAN_DAU.bat một lần: nó tự tạo file từ bản mẫu CAU_HINH_VAN_HANH.mau.json.');
+  const cv = docJson(fileCfg);
+  cv.__thuMuc = vh;
+  docDuongDan(cv, vh);
 
   const thoiDiem = thamSo('--thoi-diem') ? lop.Utils.parseNgay(thamSo('--thoi-diem')) : new Date();
   const ngayGhi = thamSo('--ngay') || cv.ngay_ghi || null;
@@ -321,13 +462,14 @@ async function chayVanHanh(thuMuc) {
   // GIAI ĐOẠN 2: ghi thẳng lên Google Sheet qua Web App, không đụng file .xlsx trên máy.
   if (cv.google_sheet && cv.google_sheet.bat === true) return chayVanHanhGoogle(cv, cfg, thoiDiem, ngayGhi);
 
+  fs.mkdirSync(cv.__fileTracking, { recursive: true });   // chỉ chế độ Excel mới cần thư mục này
   const chon = chonFileTracking(cv, thoiDiem);
   const out = duongDanOut(chon.goc, cv.__ketQua, thoiDiem, lop);
   const nhan = lop.Utils.nhanThoiDiem(thoiDiem);
   const fileLog = path.join(cv.__ketQua, 'LOG_' + nhan + '.txt');
   const mapKhoiTao = await mappingKhoiTao(cv.file_mapping_mau ? path.resolve(vh, cv.file_mapping_mau) : null);
 
-  const nguon = new NguonThuMuc(cv.__thaFile, cv.__daXuLy);
+  const nguon = taoNguon(cv, cfg);
 
   console.log('=== KÉO ĐƠN SHOPEE VÀO FILE TRACKING — ' + lop.Utils.dinhDangNgayGio(thoiDiem) + ' ===');
   console.log('Đọc file tracking : ' + path.basename(chon.goc) + '   (' + chon.lyDo + ')');
@@ -387,7 +529,7 @@ async function chayVanHanh(thuMuc) {
 async function chayVanHanhGoogle(cv, cfg, thoiDiem, ngayGhi) {
   const thang = thangCua(thoiDiem);
   const fileLog = path.join(cv.__ketQua, 'LOG_' + lop.Utils.nhanThoiDiem(thoiDiem) + '.txt');
-  const nguon = new NguonThuMuc(cv.__thaFile, cv.__daXuLy);
+  const nguon = taoNguon(cv, cfg);
   console.log('=== KÉO ĐƠN SHOPEE LÊN GOOGLE SHEET — ' + lop.Utils.dinhDangNgayGio(thoiDiem) + ' ===');
   console.log('Đích ghi          : Google Sheet của tháng ' + thang + ' (qua Web App Apps Script)');
   console.log('Thư mục thả file  : ' + cv.__thaFile);
@@ -485,7 +627,7 @@ main().catch(e => {
     // phản hồi. Đo được ở bài T-WA-05: sheet lên 9 dòng trong khi máy vẫn ném lỗi. Nói chắc là nói sai,
     // và người vận hành sẽ đi ghi lại lần nữa.
     var cvG = null;
-    try { cvG = docJson(path.join(path.resolve(thamSo('--van-hanh')), 'CAU_HINH_VAN_HANH.json')); } catch (e) { /* không đọc được thì coi như chế độ Excel */ }
+    try { cvG = docJson(timFileCauHinh(path.resolve(thamSo('--van-hanh')))); } catch (e) { /* không đọc được thì coi như chế độ Excel */ }
     var laGoogle = !!(cvG && cvG.google_sheet && cvG.google_sheet.bat === true);
     console.error(String.fromCharCode(10) + (laGoogle
       ? 'Tool không đụng file gốc trên máy này. Phần đã ghi lên Google Sheet (nếu có) vẫn giữ nguyên;' + String.fromCharCode(10) +

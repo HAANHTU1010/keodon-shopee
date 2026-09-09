@@ -6,8 +6,10 @@
  * Mười quy tắc (Context 7.1):
  *  1. Chỉ THÊM dòng dưới dòng dữ liệu cuối. Không chèn giữa, không sắp xếp, không xóa, không sửa dòng đã có.
  *  2. Ghi 9 cột A, B (để trống), C, D, G, H, I, J, K.
- *     - Chế độ SHEET (Google Sheet): E, F, M, N là ARRAYFORMULA một ô duy nhất → **không chạm**; chỉ kéo cột L.
- *     - Chế độ EXCEL (giai đoạn 1): kéo dài E, F, L, M, N nếu dòng đích chưa có.
+ *     - Chế độ EXCEL: kéo dài E, F, L, M, N nếu dòng đích chưa có.
+ *     - Chế độ SHEET: mặc định chỉ kéo cột L. Xem `COT_KEO_CHE_DO_SHEET` ngay dưới — câu cũ ở đây
+ *       ("E, F, M, N là ARRAYFORMULA một ô duy nhất, không chạm") là TIỀN ĐỀ SAI, đã bị GV-v2.4
+ *       Phụ lục A bác bằng số đo trên file thật.
  *  3. Đơn nhiều sản phẩm: GỘP dọc C, H, I, J, K, L cho cả đơn; D và G ghi riêng từng dòng.
  *  4. Cột A ngày chạy; C mã đơn dạng chữ (giữ số 0 đầu).
  *  5. Cột G = số lượng Shopee × hệ số (hoặc số lượng của từng cấu phần).
@@ -23,6 +25,29 @@ var KeyIn = (function () {
   var RE_VUNG = /\$?([A-Z]{1,3})\$?(\d+):\$?([A-Z]{1,3})\$?(\d+)/g;
   /** Cột được gộp dọc cho đơn nhiều dòng (Context 4.2 — đo trên file thật: 71/71 đơn, mỗi cột 71 vùng). */
   var COT_GOP = ['cot_ma_don', 'cot_tong_tien_sp', 'cot_mgg_shop', 'cot_chi_phi', 'cot_thue', 'cot_doanh_thu'];
+
+  /**
+   * CHẾ ĐỘ SHEET KÉO NHỮNG CỘT NÀO — và vì sao mặc định vẫn là "chỉ cột L".
+   *
+   * Tiền đề cũ đã sai: E, F, M, N KHÔNG phải ARRAYFORMULA một ô. Đo thẳng trên Google 08/9/2026
+   * (GV-v2.4 Phụ lục A.1) thấy công thức TỪNG DÒNG bọc `ARRAY_CONSTRAIN(…;1;1)`, kéo tay tới một
+   * dòng cố định — `Shopee mall` cột E 414 ô, M/N 399 ô. Nên dòng mới không tự có công thức.
+   *
+   * NHƯNG đường ghi lên Google KHÔNG đi qua file này. `node/chay-google-sheet.js` gọi thẳng
+   * `src/ShellAppsScript.gs`, và chỗ chép công thức xuống cho cả năm cột nằm ở đó
+   * (`mauChepCongThucDS_` + `chepCongThucXuong_`). Nhánh SHEET của `KeyIn` chỉ chạy khi ai đó bật
+   * `che_do_cong_thuc = 'SHEET'` trong lúc dùng vỏ EXCEL trên máy — một cấu hình không có trong
+   * vận hành thật. Đổi mặc định của nhánh ấy không đem lại một dòng công thức nào cho file tiền,
+   * mà lại làm đỏ bài T-21 của `src/tests/TestSuite.gs` và bài T-48 (`src/tests/TestSuite.gs`,
+   * ba ca (a)(b)(c) đều dựng trên `cauHinh: SHEET`) — hai file đang do người khác giữ.
+   *
+   * Vì thế: giữ mặc định, và mở một CÔNG TẮC cấu hình để bật khi cần, không phải sửa mã:
+   * `keyin.chep_cong_thuc_sheet = true` trong CAU_HINH_VAN_HANH.json → nhánh SHEET kéo đủ 5 cột
+   * y như chế độ EXCEL. Đã ghi lựa chọn này trong báo cáo cho BA.
+   */
+  function cotKeoCheDoSheet(k) {
+    return k.chep_cong_thuc_sheet === true ? k.cot_cong_thuc : [k.cot_doanh_thu];
+  }
 
   /**
    * Còn dư dưới ngần này dòng công thức là phải kêu (GV-v2.4 mục 1.3). Ghi đè được bằng
@@ -266,8 +291,9 @@ var KeyIn = (function () {
     var r = dongCuoi + 1;
     var nguonCt = {};
     var soTrung = 0;
-    // cột công thức phải chạm tới: chế độ SHEET chỉ cột L (E/F/M/N là ARRAYFORMULA một ô — ghi vào là hỏng cả cột)
-    var cotCongThuc = laSheet ? [k.cot_doanh_thu] : k.cot_cong_thuc;
+    // Cột công thức phải chạm tới. Chế độ EXCEL kéo đủ 5 cột; chế độ SHEET theo công tắc
+    // `keyin.chep_cong_thuc_sheet` (xem `cotKeoCheDoSheet`), mặc định chỉ cột L.
+    var cotCongThuc = laSheet ? cotKeoCheDoSheet(k) : k.cot_cong_thuc;
 
     donDS.forEach(function (don) {
       var ma = Utils.chuoiMaDon(don.maDon);
@@ -398,6 +424,7 @@ var KeyIn = (function () {
     vungCongThuc: vungCongThuc,
     canhBaoVungCongThuc: canhBaoVungCongThuc,
     khoaCanhBaoVungCongThuc: khoaCanhBaoVungCongThuc,
+    cotKeoCheDoSheet: cotKeoCheDoSheet,
     lapKeHoach: lapKeHoach
   };
 })();

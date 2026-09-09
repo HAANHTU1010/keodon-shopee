@@ -18,8 +18,11 @@ moc-nghiem-thu.json
 # --- DỮ LIỆU KHÁCH: file xuất Shopee có tên, số điện thoại, địa chỉ người mua ---
 da-xu-ly/*/*.xlsx
 du-lieu-vao/*/*.xlsx
-out/*.xlsx
-out/nghiem-thu/
+# Mọi thứ tool sinh ra trong `out/`, không riêng .xlsx. Bản cũ chỉ chặn .xlsx và
+# thư mục nghiệm thu, nên file .txt và .json sinh ở đó vẫn lọt lên repo công khai —
+# mà chúng mang số thật của shop y như file .xlsx.
+out/*
+!out/.keep
 *.xlsx
 *.xls
 *.csv

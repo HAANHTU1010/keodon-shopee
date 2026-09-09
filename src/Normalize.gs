@@ -94,6 +94,10 @@ var Normalize = (function () {
   /**
    * Một dòng xuất → các dòng sẽ ghi (một, hoặc nhiều nếu có Cấu phần).
    * Chưa nhận ra → vẫn trả về một dòng với tenVietTat rỗng + lyDo (GV-v2.2 mục 1.5.5: vẫn ghi đơn, để trống D, tô vàng).
+   *
+   * `ghiChu` KHÔNG rỗng mà `lyDo` rỗng nghĩa là: ghép được mã, nhưng có điều người phải biết — tồn 0, hoặc
+   * mã có giá vốn 0 (lãi bị thổi phồng, GV-v2.6 mục 0). Cả hai vỏ đều tô vàng theo đúng một luật `lyDo || ghiChu`,
+   * nên chỉ cần điền `ghiChu` là dòng tự vàng và tự có Note — không dựng thêm cơ chế nào khác.
    */
   function dongGhiTuDongXuat(d, map) {
     var sl = Number(d.soLuongListing) || 0;

@@ -30,6 +30,37 @@ function localSangUtc(d) {
 }
 function laNgay(v) { return v instanceof Date && !isNaN(v.getTime()); }
 
+/**
+ * D-10 — FILE ĐÍCH ĐANG BỊ GIỮ (thường là đang mở trong Excel).
+ *
+ * Vì sao phải có: người vận hành mở file kết quả lần trước lên xem dòng vàng, quên đóng, rồi bấm chạy lại.
+ * Hệ điều hành từ chối ghi và Node ném ra một câu tiếng Anh (`EPERM: operation not permitted, open '...'`).
+ * Câu đó không nói được việc phải làm, nên người ta hoặc bấm lại mãi, hoặc tưởng tool hỏng rồi đi gõ tay.
+ * Luật của kế hoạch kiểm thử: báo "đóng file rồi chạy lại", KHÔNG mất dữ liệu, và tuyệt đối không được
+ * lặng lẽ ghi sang một tên khác rồi coi như xong.
+ *
+ * Mã lỗi gặp thật: Windows trả `EBUSY` (file đang bị khóa) hoặc `EPERM` (khóa ghi / thuộc tính chỉ đọc);
+ * Linux/macOS trả `EACCES`. `EISDIR` là đường dẫn kết quả trỏ vào một thư mục — cũng là không ghi được.
+ */
+const MA_LOI_KHOA_GHI = ['EBUSY', 'EPERM', 'EACCES', 'EISDIR', 'ETXTBSY'];
+
+function laLoiKhoaGhi(e) { return !!(e && MA_LOI_KHOA_GHI.indexOf(e.code) >= 0); }
+
+/** Lỗi tiếng Việt thay cho mã lỗi hệ điều hành. Nói rõ ba điều: chuyện gì · file nào · phải làm gì. */
+function loiKhongGhiDuoc(e, duongDan) {
+  const loi = new Error(
+    'KHÔNG GHI ĐƯỢC file kết quả — hệ điều hành trả mã ' + e.code + ':\n' +
+    '      ' + duongDan + '\n' +
+    '  File này đang bị một chương trình khác giữ. Gần như luôn là ĐANG MỞ TRONG EXCEL.\n' +
+    '  Cách sửa: đóng file rồi chạy lại.\n' +
+    '  Không mất dữ liệu: file tracking gốc không bị đụng một ô nào, file xuất vẫn nằm nguyên trong\n' +
+    '  thư mục thả, và tool KHÔNG ghi lén sang file tạm nào. Chạy lại là ghi đủ.');
+  loi.code = e.code;
+  loi.duongDan = duongDan;
+  loi.khoaGhi = true;
+  return loi;
+}
+
 /** Giá trị ô ExcelJS → giá trị thuần cho lõi (công thức → null, ngày → giờ địa phương, rich text → chuỗi). */
 function giaTriThuan(cell) {
   if (cell.isMerged && cell.master && cell.master.address !== cell.address) return null;   // ô gộp con → trống
@@ -346,7 +377,14 @@ class KhoTracking {
     if (this.mappingKhoiTao) this.ghiMapping(this.mappingKhoiTao, []);   // sheet Mapping chưa có trong file → tạo
     fs.mkdirSync(path.dirname(path.resolve(this.out)), { recursive: true });
     this.wb.calcProperties = Object.assign({}, this.wb.calcProperties || {}, { fullCalcOnLoad: true });
-    await this.wb.xlsx.writeFile(this.out);
+    // D-10: file đích đang mở trong Excel → dịch mã lỗi hệ điều hành sang câu tiếng Việt nói rõ phải làm gì.
+    // Đo 08/9: ExcelJS hỏng ngay ở bước mở file nên nội dung cũ còn nguyên và không sinh file tạm nào.
+    try {
+      await this.wb.xlsx.writeFile(this.out);
+    } catch (e) {
+      if (laLoiKhoaGhi(e)) throw loiKhongGhiDuoc(e, this.out);
+      throw e;
+    }
 
     const kiem = new KhoTracking(this.out, this.out + '.kiemtra.tmp', this.lop);
     kiem.wb = new ExcelJS.Workbook();
@@ -413,7 +451,10 @@ function duongDanOut(duongDanGoc, thuMucOut, thoiDiem, lop) {
       fs.closeSync(fs.openSync(p, 'wx'));   // giành tên; đã có ai giành thì ném EEXIST
       return p;
     } catch (e) {
-      if (e.code !== 'EEXIST') throw e;
+      if (e.code === 'EEXIST') continue;                       // máy khác giành trước → thử tên kế tiếp
+      // D-10: thư mục kết quả không ghi được (đang bị giữ / chỉ đọc) — nói tiếng Việt, đừng ném mã lỗi Anh.
+      if (laLoiKhoaGhi(e)) throw loiKhongGhiDuoc(e, p);
+      throw e;
     }
   }
   throw new Error('Thư mục kết quả đã có 500 file cùng nhãn thời gian ' + nhan + ' — dọn bớt rồi chạy lại.');

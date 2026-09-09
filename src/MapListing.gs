@@ -13,6 +13,9 @@
  *     Fixture nghiệm thu để danh sách lô ở cột riêng `Mã dùng lần lượt khi hết lô` (ngăn bằng `;`) — đọc được cả hai kiểu.
  *  5. Gặp tên mới → append MỘT dòng cuối bảng (3 cột đầu + Ngày thêm + gợi ý), tô vàng, để trống phần người điền.
  *     Chỉ append: không sắp xếp, không chèn giữa, không xóa, không đụng ô người đã gõ.
+ *  6. Ghép được nhưng mã có GIÁ VỐN 0 → vẫn ghi đơn, tô vàng cả dòng, ghi lý do vào Note (GV-v2.6 mục 0).
+ *     Hàng bán và hàng tặng cùng loại để RIÊNG hai mã; mã giá vốn 0 gần như luôn là mã tặng, nên một dòng bán
+ *     trừ vào đó là lãi bị thổi phồng. Không đọc được giá vốn thì IM LẶNG — xem `canhBaoGiaVon0`.
  *
  * Không biết dữ liệu đến từ sàn nào — chỉ làm việc với dòng đơn đã chuẩn hóa (lớp 1) và danh mục kho.
  */
@@ -29,7 +32,14 @@ var MapListing = (function () {
     CHUA_DIEN: 'chưa điền Tên viết tắt trong Mapping sản phẩm',
     TVT_LA: 'tên viết tắt không có trong danh mục kho',
     CAU_PHAN_SAI: 'cấu phần sai cú pháp',
-    TON_0: 'tồn 0 — kiểm tra lô'
+    TON_0: 'tồn 0 — kiểm tra lô',
+    /**
+     * Nửa sau của câu cảnh báo giá vốn 0; nửa đầu là danh sách mã, do `canhBaoGiaVon0` ghép vào.
+     * Viết cho nhân viên đọc là hiểu ngay, phải nói đủ ba điều: mã nào · giá vốn 0 · vì sao đáng ngờ.
+     */
+    GIA_VON_0: 'đang để giá vốn 0 trong kho. Mã giá vốn 0 thường là mã hàng tặng, ' +
+      'bán mà trừ tồn vào đó thì lãi tính ra cao hơn thật. ' +
+      'Kiểm lại xem có phải lẽ ra trừ vào mã hàng bán không'
   };
 
   // ---------------------------------------------------------------- chuẩn hóa & khóa
@@ -127,6 +137,31 @@ var MapListing = (function () {
     return { cauPhan: out, canhBao: canhBao };
   }
 
+  // ---------------------------------------------------------------- giá vốn 0
+
+  /**
+   * Câu cảnh báo cho dòng BÁN ghép được nhưng trừ tồn vào mã có GIÁ VỐN 0 (GV-v2.6 mục 0).
+   * Vẫn ghi đơn — chỉ tô vàng cả dòng + ghi lý do vào Note, đúng cơ chế `ghiChu` đang có.
+   *
+   * Triệu chứng thật đang chống: mã giá vốn 0 hầu hết là mã hàng tặng (đo trên file tháng 8: đúng 3/76 mã,
+   * cả ba đều là mã khuyến mãi). Bán mà trừ vào mã tặng thì giá vốn bằng 0 nên lãi bị thổi phồng.
+   * Không có cảnh báo thì lỗi này im lặng: đơn vẫn ghi đủ, số vẫn đẹp, chỉ có lãi là sai.
+   *
+   * Im lặng khi KHÔNG ĐỌC ĐƯỢC giá vốn (ô trống, ô lỗi, công thức chưa tính — xem `DanhMuc.docGiaVon`).
+   * Không biết thì không kêu: tô vàng oan hàng loạt là cách nhanh nhất khiến nhân viên bỏ qua mọi cảnh báo.
+   */
+  function canhBaoGiaVon0(muc) {
+    if (!muc) return '';
+    var ds = muc.cauPhan ? muc.cauPhan.map(function (cp) { return cp.item; }) : [muc.item];
+    var ten = [];
+    ds.forEach(function (it) {
+      if (it && it.giaVon0) ten.push('mã ' + it.maHang + ' (' + it.tenVietTat + ')');
+    });
+    if (!ten.length) return '';
+    var cau = ten.join(', ') + ' ' + LY_DO.GIA_VON_0;
+    return cau.charAt(0).toUpperCase() + cau.slice(1);      // đứng đầu ô Note thì viết hoa cho dễ đọc
+  }
+
   // ---------------------------------------------------------------- đọc sheet
 
   function dongTrong() { var d = {}; COT.forEach(function (c) { d[c] = ''; }); return d; }
@@ -211,6 +246,9 @@ var MapListing = (function () {
           if (chon2) { muc.item = chon2.item; muc.tonHet = chon2.tonHet; muc.cacLo = chon2.cacLo; ghiChuThem = chon2.tonHet ? LY_DO.TON_0 : ''; }
         }
       }
+      // Giá vốn 0 phải xét SAU CÙNG, khi mã cuối cùng đã chốt (lô phụ ở trên còn đổi được mã).
+      var gv0 = canhBaoGiaVon0(muc);
+      if (gv0) { muc.giaVon0 = true; ghiChuThem = ghiChuThem ? ghiChuThem + '; ' + gv0 : gv0; }
       d['Mã hàng'] = muc && muc.item ? muc.item.maHang : (muc ? '(cấu phần)' : '');
       d.__muc = muc; d.__lyDo = lyDo; d.__ghiChuThem = ghiChuThem;
     });
@@ -317,13 +355,14 @@ var MapListing = (function () {
   }
 
   function tomTat(map) {
-    var t = { tong: 0, dungDuoc: 0, cauPhan: 0, chuaXacNhan: 0, chuaDien: 0, loi: 0, tonHet: 0, them: map ? map.soThem : 0 };
+    var t = { tong: 0, dungDuoc: 0, cauPhan: 0, chuaXacNhan: 0, chuaDien: 0, loi: 0, tonHet: 0, giaVon0: 0, them: map ? map.soThem : 0 };
     (map ? map.dong : []).forEach(function (d) {
       t.tong++;
       if (d.__muc) {
         t.dungDuoc++;
         if (d.__muc.cauPhan) t.cauPhan++;
         if (d.__muc.tonHet) t.tonHet++;
+        if (d.__muc.giaVon0) t.giaVon0++;
       } else if (d.__lyDo === 'CHUA_XAC_NHAN') t.chuaXacNhan++;
       else if (d.__lyDo === 'TVT_LA' || d.__lyDo === 'CAU_PHAN_SAI') t.loi++;
       else t.chuaDien++;
@@ -339,6 +378,7 @@ var MapListing = (function () {
     tenCotChuan: tenCotChuan,
     tachLo: tachLo,
     chonLo: chonLo,
+    canhBaoGiaVon0: canhBaoGiaVon0,
     phanTichCauPhan: phanTichCauPhan,
     docBang: docBang,
     tra: tra,

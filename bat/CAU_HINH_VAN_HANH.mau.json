@@ -1,0 +1,34 @@
+{
+  "_doc": "CẤU HÌNH CHO NGƯỜI VẬN HÀNH. Sửa bằng Notepad, giữ nguyên dấu ngoặc kép và dấu phẩy. File này KHÔNG chứa thông tin khách hàng. Tool ghi thẳng lên Google Sheet của tháng theo NGÀY CHẠY; máy này không giữ file .xlsx nào của tháng. Cách lấy hai dòng trong mục google_sheet: xem BAT_GOOGLE_SHEET.md. Khi đã điền thì file này CHỨA CHUỖI BÍ MẬT: đừng chụp màn hình gửi đi, đừng chép sang máy khác, đừng đồng bộ thư mục này lên đám mây.",
+
+  "_thu_muc_tha_file": "Thư mục để nhân viên thả file xuất Shopee. Nằm ngay cạnh ba file .bat. Bên trong là bốn thư mục gian hàng, mỗi thư mục có một thư mục con 'đã xử lý' — tool tự chuyển file vào đó sau khi kéo xong.",
+  "thu_muc_tha_file": "1_THA_FILE_XUAT",
+
+  "_thu_muc_gian_hang": "MÃ GIAN HÀNG (tool dùng, không đổi) → TÊN THƯ MỤC trên đĩa (nhân viên nhìn thấy). Tên thư mục đặt đúng tên sheet trên Google Sheet để khỏi phải nhớ ánh xạ. Đổi tên thư mục thì phải sửa đúng dòng ở đây, nếu không tool báo 'thư mục KHÔNG PHẢI tên gian hàng' và không đọc file trong đó.",
+  "thu_muc_gian_hang": {
+    "SP_MALL": "Shopee mall",
+    "SP_OFFOOD": "Offood",
+    "SP_IMPORT": "Importmart",
+    "SP_BABYIU": "Babyiu"
+  },
+
+  "_ten_thu_muc_da_xu_ly": "Tên thư mục con nằm TRONG từng thư mục gian hàng, nơi tool chuyển file xuất vào sau khi đã kéo đơn xong. File chỉ rời thư mục thả KHI DỮ LIỆU ĐÃ VÀO ĐÍCH — chạy hỏng thì file nằm nguyên chỗ cũ để bấm lại.",
+  "ten_thu_muc_da_xu_ly": "đã xử lý",
+
+  "_google_sheet": "ĐÍCH GHI. Hai dòng dưới do người phụ trách kỹ thuật cho biết, làm theo BAT_GOOGLE_SHEET.md. web_app_url là link /exec của Apps Script. chuoi_bi_mat LÀ BÍ MẬT: không chép vào mã nguồn, không gửi qua chat, không chụp màn hình gửi đi — ai có nó là ghi được vào sổ. Ghi vào file của tháng nào là do chính Web App quyết qua bảng link các tháng trên Google, máy này không cần biết.",
+  "google_sheet": {
+    "bat": true,
+    "web_app_url": "",
+    "chuoi_bi_mat": ""
+  },
+
+  "_cap_nhat": "Dùng cho nút  2_CAP_NHAT.bat  (nút số 2, ở ngoài cùng cạnh ba nút kia): tải bản mã mới nhất từ kho mã GitHub công khai về máy này. Điền tên tài khoản GitHub vào chu_tai_khoan và tên kho mã vào ten_repo, hai tên này do người phụ trách kỹ thuật cho biết. Để trống thì bấm 2_CAP_NHAT.bat sẽ báo rõ và dừng, không tải gì. Dòng nhanh để 'main', chỉ đổi khi được dặn. 2_CAP_NHAT.bat chỉ thay src, node, package.json và ba nút bấm kia; nó KHÔNG BAO GIỜ ghi đè chính file này và không đụng thư mục thả file. Cách tạo kho mã: xem HUONG_DAN_DUA_LEN_GITHUB.md.",
+  "cap_nhat": {
+    "chu_tai_khoan": "",
+    "ten_repo": "",
+    "nhanh": "main"
+  },
+
+  "_cau_hinh": "Ghi đè cấu hình nghiệp vụ khi cần (hiếm khi phải đụng). Ví dụ đổi cách làm tròn thuế: {\"chung\": {\"thue_theo_dong\": false}}",
+  "cau_hinh": {}
+}

@@ -1,6 +1,6 @@
 {
   "name": "keodon-apps-script",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "private": true,
   "description": "Kéo đơn Shopee về file tracking — một lõi hai vỏ (Excel trên máy · Google Sheet qua Web App Apps Script)",
   "scripts": {
@@ -13,7 +13,13 @@
     "test-bat-bien": "node node/test-bat-bien.js",
     "test-dinh-tuyen": "node node/test-dinh-tuyen-thang.js",
     "tao-thang-moi": "node node/tao-thang-moi.js",
-    "test-tat-ca": "npm test && npm run test-bat-bien && npm run test-dinh-tuyen && npm run test-xu-ly && npm run test-web-app",
+    "test-tat-ca": "npm test && npm run test-bat-bien && npm run test-dinh-tuyen && npm run test-xu-ly && npm run test-web-app && npm run test-chep-cong-thuc && npm run test-gia-von-0 && npm run test-nut-van-hanh && npm run test-dong-goi && npm run test-quyen-mo-file",
+    "dong-goi": "node node/dong-goi.js",
+    "test-quyen-mo-file": "node node/test-quyen-mo-file.js",
+    "test-dong-goi": "node node/test-dong-goi.js",
+    "test-nut-van-hanh": "node node/test-nut-van-hanh.js",
+    "test-chep-cong-thuc": "node node/test-chep-cong-thuc.js",
+    "test-gia-von-0": "node node/test-gia-von-0.js",
     "test-xu-ly": "node node/test-xu-ly-tren-google.js",
     "test-web-app": "node node/test-web-app.js",
     "test-tao-thang-moi": "node node/test-tao-thang-moi.js"

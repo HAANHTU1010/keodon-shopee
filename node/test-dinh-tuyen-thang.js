@@ -11,12 +11,19 @@
  *   · 1000 dòng × 14 cột; bảng link 37 dòng dữ liệu, dòng 8 → dòng 44; y hệt nhau ở file T8 và T9.
  *   · Dòng 1-7 là MỘT BẢNG KHÁC: `STT | Tên shop | Tên đăng nhập` — cột C của bảng đó chứa TÊN
  *     ĐĂNG NHẬP THẬT (số điện thoại, email) của 5 gian hàng.
- *   · Từ cột D trở đi: mật khẩu các gian hàng, 110 ô có nội dung.
+ *   · Từ cột D trở đi CHỈ Ở DÒNG 1-6: mật khẩu các gian hàng, **30 ô** có nội dung.
+ *     Bản đồ đo trên XML của cả THÁNG-8 và THANG-9_DA_SUA, hai file ra cùng kết quả:
+ *       d1: A,B,C,D,E,H · d2,d3: A,B,C,D,H..N · d4: A,B,C,D,E,H..N · d5,d6: A,B,C,D
+ *       d7: rỗng hoàn toàn · d8 trở xuống: CHỈ A,B,C
+ *     Cột D từ dòng 8 xuống: 0 ô. Ngoài ra có 426 ô từ cột D trở đi chỉ mang ĐỊNH DẠNG,
+ *     không có nội dung — đó là nguồn của hai con số sai từng lưu ở đây (110 và 69):
+ *     công cụ đếm ô có style chứ không đếm ô có giá trị.
  *   · Bảng CŨ HAI THÁNG: dòng cuối là 2026 / `Kinh Doanh T7`, không có T8, T9.
  *   · Bảng có LỖ HỔNG Ở GIỮA: 2024 có T1…T5 rồi nhảy thẳng sang T8.
  *   · Dạng gộp kỳ có thật, đúng một dòng: 2023 / `Kinh Doanh T4 + 5` ở ngay dòng 8.
  * Vì thế vùng đọc phải chặn HAI CHIỀU: chỉ cột A, B, C **và** chỉ từ dòng 8 trở xuống.
- * Fixture cắm hai chuỗi mồi để bắt rò rỉ: TEN_DANG_NHAP_BI_MAT ở C1:C7, MAT_KHAU_BI_MAT ở D8:N44.
+ * Fixture cắm hai chuỗi mồi để bắt rò rỉ: TEN_DANG_NHAP_BI_MAT ở C1:C7 và C2:C6, MAT_KHAU_BI_MAT ở
+ * D1:N6 (vùng THẬT có mật khẩu) và ở D8:N44 (vùng thật rỗng, giữ làm lớp phòng thủ thừa).
  */
 const fs = require('fs');
 const path = require('path');
@@ -138,6 +145,10 @@ function sheetThongTinShop(moiTruong, dongBang) {
   // dòng 1-7: bảng khác — cột C là TÊN ĐĂNG NHẬP THẬT của từng gian hàng
   sh._o[1][1].v = 'STT'; sh._o[1][2].v = 'Tên shop'; sh._o[1][3].v = 'Tên đăng nhập';
   for (let r = 1; r <= 7; r++) sh._o[r][3].v = MOI_TEN_DANG_NHAP + '_' + r;
+  // VÙNG MẬT KHẨU THẬT: đo trên XML thì 30 ô có nội dung nằm ở D1:N6, KHÔNG phải ở D8 trở xuống.
+  // Trước 08/9/2026 fixture chỉ cắm mồi ở D8:N44 — vùng đó trong file thật RỖNG HOÀN TOÀN,
+  // nghĩa là bài test đang canh một kịch bản không tồn tại. Nay cắm đúng vùng thật.
+  for (let r = 1; r <= 6; r++) for (let c = 4; c <= 14; c++) sh._o[r][c].v = MOI_MAT_KHAU;
   // dòng 8 trở xuống: bảng link ở A,B,C — mật khẩu ở D..N
   const b = dongBang || dongBangLinkThat();
   b.forEach((d, i) => {
@@ -151,7 +162,11 @@ function sheetThongTinShop(moiTruong, dongBang) {
 
 /** Sheet gian hàng: dòng 2 tiêu đề, dòng 3 dòng tổng, dòng 4 một đơn cũ (để kiểm chống trùng). */
 function sheetGianHang(moiTruong) {
-  const sh = sheetGia('Shopee mall', 300, 16, moiTruong);
+  // Lưới rộng tới cột 30 nhưng getLastColumn vẫn báo 16: dòng 1 từ cột P sang phải là chỗ
+  // tool đóng dấu thời gian, lưới hẹp hơn thì lời gọi đó ném và bị try/catch nuốt im —
+  // bài T-DT-40b sẽ xanh giả vì "không ghi gì" chứ không phải vì ghi đúng.
+  const sh = sheetGia('Shopee mall', 300, 30, moiTruong);
+  sh._lastCol = 16;
   ['Ngày', 'Nguồn', 'Mã đơn', 'Tên VT', 'TT', 'Nhập', 'SL', 'Tổng tiền SP', 'MGG', 'Chi phí', 'Thuế',
     'Doanh Thu', 'Đã TT', 'Còn Nợ'].forEach((t, i) => { sh._o[2][i + 1].v = t; });
   sh._o[3][8].v = 0;
@@ -361,10 +376,17 @@ console.log('--- Luồng định tuyến đầy đủ (T-53 · D-14) ---');
 {
   const g = nap({ thangGiaLap: '2026-07' });
   const mt = g.__moiTruong;
-  test('T-DT-22 tháng có trong bảng → ra đúng file, và MỎ NEO tự dời sang file tháng đó', () => {
+  // Bài này TRƯỚC ĐÂY khẳng định điều ngược lại: mỏ neo "tự đi theo tháng mới nhất".
+  // Đó là một cái bẫy, không phải tiện ích. Bảng link nằm TRONG file mỏ neo, nên dời mỏ neo
+  // sang file tháng 7 là đổi luôn nguồn bảng link — mà file tháng 7 được nhân bản từ tháng
+  // trước nên bảng link của nó DỪNG ở tháng 7. Lần chạy sau tool đọc bảng cụt đó, không thấy
+  // tháng 8, và tắc `KHONG_CO_THANG` dù bảng gốc vẫn đủ. Tự sửa một lần là hỏng mãi.
+  test('T-DT-22 tháng có trong bảng → ra đúng file, và MỎ NEO ĐỨNG YÊN', () => {
     const f = g.fileCuaThang_('2026-07');
     bang(f.fileId, ID_T7); bang(f.dong, 44);
-    bang(mt.thuocTinh['KEODON_MO_NEO_ID'], ID_T7, 'mỏ neo phải tự đi theo tháng mới nhất');
+    bang(mt.thuocTinh['KEODON_MO_NEO_ID'], ID_MO_NEO, 'mỏ neo KHÔNG được tự dời — xem chú thích trên');
+    g.fileCuaThang_('2026-07');
+    bang(mt.thuocTinh['KEODON_MO_NEO_ID'], ID_MO_NEO, 'chạy lần hai vẫn phải đứng nguyên chỗ cũ');
     dung(g.thuDinhTuyenThang().indexOf('THÁNG 7 - KINH DOANH') > 0, 'thuDinhTuyenThang phải nêu tên file');
     dung(g.thuDinhTuyenThang().indexOf(ID_T7) < 0, 'không được in id file ra log');
   });
@@ -511,8 +533,19 @@ console.log('--- Ghi: định dạng trước, chống trùng hai tầng (mục 
     bang(sh._o[4][3].v, 'TEST0802HHHH08', 'dòng cũ phải y nguyên');
     bang(sh._o[3][8].v, 0, 'dòng tổng (dòng 3) bất khả xâm phạm — INV-8');
     mt.thaoTac.filter((x) => x.sheet === 'Shopee mall').forEach((x) => {
-      dung(x.r >= 4 || (x.r === 2 && x.viec === 'setValue'), 'ghi vào dòng ' + x.r + ' — chỉ được nối từ dòng 5');
+      const dauThoiGian = x.r === 1 && x.c >= 16;   // dấu "Tool cập nhật lúc …", ngoài vùng số liệu
+      dung(x.r >= 4 || (x.r === 2 && x.viec === 'setValue') || dauThoiGian,
+        'ghi vào dòng ' + x.r + ' cột ' + x.c + ' — chỉ được nối từ dòng 5');
     });
+  });
+  test('T-DT-40b dấu thời gian PHẢI thật sự được đóng ở dòng 1, không bị try/catch nuốt im', () => {
+    const sh = mt.cacFile[ID_T7].sheets['Shopee mall'];
+    const dau = mt.thaoTac.filter((x) => x.sheet === 'Shopee mall' && x.r === 1 && x.viec === 'setValues');
+    bang(dau.length, 1, 'phải có đúng một lệnh ghi dấu thời gian');
+    bang(dau[0].c, 16, 'ô gộp A1:N1 chiếm tới N, dấu phải rơi vào P1');
+    dung(/^Tool cập nhật lúc \d{1,2}h\d{2} ngày \d{1,2}\/\d{1,2}\/20\d{2}$/.test(String(sh._o[1][16].v)),
+      'nội dung dấu sai: ' + JSON.stringify(sh._o[1][16].v));
+    bang(sh._o[1][3].v, '', 'không được đụng ô nào khác trên dòng 1');
   });
   test('T-DT-41 INV-3: không thao tác nào chạm cột E, F, M, N', () => {
     mt.thaoTac.filter((x) => x.sheet === 'Shopee mall').forEach((x) => {

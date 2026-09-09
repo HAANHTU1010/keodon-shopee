@@ -12,11 +12,16 @@
  *       8 ô cột L nhân viên gõ số tay; để tool key-in lại từ đầu rồi so tổng H3/L3 và đếm ô gộp mới.
  *
  * Bảng đối chiếu ghi ra `out/nghiem-thu/DOI_CHIEU.csv` — file RIÊNG, không thêm sheet nào vào file tracking (mục 3).
+ *
+ * BƯỚC CUỐI (GV-v2.5 mục 6): mọi `.xlsx` còn lại trong `out/nghiem-thu/` bị xóa sheet `Thông tin shop `
+ * trước khi được giữ làm bằng chứng — sheet đó mang bảng link Google Sheet và mật khẩu gian hàng, và
+ * không chỉ tiêu nào cần tới nó. Bước này TỰ ĐẾM LẠI trong ruột zip và ném lỗi nếu chưa về 0.
  */
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const ExcelJS = require('exceljs');
+const JSZip = require('jszip');
 const { napLoi } = require('./nap-loi');
 const { KhoTracking, docBangXlsx, giaTriThuan, congThucCua, TEN_SHEET_MAPPING } = require('./kho-tracking');
 const { NguonThuMuc } = require('./nguon-thu-muc');
@@ -213,6 +218,92 @@ async function taoBanTrong(goc, out, cfg) {
   return tk;
 }
 
+// ---------------------------------------------------------------- dọn bằng chứng trước khi giữ lại
+
+/**
+ * SHEET BỊ XÓA KHỎI MỌI BẢN LƯU TRONG `out/` — GV-v2.5 mục 6.
+ *
+ * Vì sao: `out/nghiem-thu/*.xlsx` là bản sao GẦN NHƯ NGUYÊN VẸN của file tracking, nên nó bê theo
+ * cả sheet `Thông tin shop ` — nơi chủ dự án để bảng link Google Sheet từng tháng VÀ mật khẩu gian
+ * hàng. `.gitignore` che `out/` nên nó không lên repo, nhưng file vẫn nằm trên đĩa và vẫn bị chép
+ * đi chép lại như một tệp bằng chứng bình thường. Đây là dọn Ở NGUỒN, không phải dọn ở repo.
+ *
+ * Vì sao xóa được: bộ nghiệm thu chỉ đối chiếu SỐ TIỀN ở sheet gian hàng (`Shopee mall`) và sheet
+ * `Mapping sản phẩm`. Không chỉ tiêu nào trong 14 dòng bảng kết quả đọc sheet này, và đã đo trên
+ * file thật: 0 công thức của sheet khác trỏ tới nó (chỉ workbook.xml và docProps/app.xml nhắc tên).
+ *
+ * DẤU CÁCH CUỐI TÊN LÀ THẬT (INV-10 / `KT-INV-10`) — tuyệt đối không `trim` khi tra.
+ */
+const TEN_SHEET_BI_MAT = 'Thông tin shop ';
+
+/**
+ * Đếm dấu vết trong RUỘT file .xlsx. `.xlsx` là zip nhị phân nên `grep` thẳng lên file không thấy
+ * gì — phải giải nén rồi quét từng phần `.xml` / `.rels` (hyperlink của sheet nằm ở `.rels`, còn
+ * chữ hiện trên ô nằm ở `xl/sharedStrings.xml`; thiếu một trong hai là đếm hụt).
+ *
+ * Hai con số, đếm riêng:
+ *   link — số lần chuỗi `docs.google.com` / `drive.google.com` xuất hiện;
+ *   id   — số lần một chuỗi trông như ID file Google Drive xuất hiện. Nhận dạng: từ >= 25 ký tự
+ *          trong tập [A-Za-z0-9_-] có ĐỦ chữ hoa, chữ thường và chữ số. Ba ràng buộc đó loại được
+ *          ba thứ hay bị đếm nhầm mà đã gặp trên file thật: `openxmlformats-officedocument`
+ *          (không có chữ số), `Z_2A0B5B4B_..._` — tên vùng nội bộ của Excel (không có chữ thường),
+ *          và công thức trừ nhau `L3-18311772-21176369-31078654-85185924` (không có chữ cái).
+ *          GUID của `xl/styles.xml` (`EB79DEF2-80B8-43e5-...`) lọt lưới ba ràng buộc trên nên bị
+ *          loại riêng bằng hình dạng 8 ký tự hex hoa rồi gạch nối.
+ */
+async function demDauVet(file) {
+  const zip = await JSZip.loadAsync(fs.readFileSync(file));
+  const theoPhan = {};
+  let link = 0, id = 0;
+  const loai = new Set();
+  for (const ten of Object.keys(zip.files)) {
+    if (!/\.(xml|rels)$/i.test(ten)) continue;
+    const s = await zip.file(ten).async('string');
+    const l = (s.match(/docs\.google\.com|drive\.google\.com/g) || []).length;
+    let i = 0;
+    for (const m of (s.match(/[A-Za-z0-9_-]{25,}/g) || [])) {
+      if (!/[a-z]/.test(m) || !/[A-Z]/.test(m) || !/[0-9]/.test(m)) continue;
+      if (/^[0-9A-F]{8}-/.test(m)) continue;
+      i++; loai.add(m);
+    }
+    link += l; id += i;
+    if (l || i) theoPhan[ten] = { link: l, id: i };
+  }
+  return { link, id, loaiId: loai.size, theoPhan };
+}
+
+/**
+ * Mở lại bản lưu trong `out/`, xóa sheet bí mật, ghi đè, rồi ĐẾM LẠI để tự chứng minh về 0.
+ * Không đếm lại thì đây chỉ là một lời hứa; đếm lại thì nó là một con số.
+ * Còn sót một dấu vết là NÉM LỖI — giữ lại file bằng chứng có mật khẩu trong đó nguy hiểm hơn hẳn
+ * việc bộ nghiệm thu dừng giữa chừng.
+ */
+async function donSheetBiMat(file) {
+  const truoc = await demDauVet(file);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(file);
+  const sheetTruoc = wb.worksheets.length;
+  // so NGUYÊN VĂN trước (dấu cách cuối là thật); chỉ khi không thấy mới hạ xuống so bản đã trim
+  let dinh = wb.worksheets.filter((w) => w.name === TEN_SHEET_BI_MAT);
+  const nguyenVan = dinh.length > 0;
+  if (!dinh.length) dinh = wb.worksheets.filter((w) => String(w.name).trim() === TEN_SHEET_BI_MAT.trim());
+  dinh.slice().forEach((w) => wb.removeWorksheet(w.id));
+  await wb.xlsx.writeFile(file);
+  const sau = await demDauVet(file);
+  const kq = {
+    ten: path.basename(file), xoa: dinh.length, nguyenVan,
+    sheetTruoc, sheetSau: sheetTruoc - dinh.length,
+    linkTruoc: truoc.link, linkSau: sau.link,
+    idTruoc: truoc.id, idSau: sau.id, loaiIdTruoc: truoc.loaiId, loaiIdSau: sau.loaiId
+  };
+  if (sau.link || sau.id) {
+    throw new Error('Bản lưu bằng chứng ' + kq.ten + ' VẪN CÒN dấu vết sau khi xóa sheet '
+      + JSON.stringify(TEN_SHEET_BI_MAT) + ': ' + sau.link + ' lượt link Google, ' + sau.id
+      + ' lượt chuỗi id. Còn ở: ' + Object.keys(sau.theoPhan).join(', '));
+  }
+  return kq;
+}
+
 // ---------------------------------------------------------------- chạy
 
 async function chay(goc, out, mapBang, cfg, bang) {
@@ -364,7 +455,22 @@ async function main() {
       ...['H', 'I', 'J', 'K'].flatMap(c => [t ? so(t[c]) : '', o ? so(o[c]) : '', (t && o) ? so(t[c]) - so(o[c]) : ''])].join(','));
   });
   fs.writeFileSync(path.join(OUT, 'DOI_CHIEU.csv'), '﻿' + csv.join('\r\n'), 'utf8');
-  fs.writeFileSync(path.join(OUT, 'KET_QUA.json'), JSON.stringify({ bangKQ, lech, chiTay, chiTool, tongB, gopMoi, tkTrong, kqA: A.kq, kqB: B.kq }, (k, v) => v instanceof Error ? v.message : v, 2));
+
+  // ---------- GV-v2.5 mục 6: dọn bằng chứng NGAY SAU KHI SINH, trước khi giữ lại ----------
+  // Chạy sau cùng, khi mọi phép đo ở trên đã đọc xong `outB`, để việc xóa sheet không thể
+  // len vào một con số nào của bảng kết quả. `B_BAN_TRONG.xlsx` chỉ tồn tại khi có `--giu-file`.
+  if (!args.includes('--giu-file')) { try { fs.unlinkSync(trong); } catch (e) { } }
+  const daDon = [];
+  for (const f of [outA, outB, trong]) { if (fs.existsSync(f)) daDon.push(await donSheetBiMat(f)); }
+  console.log('\nDọn bằng chứng — xóa sheet ' + JSON.stringify(TEN_SHEET_BI_MAT)
+    + ' khỏi bản lưu trong `out/` (đếm trong ruột zip, mọi phần .xml và .rels):');
+  console.log('| File | Số sheet | Sheet xóa | `docs.google.com` | Chuỗi id (lượt) | Chuỗi id (loại) |');
+  console.log('|---|---|---|---|---|---|');
+  daDon.forEach((d) => console.log('| ' + d.ten + ' | ' + d.sheetTruoc + ' → ' + d.sheetSau + ' | ' + d.xoa
+    + (d.xoa && !d.nguyenVan ? ' (khớp sau khi trim)' : '') + ' | ' + d.linkTruoc + ' → ' + d.linkSau
+    + ' | ' + d.idTruoc + ' → ' + d.idSau + ' | ' + d.loaiIdTruoc + ' → ' + d.loaiIdSau + ' |'));
+
+  fs.writeFileSync(path.join(OUT, 'KET_QUA.json'), JSON.stringify({ bangKQ, lech, chiTay, chiTool, tongB, gopMoi, tkTrong, daDon, kqA: A.kq, kqB: B.kq }, (k, v) => v instanceof Error ? v.message : v, 2));
   console.log('\nKết quả: ' + outA + '\n         ' + outB + '\n         ' + path.join(OUT, 'DOI_CHIEU.csv'));
   const soLech = bangKQ.filter(r => r[4] === 'LỆCH').length;
   const soChuaCoMoc = bangKQ.filter(r => r[4] === '?').length;
@@ -374,7 +480,6 @@ async function main() {
   }
   console.log(String.fromCharCode(10) + '=> ' + (soLech ? soLech + ' CHỈ TIÊU LỆCH — dừng lại, ghi NOTES_DEV.md và báo BA'
     : (soChuaCoMoc ? 'KHÔNG CHỈ TIÊU NÀO LỆCH (còn ' + soChuaCoMoc + ' chỉ tiêu chưa có mốc)' : 'TẤT CẢ CHỈ TIÊU ĐẠT')));
-  if (!args.includes('--giu-file')) { try { fs.unlinkSync(trong); } catch (e) { } }
 }
 
 main().catch(e => { console.error('\nLỖI: ' + e.message + '\n' + e.stack); process.exit(1); });

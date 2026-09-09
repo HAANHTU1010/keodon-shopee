@@ -20,11 +20,12 @@
  *
  * Chọn đường: khóa `duong` trong `03_VAN_HANH/CAU_HINH_VAN_HANH.json` → `google_sheet.duong`.
  *
- * CẢNH BÁO VÙNG CÔNG THỨC (GV-v2.4 mục 1.3 · bài T-48). File này KHÔNG gọi `KeyIn.gs` — nó dựng lệnh
- * ghi thẳng — nên trước bản này chế độ Google không có một lời cảnh báo nào về việc ghi vượt vùng
- * công thức E, F, M, N. Phép đo nay nằm ở `canhBaoVungCongThuc_` của `src/ShellAppsScript.gs` (đo
- * ngay trước khi ghi, trong khóa), còn ở đây là hai việc của vỏ máy: GOM câu trùng giữa các lô
- * (`gomCanhBaoVungCongThuc`) và IN ra màn hình ngay tại chỗ chạy (`inCanhBaoVungCongThuc`).
+ * CÔNG THỨC E, F, M, N (GV-v2.6 §3 việc 1 · bài T-48 viết lại). Từ 08/9/2026 Web App **tự chép công
+ * thức của dòng trên xuống** cho cả năm cột E, F, L, M, N ở mỗi dòng mới — xem `chepCongThucXuong_`
+ * trong `src/ShellAppsScript.gs`. Cảnh báo chỉ còn là LỚP PHỤ, và chỉ kêu đúng một ca: cả cột không
+ * còn ô nào có công thức để chép. File này KHÔNG gọi `KeyIn.gs` (nó dựng lệnh ghi thẳng), nên hai
+ * việc của vỏ máy vẫn giữ nguyên: GOM câu trùng giữa các lô (`gomCanhBaoVungCongThuc`) và IN ra màn
+ * hình ngay tại chỗ chạy (`inCanhBaoVungCongThuc`).
  *
  * File tháng nào là đích thì do chính Web App quyết, tra bảng link trong sheet `Thông tin shop `
  * của file mỏ neo (GV-v2.3 mục 1). Máy này KHÔNG giữ id file tháng nào cả — 2-3 máy nhân viên mà
@@ -110,9 +111,9 @@ function bangCuaSheet(lop, x, dongHeaderMongDoi) {
 // ==================================================================== cảnh báo vùng công thức
 
 /**
- * Gom câu cảnh báo vùng công thức E, F, M, N, L (GV-v2.4 mục 1.3 · bài T-48).
+ * Gom câu cảnh báo vùng công thức E, F, M, N, L (GV-v2.6 §3 việc 1 · bài T-48).
  *
- * Vỏ Google đo lại vùng công thức ở MỖI khối ghi (`canhBaoVungCongThuc_` trong `ghiMotSheet_`), mà một
+ * Vỏ Google đo lại vùng công thức ở MỖI khối ghi (`mauChepCongThucDS_` trong `ghiMotSheet_`), mà một
  * lần chạy có nhiều lô và có thể có nhiều lượt gọi tiếp, nên cùng một (sheet, cột) sẽ kêu vài lần.
  * Giữ câu ĐẦU TIÊN của mỗi (sheet, cột): đó là câu đo trên file tháng lúc chưa ghi ô nào — cũng là
  * câu mà đường 'ghi' và đường 'xuLy' nói giống hệt nhau dù hai đường chia lô khác nhau.
@@ -134,16 +135,29 @@ function gomCanhBaoVungCongThuc(lop, ds) {
 /**
  * In cảnh báo vùng công thức ra MÀN HÌNH ngay tại chỗ chạy, không đợi bảng tóm tắt cuối.
  *
- * Đây là nửa việc mà chế độ Google còn thiếu hẳn: file này không gọi `KeyIn.gs`, nên trước bản này
- * toàn bộ cơ chế cảnh báo vượt vùng công thức chỉ tồn tại ở chế độ Excel. Bật Google Sheet là mất sạch.
+ * Câu ở đây nay chỉ còn một nghĩa: cột đó KHÔNG CÒN Ô NÀO CÓ CÔNG THỨC để chép xuống, nên các dòng
+ * mới sẽ trống ở cột đó. Tool cố ý không tự dựng công thức mới (D-15) — công thức là của chủ shop,
+ * đoán sai thì sai lặng lẽ trên mọi dòng về sau.
  */
 function inCanhBaoVungCongThuc(lop, ds, in_) {
   const khoaCua = (lop && lop.KeyIn && lop.KeyIn.khoaCanhBaoVungCongThuc) || null;
   if (!khoaCua) return;
   const cau = (ds || []).filter((c) => khoaCua(c));
   if (!cau.length) return;
-  in_('  ! VÙNG CÔNG THỨC — việc của người, tool không tự sửa công thức của chủ shop:');
+  in_('  ! VÙNG CÔNG THỨC — cột không còn công thức nào để chép xuống, cần một dòng mẫu đúng:');
   cau.forEach((c) => in_('    ! ' + c));
+}
+
+/**
+ * In cảnh báo BẢNG LINK ra màn hình ngay khi chạy (GV-v2.5 mục 1, việc kèm theo số 2).
+ *
+ * TRIỆU CHỨNG THẬT ĐANG CHỐNG: bảng link thiếu dòng cho tháng sau thì đến ngày 1 của tháng sau tool
+ * TẮC HẲN — "Chưa có file cho tháng N". Câu này báo trước cả tháng, nhưng nó chỉ có tác dụng nếu
+ * nhân viên NHÌN THẤY; nằm im trong mảng canhBao của phản hồi thì không ai đọc.
+ */
+function inCanhBaoBangLink(ds, in_) {
+  (ds || []).filter((c) => String(c).indexOf('Bảng link mới khai tới') === 0)
+    .forEach((c) => in_('  ! ' + c));
 }
 
 // ==================================================================== chạy thật
@@ -209,6 +223,7 @@ async function duongXuLy(web, tuyChon, thang, ngayGhi, in_) {
 
   in_('File tháng: ' + (kq.tenFile || '(không rõ tên)') + ' · ' + kq.soLo + ' lô · ' + kq.soLanGoi + ' lượt gọi');
   const canhBaoLo = gomCanhBaoVungCongThuc(tuyChon.lop, kq.canhBao);
+  inCanhBaoBangLink(canhBaoLo, in_);
   inCanhBaoVungCongThuc(tuyChon.lop, canhBaoLo, in_);
   return {
     thongKe: kq.thongKe,
@@ -248,6 +263,7 @@ async function duongGhiCu(web, tuyChon, thang, ngayGhi, in_) {
   in_('Gửi lệnh ghi ' + goi.thongKe.donGhi + ' đơn (' + goi.thongKe.dongGhi + ' dòng) …');
   const kq = await web.ghi(thang, goi.lenh, goi.mappingThem);
   const canhBaoLo = gomCanhBaoVungCongThuc(lop, goi.canhBao.concat(kq.canhBao || []));
+  inCanhBaoBangLink(canhBaoLo, in_);
   inCanhBaoVungCongThuc(lop, canhBaoLo, in_);
   return {
     thongKe: Object.assign({}, goi.thongKe, { donDaCoTuXa: kq.thongKe.donDaCo, mappingThem: kq.thongKe.mappingThem }),
@@ -272,5 +288,5 @@ function demDong(cacFile) {
 module.exports = {
   chayLenGoogleSheet, dungGoiGhi, bangCuaSheet, thangCua, ngayCua,
   napVoGoogle, chuanDuong, demDon, demDong,
-  gomCanhBaoVungCongThuc, inCanhBaoVungCongThuc
+  gomCanhBaoVungCongThuc, inCanhBaoVungCongThuc, inCanhBaoBangLink
 };

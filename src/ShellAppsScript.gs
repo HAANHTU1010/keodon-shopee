@@ -110,16 +110,44 @@ var NGUONG_GIAY_XU_LY = 240;
  */
 var TOI_DA_DON_MOT_KHOI = 100;
 
-/** E, F, M, N là ARRAYFORMULA một ô ở dòng tiêu đề — ghi một ô là hỏng cả cột của cả sheet (INV-3). */
+/**
+ * E, F, M, N — bốn cột CÔNG THỨC của chủ shop (Tên sản phẩm · Đơn vị · Mã hàng · Check tồn).
+ *
+ * TIỀN ĐỀ CŨ ĐÃ BỊ BÁC (GV-v2.4 Phụ lục A.1, đo thẳng trên Google ngày 08/9/2026). Trước đây chú
+ * thích ở đây ghi "là ARRAYFORMULA một ô ở dòng tiêu đề — ghi một ô là hỏng cả cột". Sự thật đo được:
+ * mỗi dòng mang MỘT công thức riêng bọc `ARRAY_CONSTRAIN(…;1;1)`, kéo tay tới một dòng cố định.
+ * `Shopee mall` cột E có 414 ô (dòng 4→417), M và N 399 ô (4→402). Ghi đè một ô chỉ mất công thức
+ * của ĐÚNG DÒNG ĐÓ, không hỏng cả cột — câu cũ nói quá mức nghiêm trọng và đã bỏ.
+ *
+ * BỐN CỘT KHÔNG CÙNG ĐỘ DÀI, đừng bao giờ giả định thế. File DEMO tháng 9 mới nhất: Shopee E/F/N
+ * 389 ô mà M chỉ 274; Offood 432/432/432 mà M chỉ 185; Importmart 485 vs M 103; Babyiu 489 vs M 225.
+ * Vì vậy mọi phép đo và mọi phép chép công thức ở đây làm theo TỪNG CỘT một, không gộp.
+ *
+ * TRIỆU CHỨNG THẬT ĐANG CHỐNG — ăn mòn dần tới trắng cột: xóa NỘI DUNG các dòng đã ghi thì mất luôn
+ * công thức của đúng các dòng đó. Đo trên file tháng 8: `Shopee mall` 909 ô → còn 396 sau tháng 9 →
+ * **0 trong tháng 10**; `Offood` 514 → 248 → 0. Dòng mới không tự có công thức nên trắng cả bốn cột.
+ *
+ * LUẬT TỪ 08/9/2026 (GV-v2.6 §3 việc 1 · BA chốt câu (a) ở 08_BA_TRA_LOI_DEV_v2.6.md):
+ *   · CẤM ghi GIÁ TRỊ vào bốn cột này — hàng rào `kiemCotDuocGhi_` vẫn ném lỗi y như cũ;
+ *   · CHO PHÉP CHÉP CÔNG THỨC của dòng trên xuống dòng tool vừa tạo, đi qua đúng cửa hẹp đó với
+ *     `viec = VIEC_CHEP_CONG_THUC`. Xem `mauChepCongThucDS_` và `chepCongThucXuong_`.
+ */
 var COT_CAM_GHI = [5, 6, 13, 14];
 
+/** Hai việc duy nhất một cột có thể nhận. Cột cấm chỉ nhận việc thứ hai. */
+var VIEC_GHI_GIA_TRI = 'GIA_TRI';
+var VIEC_CHEP_CONG_THUC = 'CHEP_CONG_THUC';
+
 /**
- * Cảnh báo vùng công thức (GV-v2.4 mục 1.3). Còn dư dưới ngần này dòng là kêu; ghi đè được bằng
- * `keyin.nguong_sap_het_cong_thuc`. Phải BẰNG `KeyIn.NGUONG_SAP_HET_CONG_THUC` của vỏ Excel.
+ * HAI HẰNG SỐ CỦA CƠ CHẾ CŨ, GIỮ LẠI CÓ CHỦ Ý dù vỏ Google không còn dùng.
+ *
+ * Từ 08/9/2026 vỏ này CHÉP CÔNG THỨC XUỐNG nên hai mức "SẮP HẾT" / "SẼ VƯỢT" không còn nghĩa ở đây:
+ * vùng công thức không bao giờ hết. Nhưng vỏ EXCEL (`src/KeyIn.gs`) vẫn còn cả hai mức, và hai vỏ
+ * phải nói CÙNG một câu cho cùng một việc, nếu không nhật ký hai chế độ nói hai kiểu và người vận
+ * hành không tra được. Giữ ở đây làm điểm neo cho phép so: `KeyIn.NGUONG_SAP_HET_CONG_THUC` và
+ * `KeyIn.VIEC_KEO_DAI_CONG_THUC` phải BẰNG hai giá trị này.
  */
 var NGUONG_SAP_HET_CONG_THUC = 200;
-
-/** Câu việc-phải-làm, nguyên văn GV-v2.4 mục 1.3. Phải BẰNG `KeyIn.VIEC_KEO_DAI_CONG_THUC`. */
 var VIEC_KEO_DAI_CONG_THUC = 'kéo dài công thức 4 cột E, F, M, N xuống dòng 2000 trước lần chạy sau';
 
 // ==================================================================== cài đặt & tiện ích
@@ -301,6 +329,125 @@ function chonDongDinhTuyen_(bang, nam, thang) {
 // ---------------------------------------------------------------- phần chạm Google
 
 /**
+ * MỞ FILE THÁNG — phân loại lỗi của `SpreadsheetApp.openById` (GV-đóng-gói mục 6).
+ *
+ * VÌ SAO: Web App Deploy với `Execute as = Me`, nên TÀI KHOẢN ĐÃ DEPLOY phải có quyền Sửa MỌI file
+ * tháng. Nhân viên nhân bản vỏ file tháng mới vào Drive của mình rồi quên bấm Chia sẻ là tắc — và
+ * câu Google ném ra ("You do not have permission to access the requested document.") không nói được
+ * phải làm gì, lại còn hiện bằng tiếng Anh trên cửa sổ đen của người không đọc tiếng Anh.
+ *
+ * VÌ SAO KHÔNG ĐỔ HẾT CHO QUYỀN: `openById` hỏng vì BA nhóm lý do khác hẳn nhau, chữa cũng khác hẳn:
+ *   1. THIẾU QUYỀN      → đi chia sẻ file.
+ *   2. KHÔNG THẤY FILE  → ID trong cột C của bảng link sai, hoặc file đã bị xóa hẳn. Bảo người ta đi
+ *                         chia sẻ một file không tồn tại là đẩy họ vào ngõ cụt.
+ *   3. MẠNG / HẠN MỨC   → "Service Spreadsheets failed…", "Service invoked too many times…", lỗi máy
+ *                         chủ. Ba việc trên đều KHÔNG chữa được; nuốt lý do gốc ở đây là xóa mất
+ *                         manh mối duy nhất. Nhóm này NÉM NGUYÊN LỖI CŨ, không đụng một chữ.
+ *
+ * CA THỨ TƯ, KHÔNG PHÂN BIỆT ĐƯỢC: có những câu Google gộp cả hai lý do vào một
+ * ("No item with the given ID could be found, or you do not have permission to access it.",
+ * "Document … is missing (perhaps it was deleted, or you don't have read access?)"). Đoán bừa một
+ * trong hai là dắt người ta đi sai đường, nên tool nói thẳng là có hai khả năng và xếp việc kiểm
+ * link lên trước (rẻ hơn, và là ca hay gặp hơn khi vừa sửa bảng link).
+ *
+ * BẢN TIẾNG VIỆT: tài khoản đặt ngôn ngữ tiếng Việt thì Apps Script ném chuỗi ĐÃ DỊCH, không phải
+ * chuỗi tiếng Anh — nên mỗi dấu hiệu đều có cặp Anh/Việt. Cả hai bảng dấu hiệu dưới đây là suy ra từ
+ * chuỗi Google đã công bố, CHƯA đo được trên tài khoản thật (máy dev không có quyền Deploy). Vì thế
+ * mã KHÔNG ĐƯỢC nhận nhầm sang nhóm 3: chuỗi lạ luôn rơi về "ném nguyên lỗi cũ".
+ */
+var DAU_HIEU_LAP_LO_MO_FILE = [
+  'no item with the given id',                       // DriveApp/Sheets: "…could be found, or you do not have permission"
+  'không tìm thấy mục nào có id',
+  'is missing (perhaps it was deleted',              // "Document … is missing (perhaps it was deleted, or you don't have read access?)"
+  'bị thiếu (có thể tệp đã bị xóa'
+];
+var DAU_HIEU_THIEU_QUYEN_MO_FILE = [
+  'do not have permission',                          // "You do not have permission to access the requested document."
+  'does not have permission',
+  'permission denied',
+  'access denied',
+  'không có quyền',                                  // "Bạn không có quyền truy cập vào tài liệu được yêu cầu."
+  'bị từ chối quyền truy cập'
+];
+var DAU_HIEU_KHONG_THAY_FILE = [
+  'unexpected error while getting the method or property openbyid',   // ID sai dạng / không tồn tại
+  'thuộc tính openbyid',
+  'file not found',
+  'không tìm thấy tệp',
+  'invalid argument: id',                            // openById('')
+  'đối số không hợp lệ: id'
+];
+
+/** Có chuỗi nào trong `dauHieu` nằm trong `s` (đã hạ chữ thường) không. */
+function coDauHieu_(s, dauHieu) {
+  for (var i = 0; i < dauHieu.length; i++) if (s.indexOf(dauHieu[i]) >= 0) return true;
+  return false;
+}
+
+/**
+ * Xếp lỗi của `openById` vào một trong ba nhóm, hoặc '' nếu KHÔNG chắc chắn (→ ném nguyên lỗi cũ).
+ * THỨ TỰ XÉT LÀ RUỘT CỦA HÀM: câu lấp lửng chứa CẢ cụm "you do not have permission", nên phải xét
+ * nó TRƯỚC nhóm thiếu quyền; đảo lại là mọi ca ID sai bị đổ oan cho quyền.
+ * @returns {'KHONG_MO_DUOC_FILE'|'KHONG_CO_QUYEN'|'KHONG_THAY_FILE'|''}
+ */
+function phanLoaiLoiMoFile_(loi) {
+  var s = String((loi && loi.message) ? loi.message : loi || '').toLowerCase();
+  if (!s) return '';
+  if (coDauHieu_(s, DAU_HIEU_LAP_LO_MO_FILE)) return 'KHONG_MO_DUOC_FILE';
+  if (coDauHieu_(s, DAU_HIEU_THIEU_QUYEN_MO_FILE)) return 'KHONG_CO_QUYEN';
+  if (coDauHieu_(s, DAU_HIEU_KHONG_THAY_FILE)) return 'KHONG_THAY_FILE';
+  return '';
+}
+
+/**
+ * Mở một bảng tính, đổi lỗi thô của Google thành câu tiếng Việt nêu đúng việc phải làm.
+ *
+ * @param {string} id     ID file — TUYỆT ĐỐI không được lọt vào thông báo (id là đường vào file tiền,
+ *                        cùng luật với `thuDinhTuyenThang` và `moTaMoNeo_`).
+ * @param {string} moTa   chỗ điền vào "Không mở được file ___" — 'tháng 2026-10', 'mỏ neo …'.
+ * @param {string} noiKhai câu chỉ chỗ sửa: dòng nào của bảng link, hay Script Property nào.
+ */
+function moBangTinh_(id, moTa, noiKhai) {
+  try {
+    return SpreadsheetApp.openById(id);
+  } catch (err) {
+    var ma = phanLoaiLoiMoFile_(err);
+    // Nhóm 3 (mạng, hạn mức, lỗi máy chủ Google) và mọi chuỗi lạ: ném NGUYÊN lỗi cũ. Đây là chủ ý —
+    // ba nhóm đó không chữa bằng cách đi chia sẻ file, mà lý do gốc là manh mối duy nhất còn lại.
+    if (!ma) throw err;
+    var dau = 'Không mở được file ' + moTa + '. ';
+    var than;
+    if (ma === 'KHONG_CO_QUYEN') {
+      than = 'Tài khoản chạy tool chưa được chia sẻ quyền Sửa với file này. ' +
+        'Mở file đó, bấm Chia sẻ, thêm tài khoản đã deploy Web App với quyền Sửa.';
+    } else if (ma === 'KHONG_THAY_FILE') {
+      than = 'Google báo không tìm thấy file có ID này — ID sai hoặc file đã bị xóa hẳn. ' +
+        noiKhai + ' Đây KHÔNG phải lỗi chia sẻ quyền, đừng đi chia sẻ file.';
+    } else {
+      than = 'Google trả một câu chung cho hai lý do khác nhau nên tool không đoán: hoặc không tìm ' +
+        'thấy file (ID sai, file đã bị xóa), hoặc tài khoản chạy tool chưa được chia sẻ quyền. ' +
+        noiKhai + ' Link đúng rồi thì mở file đó, bấm Chia sẻ, thêm tài khoản đã deploy Web App ' +
+        'với quyền Sửa.';
+    }
+    // Gắn mã vào chính Error, đúng cơ chế `maKeodon` mà `fileCuaThang_` đang dùng: không gắn thì
+    // `doPost` gói lại thành NGOAI_LE và phía máy mất luôn chỗ để phân nhánh.
+    var e = new Error(dau + than);
+    e.maKeodon = ma;
+    e.loiGoc = String((err && err.message) ? err.message : err);   // giữ lại để soi, KHÔNG in ra
+    throw e;
+  }
+}
+
+/**
+ * Mở đúng file tháng đã định tuyến. `f` là kết quả của `fileCuaThang_` — có sẵn kỳ và số dòng, nên
+ * câu lỗi nêu được cả hai mà không phải nhắc lại id.
+ */
+function moFileThang_(f) {
+  return moBangTinh_(f.fileId, 'tháng ' + f.thang,
+    'Link lấy từ cột C dòng ' + f.dong + ' của sheet "' + TEN_SHEET_THONG_TIN_SHOP + '"; sửa dòng đó rồi chạy lại.');
+}
+
+/**
  * Tra sheet bảng link. Tên sheet có ĐÚNG MỘT DẤU CÁCH Ở CUỐI: `getSheetByName` so nguyên văn nên
  * trim là không tìm thấy sheet — rồi tool tưởng chưa khai báo tháng nào và dừng oan.
  */
@@ -310,44 +457,84 @@ function sheetThongTinShop_(ss) {
 }
 
 /**
- * Đọc khối A:C từ dòng 8 của file mỏ neo — VÙNG ĐỌC DUY NHẤT được phép trên sheet này.
+ * Đọc khối A:C từ dòng 8 của file mỏ neo — VÙNG ĐỌC DUY NHẤT được phép trên sheet này — và trả kèm
+ * TÊN file mỏ neo, để 'ping' nói được mỏ neo đang nằm ở đâu mà không phải lộ id.
  *
- * Hai chiều chặn, thiếu chiều nào cũng lộ dữ liệu thật:
- *   · chặn CỘT: chỉ 3 cột A, B, C. Từ cột D trở đi là mật khẩu các gian hàng (đo được 110 ô có nội dung).
- *   · chặn DÒNG: chỉ từ dòng 8. Dòng 1-7 là một bảng khác (STT | Tên shop | Tên đăng nhập) và
+ * Hai chiều chặn, HAI LÝ DO KHÁC NHAU (BA đo lại thẳng trên XML của ba file ngày 08/9/2026, cả ba
+ * ra cùng một con số — con số 110 ghi ở đây trước kia là SAI):
+ *   · chặn CỘT (chỉ A, B, C): dòng 1-6 có MẬT KHẨU gian hàng nằm ở D→N, đúng 30 ô có nội dung
+ *     (18 chuỗi + 12 số, 0 công thức). Dòng 7 rỗng hoàn toàn; cột D từ dòng 8 xuống có 0 ô.
+ *     Bản đồ ô có nội dung: d1 A,B,C,D,E,H · d2,d3 A,B,C,D,H..N · d4 A,B,C,D,E,H..N ·
+ *     d5,d6 A,B,C,D · d8→d46 chỉ A,B,C. Có 459 ô từ D trở đi chỉ mang ĐỊNH DẠNG, không có nội dung —
+ *     nhiều khả năng đó là nguồn của hai con số 69 và 110 từng ghi ở đây: công cụ đếm ô có style
+ *     chứ không đếm ô có giá trị.
+ *   · chặn DÒNG (chỉ từ dòng 8): dòng 1-7 là một bảng khác (STT | Tên shop | Tên đăng nhập) và
  *     cột C của bảng đó chứa TÊN ĐĂNG NHẬP THẬT — số điện thoại và email của 5 gian hàng.
  * Vì thế dòng bắt đầu là hằng số trong mã, cố ý KHÔNG cho cấu hình đổi được.
  * Cấm getDataRange(): nó nạp cả 1000 dòng × 14 cột vào bộ nhớ, kể cả mật khẩu.
  */
-function bangLinkThang_() {
+function moNeo_() {
   var id = thuocTinh_(TT_MO_NEO);
   if (!id) throw new Error('Chưa cài file mỏ neo: mở dự án Apps Script, chạy tay một lần ' +
     'caiDat(<chuỗi bí mật>, <link của một file tháng đã có>). Bảng link các tháng nằm trong ' +
     'sheet "' + TEN_SHEET_THONG_TIN_SHOP + '" của chính file đó.');
-  var ss = SpreadsheetApp.openById(id);
+  var ss = moBangTinh_(id, 'mỏ neo (file tháng đang giữ bảng link)',
+    'ID mỏ neo nằm trong Script Property ' + TT_MO_NEO + '; chạy tay caiDat(null, <link một file tháng đã có>) để đặt lại.');
   var sh = sheetThongTinShop_(ss);
   if (!sh) throw new Error('File mỏ neo "' + ss.getName() + '" không có sheet "' + TEN_SHEET_THONG_TIN_SHOP +
     '" (chú ý dấu cách cuối tên). Chạy lại caiDat(null, <link file tháng có sheet đó>).');
   var het = sh.getLastRow();
-  if (het < DONG_DAU_BANG_LINK) return [];
-  return sh.getRange(DONG_DAU_BANG_LINK, 1, het - DONG_DAU_BANG_LINK + 1, SO_COT_DUOC_DOC).getDisplayValues();
+  var bang = het < DONG_DAU_BANG_LINK ? [] :
+    sh.getRange(DONG_DAU_BANG_LINK, 1, het - DONG_DAU_BANG_LINK + 1, SO_COT_DUOC_DOC).getDisplayValues();
+  return { ten: ss.getName(), bang: bang };
+}
+
+function bangLinkThang_() { return moNeo_().bang; }
+
+/**
+ * Kỳ CUỐI CÙNG được khai trong bảng link — lấy theo THỨ TỰ DÒNG, không lấy kỳ lớn nhất. Bảng thật
+ * xếp theo thời gian và có lỗ hổng ở giữa (2024 nhảy từ T5 sang T8), nên "dòng cuối" mới là thứ
+ * chủ dự án nhìn thấy khi mở sheet ra để thêm dòng mới.
+ * @returns {{nam:number, thang:number, dong:number}|null}
+ */
+function kyCuoiBangLink_(bang) {
+  var cuoi = null;
+  for (var i = 0; i < (bang || []).length; i++) {
+    var namO = namCuaO_(bang[i][0]);
+    var cacThang = phanTichTenKy_(bang[i][1]);
+    if (!namO || !cacThang.length) continue;
+    for (var j = 0; j < cacThang.length; j++) cuoi = { nam: namO, thang: cacThang[j], dong: DONG_DAU_BANG_LINK + i };
+  }
+  return cuoi;
+}
+
+/** Mô tả mỏ neo cho 'ping': TÊN file + kỳ cuối + dòng. Tuyệt đối không có id — id là đường vào file tiền. */
+function moTaMoNeo_(ten, ky) {
+  return '"' + ten + '" · kỳ cuối ' +
+    (ky ? ky.nam + '-' + hai_(ky.thang) + ' (dòng ' + ky.dong + ')' : 'chưa có kỳ nào');
 }
 
 /**
- * Dời mỏ neo sang file tháng vừa định tuyến được, để tháng sau vẫn còn chỗ bắt đầu mà không ai
- * phải sửa Script Property bằng tay. Chỉ dời khi file mới THẬT SỰ có bảng link — file tháng mới
- * thiếu sheet đó mà dời sang là lần chạy sau mất đường, không định tuyến được nữa.
- * Hỏng thì im lặng giữ mỏ neo cũ: đây chỉ là lối tắt, không phải nguồn sự thật.
+ * CẢNH BÁO SỚM: bảng link chưa có dòng cho THÁNG SAU (GV-v2.5 mục 1, phần BA tự nhận sai đề bài).
+ *
+ * Ngưỡng cũ — "kỳ cuối cách tháng hiện tại từ 1 tháng trở lên" — KHÔNG BAO GIỜ kích hoạt được ở
+ * nhánh ghi: chotThang_ ép tháng ghi = tháng hiện tại, nên bảng buộc phải có dòng của tháng hiện
+ * tại, nếu không fileCuaThang_ đã ném KHONG_CO_THANG từ trước đó. Khoảng cách vì thế luôn ≤ 0.
+ * Ngưỡng đúng là THIẾU DÒNG CỦA THÁNG SAU — đó mới là thứ báo trước được cái tắc của tháng sau.
  */
-function capNhatMoNeo_(fileId) {
-  try {
-    if (!fileId || thuocTinh_(TT_MO_NEO) === fileId) return false;
-    if (!sheetThongTinShop_(SpreadsheetApp.openById(fileId))) return false;
-    PropertiesService.getScriptProperties().setProperty(TT_MO_NEO, fileId);
-    return true;
-  } catch (e) {
-    return false;
-  }
+function canhBaoBangLink_(bang, thang, canhBao) {
+  if (!canhBao) return;
+  var nam = Number(String(thang).slice(0, 4));
+  var th = Number(String(thang).slice(5, 7));
+  if (!nam || !th) return;
+  var sauNam = th === 12 ? nam + 1 : nam;
+  var sauThang = th === 12 ? 1 : th + 1;
+  if (chonDongDinhTuyen_(bang, sauNam, sauThang).ok) return;
+  var ky = kyCuoiBangLink_(bang);
+  canhBao.push('Bảng link mới khai tới ' +
+    (ky ? ky.nam + '-' + hai_(ky.thang) + ' (dòng ' + ky.dong + ')' : 'chưa có kỳ nào') +
+    ', tháng này là ' + thang + '. Thêm dòng cho tháng sau (' + sauNam + '-' + hai_(sauThang) +
+    ') ngay để tháng sau không tắc.');
 }
 
 /**
@@ -357,7 +544,8 @@ function capNhatMoNeo_(fileId) {
 function fileCuaThang_(thang) {
   var nam = Number(String(thang).slice(0, 4));
   var th = Number(String(thang).slice(5, 7));
-  var kq = chonDongDinhTuyen_(bangLinkThang_(), nam, th);
+  var mn = moNeo_();
+  var kq = chonDongDinhTuyen_(mn.bang, nam, th);
   if (!kq.ok) {
     // Gắn mã lỗi vào chính đối tượng Error. Không gắn thì `doPost` gói lại thành `NGOAI_LE`,
     // và hai câu gợi ý KHONG_CO_THANG / TRUNG_NHIEU_DONG bên `node/gsheet-web-app.js` thành mã
@@ -366,8 +554,17 @@ function fileCuaThang_(thang) {
     e.maKeodon = kq.ma;
     throw e;
   }
-  capNhatMoNeo_(kq.id);
-  return { fileId: kq.id, thang: thang, dong: kq.dong };
+  // KHÔNG DỜI MỎ NEO. Trước bản này capNhatMoNeo_(kq.id) đứng đúng ở đây, và đó là một cái BẪY:
+  //   1. chủ dự án nhân bản file T9 thành vỏ T10 → vỏ T10 mang theo bảng link CHỤP LÚC NHÂN BẢN,
+  //      dừng ở kỳ cũ;
+  //   2. chủ dự án thêm dòng "Kinh Doanh T10" vào bảng của file T9 (vì T9 đang là mỏ neo);
+  //   3. ngày 1/10 chạy lần đầu: đọc bảng T9, thấy T10, ghi đúng — rồi mỏ neo TỰ DỜI sang T10;
+  //   4. lần chạy THỨ HAI trong tháng 10: đọc bảng của file T10, bảng đó chưa bao giờ có dòng T10
+  //      → KHONG_CO_THANG → tool tắc, báo "chưa có file cho tháng 10/2026" trong khi file T10 đang
+  //      mở ngay trước mặt.
+  // Mỏ neo nay chỉ đổi khi người chạy tay caiDat(...). Khi ấy nó mới thật sự là MỘT nguồn sự thật:
+  // chủ dự án chỉ phải sửa bảng link ở đúng một file, mãi mãi.
+  return { fileId: kq.id, thang: thang, dong: kq.dong, bangLink: mn.bang, tenMoNeo: mn.ten };
 }
 
 /** Phần đuôi thông báo: chỉ THÁNG và SỐ DÒNG, tuyệt đối không có nội dung ô. */
@@ -432,9 +629,25 @@ function doPost(e) {
 
   try {
     if (hd === 'ping') {
+      // 'ping' phải nói được MỎ NEO ĐANG Ở ĐÂU. Trước bản này nó chỉ trả daCaiMoNeo: true/false,
+      // nên khi tool báo "chưa có file cho tháng X" chủ dự án không có cách nào biết mình vừa thêm
+      // dòng vào đúng file hay nhầm file. Trả TÊN file và KỲ CUỐI của bảng link; tuyệt đối không
+      // trả id — id là đường vào file tiền (cùng lý do thuDinhTuyenThang cố ý không in id).
+      // Bọc try: mỏ neo hỏng thì 'ping' vẫn phải trả lời được, vì nó chính là phép thử để tìm ra hỏng.
+      var mn = null, loiMoNeo = '';
+      try { if (thuocTinh_(TT_MO_NEO)) mn = moNeo_(); }
+      catch (errMn) { loiMoNeo = String(errMn && errMn.message ? errMn.message : errMn); }
+      var kyMn = mn ? kyCuoiBangLink_(mn.bang) : null;
       return traLoi_({
         ok: true, hanhDong: 'ping', thangHienTai: thangHienTai_(),
         daCaiMoNeo: !!thuocTinh_(TT_MO_NEO),
+        moNeo: mn ? {
+          tenFile: mn.ten,
+          kyCuoi: kyMn ? kyMn.nam + '-' + hai_(kyMn.thang) : null,
+          dongCuoi: kyMn ? kyMn.dong : null,
+          moTa: moTaMoNeo_(mn.ten, kyMn)
+        } : null,
+        loiMoNeo: loiMoNeo || null,
         thoiDiem: Utilities.formatDate(new Date(), MUI_GIO, 'HH:mm:ss dd/MM/yyyy')
       });
     }
@@ -460,12 +673,13 @@ function hanhDongDoc_(body, batDau) {
   var cfg = Config.tao(body.cauHinh || {});
   var thang = chuanHoaThang_(body.thang) || thangHienTai_();
   var f = fileCuaThang_(thang);
-  var ss = SpreadsheetApp.openById(f.fileId);
+  var ss = moFileThang_(f);
   var canhBao = [];
 
   var tenSheets = (body.sheets && body.sheets.length) ? body.sheets
     : Object.keys(cfg.gianHang).map(function (m) { return cfg.gianHang[m].sheet; });
 
+  canhBaoBangLink_(f.bangLink, thang, canhBao);
   var tuXa = docTuXa_(ss, cfg, tenSheets, thang, canhBao);
   return {
     ok: true, hanhDong: 'doc', thang: thang, fileId: f.fileId, tenFile: ss.getName(),
@@ -590,11 +804,13 @@ function hanhDongGhi_(body, batDau) {
   if (!khoa.tryLock(30000)) throw new Error('Một lệnh ghi khác đang chạy, thử lại sau vài giây');
 
   try {
-    var ss = SpreadsheetApp.openById(f.fileId);
+    var ss = moFileThang_(f);
     var k = cfg.keyin;
     var tk = { donGhi: 0, donDaCo: 0, dongGhi: 0, dongVang: 0, donGopO: 0, mappingThem: 0 };
     var viTri = {}, canhBao = [], thongBao = [], daDoVung = {};
+    canhBaoBangLink_(f.bangLink, thang, canhBao);
 
+    var daGhiSheet = {};
     lenh.forEach(function (l) {
       var sh = ss.getSheetByName(l.tenSheet);
       if (!sh) {
@@ -602,8 +818,11 @@ function hanhDongGhi_(body, batDau) {
           ' → bỏ qua ' + (l.don || []).length + ' đơn');
         return;
       }
+      var truoc = tk.donGhi;
       ghiMotSheet_(sh, l.don || [], k, tk, viTri, canhBao, thongBao, daDoVung);
+      if (tk.donGhi > truoc) daGhiSheet[l.tenSheet] = 1;
     });
+    dongDauDauThoiGian_(ss, daGhiSheet, canhBao);
 
     if (body.mappingThem && body.mappingThem.length)
       tk.mappingThem = themDongMapping_(ss, body.mappingThem, canhBao);
@@ -620,14 +839,41 @@ function hanhDongGhi_(body, batDau) {
 }
 
 /**
- * INV-3 chặn ở TẦNG GHI, không dựa vào người viết mã nhớ: một lỗi gõ trong cấu hình cột (ví dụ
- * cot_thue để nhầm thành 'M') là ghi đè ô ARRAYFORMULA đầu cột → hỏng cả cột của cả sheet, im lặng.
+ * MỘT CỬA DUY NHẤT cho mọi chỉ số cột mà lớp ghi sắp chạm tới. Chặn ở TẦNG GHI chứ không dựa vào
+ * người viết mã nhớ: một lỗi gõ trong cấu hình cột (ví dụ `cot_thue` để nhầm thành 'M') là ghi đè
+ * thẳng giá trị lên cột công thức của chủ shop, im lặng.
+ *
+ * TỪ 08/9/2026 CỬA NÀY PHÂN BIỆT HAI VIỆC, không còn cấm tuốt (GV-v2.6 §3 việc 1):
+ *   · VIEC_GHI_GIA_TRI    — ghi số/chữ đè lên ô. Vào E, F, M, N là MẤT công thức của dòng đó → TỪ CHỐI.
+ *   · VIEC_CHEP_CONG_THUC — chép công thức dòng trên xuống dòng tool vừa tạo. Đây chính là việc
+ *     phải làm để dòng mới không trắng bốn cột, nên được phép, và cố ý đi qua ĐÚNG cửa này để
+ *     người sửa mã sáu tuần sau nhìn thấy ngay là có đúng một đường được nới, không phải hai.
+ *
+ * @param {string} [cachSua]  câu chỉ đường thay cho câu mặc định — dùng khi tool TỰ DÒ ra cột cấm,
+ *                            lúc đó người vận hành cần biết sửa ở đâu chứ không chỉ biết là sai.
  */
-function kiemCotDuocGhi_(cot, ten) {
-  if (COT_CAM_GHI.indexOf(Number(cot)) >= 0)
-    throw new Error('TỪ CHỐI GHI: ' + ten + ' đang trỏ vào cột ' + Utils.chuCot(cot) +
-      ' — E, F, M, N là ARRAYFORMULA của chủ shop, ghi một ô là hỏng cả cột. Sửa cấu hình cột rồi chạy lại.');
-  return Number(cot);
+function kiemCotDuocGhi_(cot, ten, viec, cachSua) {
+  var c = Number(cot);
+  if (viec === VIEC_CHEP_CONG_THUC) return c;
+  if (COT_CAM_GHI.indexOf(c) >= 0)
+    throw new Error('TỪ CHỐI GHI: ' + (cachSua ||
+      (ten + ' đang trỏ vào cột ' + Utils.chuCot(c) + ' — E, F, M, N là cột công thức của chủ shop, ' +
+        'ghi giá trị vào là mất công thức của đúng dòng đó. Sửa cấu hình cột rồi chạy lại.')));
+  return c;
+}
+
+/**
+ * Câu lỗi cho ca cột Note rơi vào cột cấm — BA chốt câu (c): GIỮ NÉM LỖI, nhưng lỗi phải NÊU ĐÚNG
+ * CỘT ĐÃ DÒ RA và CÂU LỆNH SỬA. Nhảy qua cột Note thì mất luôn chỗ ghi lý do của mọi dòng vàng,
+ * tức mất cơ chế an toàn chính; mà dò ra cột cấm nghĩa là bố cục sheet khác giả định, lúc đó ghi
+ * bất cứ thứ gì cũng không an toàn.
+ */
+function cauSuaCotNote_(sh, k, cot) {
+  var het = Number(sh.getLastColumn()) || 0;
+  var goiY = Utils.chuCot(Math.max(het, COT_CAM_GHI[COT_CAM_GHI.length - 1]) + 1);
+  var nguon = k.cot_note ? 'keyin.cot_note đang đặt vào' : 'cột Note tự dò ra';
+  return nguon + ' cột ' + Utils.chuCot(cot) + ' là cột công thức. Mở "Cấu hình", đặt cot_note ' +
+    'thành một cột trống bên phải (ví dụ ' + goiY + ') rồi chạy lại.';
 }
 
 /**
@@ -651,8 +897,9 @@ function ghiMotSheet_(sh, donDS, k, tk, viTri, canhBao, thongBao, daDoVung) {
   // và `doCotNote_` tự dò theo dòng tiêu đề, thứ phụ thuộc hình dạng sheet của chủ shop chứ không
   // phụ thuộc mã. Đo 08/9/2026: sheet chỉ có tiêu đề tới cột L thì doCotNote_ trả về M, và
   // ghiMotSheet_ ghi thẳng chữ `Note` vào M2, đúng ô đặt ARRAYFORMULA.
-  var cNote = kiemCotDuocGhi_(k.cot_note || doCotNote_(sh, k),
-    k.cot_note ? 'keyin.cot_note' : 'cột Note tự dò (doCotNote_)');
+  var cotNoteDo = k.cot_note || doCotNote_(sh, k);
+  var cNote = kiemCotDuocGhi_(cotNoteDo, k.cot_note ? 'keyin.cot_note' : 'cột Note tự dò (doCotNote_)',
+    VIEC_GHI_GIA_TRI, cauSuaCotNote_(sh, k, cotNoteDo));
 
   // Cột Note không được trùng bất kỳ cột nào tool tự ghi: trùng cột C là ghi chữ ghi chú đè lên
   // mã đơn vừa ghi (đo được), khóa chống trùng chết và lần chạy sau nhân đôi toàn bộ đơn.
@@ -681,7 +928,6 @@ function ghiMotSheet_(sh, donDS, k, tk, viTri, canhBao, thongBao, daDoVung) {
       if (daCo[maCu] == null) daCo[maCu] = k.dong_dau + i;
     }
   }
-  var ctL = congThucCotL_(sh, k, dongCuoi);
 
   // ---- lọc đơn thật sự mới ----
   var moi = [];
@@ -702,9 +948,11 @@ function ghiMotSheet_(sh, donDS, k, tk, viTri, canhBao, thongBao, daDoVung) {
   var soDongTong = 0;
   moi.forEach(function (d) { soDongTong += Math.max(1, (d.dong || []).length); });
 
-  // Đo vùng công thức E, F, M, N, L của CHÍNH sheet này rồi cảnh báo hai mức — trước khi ghi ô nào.
-  // Chỉ đọc, không sửa: T-48 nói cảnh báo, D-15 cấm tự kéo dài công thức của chủ shop.
-  canhBaoVungCongThuc_(sh, k, dongCuoi, dongCuoi + soDongTong, canhBao, daDoVung);
+  // Đo vùng công thức E, F, L, M, N của CHÍNH sheet này — TRƯỚC khi ghi ô nào, theo TỪNG CỘT.
+  // Kết quả dùng cho hai việc: chép công thức xuống (việc chính) và cảnh báo (lớp phụ, chỉ kêu khi
+  // không có gì để chép). Đo ở đây chứ không ở `docTuXa_` vì hành động 'ghi' không đi qua hàm đó.
+  var mauDS = mauChepCongThucDS_(sh, k, het, cNote);
+  canhBaoVungCongThuc_(sh, k, mauDS, dongCuoi, dongCuoi + soDongTong, canhBao, daDoVung);
 
   // A, C, D, G, H, I, J, K — mỗi cột một khối liền mạch. KHÔNG đụng B, E, F, M, N.
   var A = [], C = [], D = [], G = [], H = [], I = [], J = [], K = [];
@@ -763,15 +1011,8 @@ function ghiMotSheet_(sh, donDS, k, tk, viTri, canhBao, thongBao, daDoVung) {
     o.setValues(x[1]);
   });
 
-  // Cột L: CHỈ cột này được kéo. E,F,M,N là ARRAYFORMULA một ô ở dòng tiêu đề — ghi vào là hỏng cả cột.
-  if (ctL) {
-    var oL = [];
-    for (var n = 0; n < soDongTong; n++) oL.push([ctL]);
-    sh.getRange(r0Khoi, k.cot_doanh_thu, soDongTong, 1).setFormulasR1C1(oL);
-  } else {
-    canhBao.push('Sheet "' + sh.getName() + '": không tìm thấy công thức mẫu ở cột ' +
-      Utils.chuCot(k.cot_doanh_thu) + ' phía trên → để trống, cần điền tay');
-  }
+  // CHÉP CÔNG THỨC DÒNG TRÊN XUỐNG cho cả năm cột E, F, L, M, N (trước bản này chỉ có L).
+  chepCongThucXuong_(sh, k, mauDS, r0Khoi, soDongTong, canhBao);
 
   // Gộp ô C,H,I,J,K,L theo chiều dọc cho đơn nhiều mặt hàng (GV-v2.2 mục 1.2).
   var cotGop = [k.cot_ma_don, k.cot_tong_tien_sp, k.cot_mgg_shop, k.cot_chi_phi, k.cot_thue, k.cot_doanh_thu];
@@ -827,86 +1068,209 @@ function ngayThat_(x) {
   return x;
 }
 
-/** Công thức cột L của dòng dữ liệu gần nhất phía trên, dạng R1C1 để dán xuống là tự dịch. */
-function congThucCotL_(sh, k, dongCuoi) {
-  for (var r = dongCuoi; r >= k.dong_dau; r--) {
-    var ct = sh.getRange(r, k.cot_doanh_thu).getFormulaR1C1();
-    if (ct) return ct;
-  }
-  return '';
+// ==================================================================== dấu thời gian ở dòng 1
+
+/**
+ * Đóng dấu thời gian cho mọi sheet CÓ GHI ĐƠN trong lần gọi này. Gọi một lần ở cuối, sau khi ghi
+ * xong toàn bộ đơn: gọi trong `ghiMotSheet_` thì mỗi khối lại đọc lại dòng 1 và ghi lại một lần —
+ * một lần 'xuLy' 400 đơn là bốn khối, tức bốn lượt ghi thừa cho đúng một ô.
+ */
+function dongDauDauThoiGian_(ss, daGhiSheet, canhBao) {
+  Object.keys(daGhiSheet || {}).forEach(function (ten) {
+    var sh = ss.getSheetByName(ten);
+    if (sh) ghiDauThoiGian_(sh, canhBao);
+  });
 }
 
 /**
- * CẢNH BÁO VÙNG CÔNG THỨC E, F, M, N và L — đo theo TỪNG CỘT, ngay trước khi ghi.
- * GV-v2.4 mục 1.3 · kế hoạch kiểm thử bài T-48 (mức CHẶN) và D-15.
+ * DẤU THỜI GIAN Ở DÒNG 1 CỦA SHEET GIAN HÀNG (GV-v2.6 §2).
  *
- * VÌ SAO PHẢI CÓ. Trước bản này chế độ Google Sheet không có một lời cảnh báo nào về việc ghi vượt
- * vùng công thức: `node/chay-google-sheet.js` không gọi `KeyIn.gs`, còn vỏ này thì chỉ canh vùng SUM
- * ở dòng tổng — thứ đã được sửa thành `$4:$2000` nên không bao giờ kêu nữa. Vượt rồi thì dòng mới
- * trống trơn bốn cột Tên sản phẩm, Đơn vị, Mã hàng, Check tồn mà không ai biết.
+ * Chủ dự án nêu mục đích: "để người sau biết rằng sheet đó mới có người làm, khỏi làm lại nữa".
  *
- * ĐO ĐƯỢC TRÊN FILE THẬT (08/9/2026, `THANG-9-2026-KINH-DOANH_DA_SUA_CONG_THUC.xlsx`): công thức là
- * TỪNG DÒNG kéo tay, dừng ở một dòng cố định và mỗi cột một dòng khác nhau — `Shopee mall` E tới 417,
- * F tới 418, M và N tới 402 (đơn mới tới dòng 96); `Offood` E 274, F 298, M và N 254 (đơn tới 57).
- * Đối chiếu khối lượng tháng 8 (`Shopee mall` dùng tới dòng 516, `Offood` tới 269) thì cả hai vượt
- * ngay trong tháng. Vì vậy phải đo THEO CỘT, không đo theo vùng dòng tổng.
+ * BỐN RÀNG BUỘC CỦA ĐỀ BÀI, và cách đáp ứng:
+ *  1. Dòng 1 là Ô GỘP `A1:N1` chứa tiêu đề lớn — tuyệt đối không đụng. Vì thế cột bắt đầu là P (16),
+ *     nằm ngoài ô gộp, và mã ở đây không bao giờ đọc/ghi cột nhỏ hơn 16 trên dòng 1.
+ *  2. `P1` đã có nội dung khác → lùi sang ô trống đầu tiên bên phải trên cùng dòng 1.
+ *  3. Lần sau phải ghi đúng chỗ cũ. Đề bài nói ghi địa chỉ ô vào khối điều khiển của
+ *     `Mapping_san_pham`; ở đây làm bằng cách RẺ HƠN VÀ KHÔNG CẦN TRẠNG THÁI: dò dòng 1 tìm ô nào
+ *     đang mang đúng tiền tố `Tool cập nhật lúc ` rồi ghi đè chính ô đó. Ô do tool viết tự nhận ra
+ *     được nên không cần sổ ghi nhớ, không lệch khi ai đó chèn thêm cột, và không thêm một thứ
+ *     phải bảo trì trong sheet của chủ shop. Đã ghi rõ lựa chọn này trong báo cáo.
+ *  4. GHI ĐÈ, không nối thêm.
  *
- * CHỊU ĐƯỢC CẢ HAI HÌNH DẠNG (chủ dự án có thể đổi sang ARRAYFORMULA sau này):
- *   · đúng MỘT ô công thức, nằm ngay dòng đầu vùng dữ liệu → coi như phủ hết cột, không kêu;
- *   · ngược lại → giới hạn là DÒNG CUỐI CÙNG còn công thức.
- * Ngoại lệ của vế đầu: ô bọc `ARRAY_CONSTRAIN(…;1;1)` chỉ phủ đúng một dòng — dấu vết Google để lại
- * khi chuyển công thức mảng của Excel sang Sheet (GV-v2.4 Phụ lục A.1).
- *
- * BẢN SAO CÓ CHỦ Ý của `KeyIn.doVungCongThuc` + `KeyIn.canhBaoVungCongThuc`: `KeyIn.gs` KHÔNG nằm
- * trong 7 file dán lên Apps Script (xem `thuXuLyRong`), y như `doCotNote_` phải chép lại
- * `KeyIn.cotNote`. Sửa câu chữ ở một bên thì phải sửa bên kia, nếu không nhật ký hai chế độ nói hai
- * câu khác nhau cho cùng một việc và người vận hành không tra được.
- *
- * VÌ SAO ĐO Ở ĐÂY chứ không ở `docTuXa_`: hành động 'ghi' không đi qua `docTuXa_`. Đây là chỗ DUY NHẤT
- * cả hai đường ('ghi' và 'xuLy') đều đi qua, lại biết đủ hai vế — dòng cuối thật (đọc trong khóa) và
- * số dòng lô này sắp ghi.
- *
- * TUYỆT ĐỐI KHÔNG tự kéo dài, không tự sửa công thức của chủ shop (D-15). Chỉ nói ra để người ta làm.
+ * BỌC TRY/CATCH CÓ CHỦ Ý: dấu thời gian là thứ trang trí. Một sheet bố cục lạ làm hỏng bước này thì
+ * phải mất đúng dấu thời gian, không được kéo theo cả lô đơn đã ghi xong.
  */
-function canhBaoVungCongThuc_(sh, k, dongDonCuoi, dongCuoiMoi, canhBao, daDo) {
-  var ten = sh.getName();
-  if (daDo && daDo[ten]) return;                    // một lần chạy chỉ đo một lần cho mỗi sheet
-  if (daDo) daDo[ten] = 1;
+var DAU_THOI_GIAN_TIEN_TO = 'Tool cập nhật lúc ';
+var COT_DAU_THOI_GIAN = 16;              // P — ngay bên phải ô gộp A1:N1
+var SO_COT_DO_DAU_THOI_GIAN = 10;        // dò P..Y rồi thôi; không có chỗ thì kêu chứ không bò mãi
+var MAU_NEN_DAU_THOI_GIAN = '#FFF9E6';
 
+/** 'Tool cập nhật lúc 12h40 ngày 9/9/2026' — giờ Việt Nam, giờ và ngày KHÔNG đệm số 0. */
+function cauDauThoiGian_(luc) {
+  var d = luc || new Date();
+  var s = '';
+  // Đọc qua Utilities.formatDate để lấy đúng múi giờ Việt Nam của máy chủ Google, nhưng chỉ dùng
+  // các mẫu hai chữ số — mẫu một chữ ('H', 'd', 'M') không phải bản giả lập nào cũng hiểu.
+  try { s = String(Utilities.formatDate(d, MUI_GIO, 'yyyy-MM-dd-HH-mm')); } catch (e) { s = ''; }
+  var m = /^(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})$/.exec(s);
+  var nam, thang, ngay, gio, phut;
+  if (m) { nam = Number(m[1]); thang = Number(m[2]); ngay = Number(m[3]); gio = Number(m[4]); phut = m[5]; }
+  else { nam = d.getFullYear(); thang = d.getMonth() + 1; ngay = d.getDate(); gio = d.getHours(); phut = hai_(d.getMinutes()); }
+  return DAU_THOI_GIAN_TIEN_TO + gio + 'h' + phut + ' ngày ' + ngay + '/' + thang + '/' + nam;
+}
+
+/**
+ * Ghi dấu thời gian vào dòng 1 của một sheet gian hàng. Chỉ gọi cho sheet THẬT SỰ có ghi đơn trong
+ * lần chạy này — sheet không có đơn mới phải giữ nguyên dấu cũ, nếu không dấu mất hết ý nghĩa.
+ * @returns {string|null}  địa chỉ ô đã ghi ('P1'), hoặc null nếu không ghi được
+ */
+function ghiDauThoiGian_(sh, canhBao) {
+  try {
+    // Đọc CẢ DẢI trong MỘT lượt. Bản đầu dò từng ô một: 10 lượt getDisplayValues cho mỗi sheet,
+    // nhân bốn sheet là 40 lượt gọi Google thừa mỗi lần chạy, đổi lấy đúng một ô chữ.
+    var dai = sh.getRange(1, COT_DAU_THOI_GIAN, 1, SO_COT_DO_DAU_THOI_GIAN).getDisplayValues()[0];
+    var cot = 0, oTrong = 0;
+    for (var i = 0; i < dai.length; i++) {
+      var v = String(dai[i] == null ? '' : dai[i]).trim();
+      var c = COT_DAU_THOI_GIAN + i;
+      if (v.indexOf(DAU_THOI_GIAN_TIEN_TO) === 0) { cot = c; break; }   // ô của lần trước → ghi đè đúng đó
+      if (!v && !oTrong) oTrong = c;
+    }
+    if (!cot) cot = oTrong;
+    if (!cot) {
+      canhBao.push('Sheet "' + sh.getName() + '": dòng 1 từ cột ' + Utils.chuCot(COT_DAU_THOI_GIAN) +
+        ' sang phải không còn ô trống → bỏ qua dấu thời gian, phần ghi đơn vẫn xong bình thường.');
+      return null;
+    }
+    var o = sh.getRange(1, cot, 1, 1);
+    o.setValues([[cauDauThoiGian_(new Date())]]);
+    o.setBackground(MAU_NEN_DAU_THOI_GIAN);
+    o.setFontWeight('bold');
+    return Utils.chuCot(cot) + '1';
+  } catch (e) {
+    canhBao.push('Sheet "' + sh.getName() + '": không ghi được dấu thời gian ở dòng 1 (' +
+      String(e && e.message ? e.message : e) + ') — phần ghi đơn vẫn xong bình thường.');
+    return null;
+  }
+}
+
+/**
+ * ĐO TỪNG CỘT CÔNG THỨC rồi CHỐT: cột này chép được công thức dòng trên xuống hay không.
+ *
+ * VÌ SAO PHẢI ĐO TỪNG CỘT, KHÔNG ĐO CHUNG. Bốn cột E, F, M, N của cùng một sheet dừng ở bốn dòng
+ * khác nhau, và lệch rất xa: file DEMO tháng 9 mới nhất có `Shopee mall` E/F/N 389 ô nhưng M chỉ
+ * 274 ô; `Offood` 432/432/432 nhưng M chỉ 185. Cột M là Mã hàng và N tra theo M, nên M ngắn là N
+ * vô dụng theo. Lấy một con số chung cho cả bốn cột là nói sai về ba cột trong bốn.
+ *
+ * BA TRẢ LỜI CHO MỖI CỘT:
+ *   · chepDuoc = true              → có công thức mẫu, chép xuống dòng mới. Đây là ca thường.
+ *   · lyDo = 'KHONG_CO_MAU'        → cả cột không còn ô nào có công thức. KHÔNG tự dựng công thức
+ *     mới (D-15 cấm, và đó là công thức của chủ shop): để trống, cảnh báo để người kiểm tay.
+ *   · lyDo = 'TRAN_CA_COT'         → đúng MỘT ô công thức nằm ngay dòng đầu vùng dữ liệu và không
+ *     bọc `ARRAY_CONSTRAIN` → đó là ARRAYFORMULA thật, tự tràn xuống. Chép xuống là ĐÈ CHẾT vùng
+ *     tràn của nó. Không đụng. Chủ dự án có thể đổi sang hình dạng này bất cứ lúc nào nên phép đo
+ *     không được khóa cứng vào hình dạng đo được hôm nay.
+ *
+ * Ngoại lệ `ARRAY_CONSTRAIN(…;1;1)`: nhìn thì giống ARRAYFORMULA mà chỉ phủ đúng một dòng một cột —
+ * dấu vết Google để lại khi chuyển công thức mảng của Excel sang Sheet (GV-v2.4 Phụ lục A.1). Vì thế
+ * ô như vậy vẫn tính là công thức TỪNG DÒNG và vẫn phải chép xuống.
+ *
+ * Vế "TRAN_CA_COT" cố ý CHỈ áp cho E, F, M, N. Cột L (`Doanh Thu`) chưa bao giờ là ARRAYFORMULA —
+ * nó là `=H4-I4-J4-K4` từng dòng — nên một sheet mới toanh chỉ có L4 vẫn phải chép xuống như cũ.
+ *
+ * @param {number} dongCuoiSheet  `sh.getLastRow()` đọc TRƯỚC khi ghi ô nào của lô này
+ * @param {number} cNote          cột Note, để không bao giờ chép công thức đè lên chỗ ghi lý do
+ * @returns {Array} [{ cot, chepDuoc, lyDo, dong, text }]
+ */
+function mauChepCongThucDS_(sh, k, dongCuoiSheet, cNote) {
   var cot = (k.cot_cong_thuc || []).slice();
   if (cot.indexOf(k.cot_doanh_thu) < 0) cot.push(k.cot_doanh_thu);
   cot.sort(function (a, b) { return a - b; });
 
-  var het = sh.getLastRow();
-  var ng = Number(k.nguong_sap_het_cong_thuc);
-  if (isNaN(ng) || ng <= 0) ng = NGUONG_SAP_HET_CONG_THUC;
-
+  var ra = [];
   for (var i = 0; i < cot.length; i++) {
-    var c = cot[i];
-    var d = dongCuoiCongThuc_(sh, c, k.dong_dau, het);
-    // `d.dong === dong_dau` nghĩa là dưới nó không còn ô công thức nào, mà nó lại là dòng đầu vùng
-    // dữ liệu → cả cột chỉ có ĐÚNG MỘT ô công thức, nằm ở đầu cột. Đó là hình dạng ARRAYFORMULA phủ
-    // cả cột: bỏ qua, không có gì để cảnh báo.
-    if (d && d.dong === k.dong_dau && !/ARRAY_CONSTRAIN/i.test(d.text)) continue;
-
-    var dauCau = 'Vùng công thức sheet "' + ten + '" cột ' + Utils.chuCot(c) + ': ';
-    if (!d) {
-      canhBao.push(dauCau + 'KHÔNG CÒN CÔNG THỨC — từ dòng ' + k.dong_dau +
-        ' trở xuống không còn ô nào có công thức nên ' + (dongCuoiMoi - dongDonCuoi) +
-        ' dòng mới sẽ trống ở cột này. Vẫn ghi, không chặn: ' + VIEC_KEO_DAI_CONG_THUC + '.');
+    var c = Number(cot[i]);
+    if (c === Number(cNote)) continue;                 // Note là cột tool ghi CHỮ, không phải cột công thức
+    kiemCotDuocGhi_(c, 'keyin.cot_cong_thuc', VIEC_CHEP_CONG_THUC);
+    var d = dongCuoiCongThuc_(sh, c, k.dong_dau, dongCuoiSheet);
+    if (!d) { ra.push({ cot: c, chepDuoc: false, lyDo: 'KHONG_CO_MAU', dong: null, text: '' }); continue; }
+    if (COT_CAM_GHI.indexOf(c) >= 0 && d.dong === k.dong_dau && !/ARRAY_CONSTRAIN/i.test(d.text)) {
+      ra.push({ cot: c, chepDuoc: false, lyDo: 'TRAN_CA_COT', dong: d.dong, text: d.text });
       continue;
     }
-    // Cột L thì `congThucCotL_` tự chép công thức xuống dòng mới nên không vượt vùng được; ca duy
-    // nhất đáng kêu ở cột này là "phía trên không còn công thức nào để chép", đã xử ngay bên trên.
-    if (c === k.cot_doanh_thu) continue;
-    if (dongCuoiMoi > d.dong) {
-      canhBao.push(dauCau + 'SẼ VƯỢT — công thức chỉ còn tới dòng ' + d.dong + ', lô này ghi tới dòng ' +
-        dongCuoiMoi + ' nên ' + (dongCuoiMoi - (d.dong > dongDonCuoi ? d.dong : dongDonCuoi)) +
-        ' dòng mới sẽ trống ở cột này. Vẫn ghi, không chặn: ' + VIEC_KEO_DAI_CONG_THUC + '.');
-    } else if (d.dong - dongCuoiMoi < ng) {
-      canhBao.push(dauCau + 'SẮP HẾT — công thức còn tới dòng ' + d.dong + ', đơn đã tới dòng ' +
-        dongCuoiMoi + ', còn dư ' + (d.dong - dongCuoiMoi) + ' dòng.');
+    ra.push({ cot: c, chepDuoc: true, lyDo: '', dong: d.dong, text: d.text });
+  }
+  return ra;
+}
+
+/**
+ * CHÉP CÔNG THỨC DÒNG TRÊN XUỐNG cho E, F, L, M, N ở đúng khối dòng tool vừa tạo (GV-v2.6 §3 việc 1).
+ *
+ * TRIỆU CHỨNG THẬT ĐANG CHỐNG: trước bản này chế độ Google chỉ kéo cột L, nên mọi dòng tool ghi
+ * đều trắng Tên sản phẩm, Đơn vị, Mã hàng, Check tồn. Không phải "sẽ trắng khi vượt vùng" — trắng
+ * ngay từ dòng đầu tiên nằm dưới ô cuối còn công thức, và vùng đó ăn mòn dần về 0 (Shopee mall
+ * 909 → 396 → 0 ô mỗi cột).
+ *
+ * BA RÀNG BUỘC, cả ba đều có bài đối chứng âm trong `node/test-chep-cong-thuc.js`:
+ *  1. Chỉ chép vào DÒNG TOOL VỪA TẠO. Dòng cũ không đụng — khối ghi bắt đầu từ `r0Khoi` là dòng
+ *     ngay dưới dòng dữ liệu cuối, nên dòng cũ nằm ngoài vùng ghi.
+ *  2. Ô nào TRONG khối mà ĐÃ CÓ công thức thì giữ nguyên công thức đó, không đè bằng mẫu. Ca này
+ *     có thật: công thức của chủ shop thường chạy quá dòng đơn cuối (đơn tới dòng 96, công thức
+ *     tới 417), nên khối mới nằm lọt trong vùng còn công thức.
+ *  3. Dùng R1C1: `setFormulasR1C1` tự dịch tham chiếu tương đối theo dòng đích, đúng cách cột L đã
+ *     chạy từ đầu. Không tự viết lại công thức, không thêm IFERROR, không đổi vùng tra.
+ *
+ * Đọc lại công thức cũ bằng `getFormulaR1C1` TỪNG Ô chứ không `getFormulasR1C1` cả khối: đây là bề
+ * mặt Apps Script mà mọi sheet giả của bộ test đều dựng đủ. Và chỉ đọc khi khối thật sự chồng lên
+ * vùng còn công thức (`r <= m.dong`) — ngoài vùng đó thì chắc chắn trống, khỏi tốn lượt gọi.
+ */
+function chepCongThucXuong_(sh, k, mauDS, r0Khoi, soDong, canhBao) {
+  for (var i = 0; i < (mauDS || []).length; i++) {
+    var m = mauDS[i];
+    if (!m.chepDuoc) continue;
+    kiemCotDuocGhi_(m.cot, 'chép công thức cột ' + Utils.chuCot(m.cot), VIEC_CHEP_CONG_THUC);
+    var o = [], coViec = false;
+    for (var n = 0; n < soDong; n++) {
+      var r = r0Khoi + n;
+      var cu = (r <= m.dong) ? sh.getRange(r, m.cot).getFormulaR1C1() : '';
+      if (cu) { o.push([cu]); continue; }               // công thức của chủ shop đã có sẵn → giữ nguyên
+      o.push([m.text]);
+      coViec = true;
     }
+    if (!coViec) continue;                              // cả khối đã có công thức → không ghi lệnh nào
+    sh.getRange(r0Khoi, m.cot, soDong, 1).setFormulasR1C1(o);
+  }
+}
+
+/**
+ * CẢNH BÁO VÙNG CÔNG THỨC — nay chỉ còn là LỚP PHỤ (BA chốt câu (a), 08_BA_TRA_LOI_DEV_v2.6.md §1).
+ *
+ * Trước 08/9/2026 hàm này kêu hai mức ĐỎ ("SẼ VƯỢT") và VÀNG ("SẮP HẾT"). Cả hai nay vô nghĩa ở vỏ
+ * Google: tool chép công thức xuống nên vùng không bao giờ hết. Cảnh báo đơn thuần chỉ báo cho
+ * người biết mình sắp mất công thức — nó KHÔNG ngăn được việc mất.
+ *
+ * Còn đúng một ca đáng kêu: cả cột không còn ô nào có công thức để chép. Lúc đó tool để trống và
+ * nói ra, tuyệt đối không tự dựng công thức mới (D-15) — công thức là của chủ shop, đoán sai thì
+ * sai lặng lẽ trên mọi dòng về sau.
+ *
+ * Ca ARRAYFORMULA phủ cả cột thì không kêu: cột ấy tự tràn, không có gì để làm.
+ *
+ * Gộp một lần cho mỗi sheet trong mỗi lần gọi (`daDo`): một lần 'xuLy' ghi nhiều khối trên cùng một
+ * sheet, không gộp thì mỗi khối lại kêu lại đúng một câu.
+ */
+function canhBaoVungCongThuc_(sh, k, mauDS, dongDonCuoi, dongCuoiMoi, canhBao, daDo) {
+  var ten = sh.getName();
+  if (daDo && daDo[ten]) return;
+  if (daDo) daDo[ten] = 1;
+  for (var i = 0; i < (mauDS || []).length; i++) {
+    var m = mauDS[i];
+    if (m.chepDuoc || m.lyDo !== 'KHONG_CO_MAU') continue;
+    canhBao.push('Vùng công thức sheet "' + ten + '" cột ' + Utils.chuCot(m.cot) + ': ' +
+      'KHÔNG CÒN CÔNG THỨC ĐỂ CHÉP — từ dòng ' + k.dong_dau + ' trở xuống không còn ô nào có công thức nên ' +
+      (dongCuoiMoi - dongDonCuoi) + ' dòng mới sẽ trống ở cột này. Vẫn ghi, không chặn: ' +
+      'chép tay công thức đúng vào ô ' + Utils.chuCot(m.cot) + k.dong_dau +
+      ' (lấy từ file tháng trước), từ lần chạy sau tool tự chép tiếp xuống.');
   }
 }
 
@@ -1132,8 +1496,9 @@ function hanhDongXuLy_(body, batDau) {
     throw new Error('Gói có ' + tongDon + ' đơn, quá ' + TOI_DA_DON_MOT_LO +
       ' đơn một lô. Vỏ Node phải chia lô nhỏ hơn.');
 
-  var ss = SpreadsheetApp.openById(f.fileId);
+  var ss = moFileThang_(f);
   var canhBao = [], thongBao = [];
+  canhBaoBangLink_(f.bangLink, thang, canhBao);
 
   // ---- (1) ĐỌC — y hệt hành động 'doc', chỉ lấy sheet của các gian hàng có mặt trong gói ----
   var tenSheets = [];
@@ -1165,7 +1530,7 @@ function hanhDongXuLy_(body, batDau) {
     // của MapListing là (Gian hàng, Tên trên Shopee, Phân loại), không phải số lần chạy).
     if (goi.mappingThem.length) tk.mappingThem = themDongMapping_(ss, goi.mappingThem, canhBao);
 
-    var sheetDaXong = [], sheetConLai = [], daLamViecGi = false;
+    var sheetDaXong = [], sheetConLai = [], daLamViecGi = false, daGhiSheet = {};
     for (var i = 0; i < goi.lenh.length; i++) {
       var l = goi.lenh[i];
       var sh = ss.getSheetByName(l.tenSheet);
@@ -1180,13 +1545,16 @@ function hanhDongXuLy_(body, batDau) {
         // Khối ĐẦU TIÊN của cả lần gọi luôn được chạy: nếu không, một lần gọi có thể trả về "chưa
         // làm gì" mãi mãi và phía máy tính quay vòng vô tận mà không tiến thêm ô nào.
         if (daLamViecGi && quaGioXuLy_(batDau, body.nguongGiay)) { conLai += khoiDS[j].length; continue; }
+        var truocKhoi = tk.donGhi;
         ghiMotSheet_(sh, khoiDS[j], k, tk, viTri, canhBao, thongBao, daDoVung);
+        if (tk.donGhi > truocKhoi) daGhiSheet[l.tenSheet] = 1;
         daLamViecGi = true;
       }
       if (conLai) sheetConLai.push({ tenSheet: l.tenSheet, soDon: conLai });
       else sheetDaXong.push(l.tenSheet);
     }
 
+    dongDauDauThoiGian_(ss, daGhiSheet, canhBao);
     SpreadsheetApp.flush();
 
     var xong = sheetConLai.length === 0;
@@ -1234,7 +1602,7 @@ function thuDinhTuyenThang() {
   var thang = thangHienTai_();
   var f = fileCuaThang_(thang);
   var tin = 'Bản ' + PHIEN_BAN + ' · tháng ' + thang + ' → "' +
-    SpreadsheetApp.openById(f.fileId).getName() + '" (dòng ' + f.dong + ')';
+    moFileThang_(f).getName() + '" (dòng ' + f.dong + ')';
   Logger.log(tin);
   return tin;
 }
