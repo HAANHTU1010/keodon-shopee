@@ -147,3 +147,5 @@ var CaiDat = (function () {
 
   return { cauHinhMacDinh: cauHinhMacDinh };
 })();
+
+var VAN_TAY_CAIDAT = 'bac6d960';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

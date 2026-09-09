@@ -3,7 +3,7 @@
  *
  * GV-v2.2 mục 3: **tool chỉ được thêm ĐÚNG MỘT sheet** vào file của chủ dự án — `Mapping sản phẩm`.
  * Các sheet máy của bản v1 (DON_HANG_RAW, CHO_XU_LY, LOG_DONG_BO, DOI_CHIEU, XEM_GIAN_HANG) đã BỎ:
- *  - nhật ký → file riêng `3_KET_QUA/LOG_<yyyymmdd_HHMM>.txt` ngoài file tracking (Context 9.4);
+ *  - nhật ký → file riêng `Cấu hình\nhật ký\LOG_<yyyymmdd_HHMM>.txt` ngoài file tracking (Context 9.4);
  *  - hàng chờ → cột `Note` + tô vàng ngay trên sheet gian hàng, và dòng vàng trong `Mapping sản phẩm` (Context 7.1);
  *  - chống trùng → quét cột C của chính sheet gian hàng, không cần sổ cái riêng (Context 7.1).
  */
@@ -58,3 +58,5 @@ var SCHEMA = {
 
 /** Một dòng nhật ký (ghi ra file .txt, không phải sheet). */
 var LOG_COT = ['thoi_diem', 'gian_hang', 'ten_file', 'so_don_doc', 'so_don_ghi', 'so_don_da_co', 'so_dong_ghi', 'so_dong_vang', 'so_ten_moi', 'so_loi', 'thong_bao'];
+
+var VAN_TAY_SCHEMA = 'b97654d6';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

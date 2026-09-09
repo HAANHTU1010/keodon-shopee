@@ -200,6 +200,11 @@ function biMatDung_(gui) {
 function traLoi_(obj) {
   var o = obj || {};
   if (o.phienBan == null) o.phienBan = PHIEN_BAN;
+  // Dấu vân tay bản dựng đi kèm MỌI phản hồi (12 ký tự, rẻ) để máy so được mà không tốn thêm một
+  // lượt gọi — thêm lượt `ping` sẽ phá các bài đang đếm chính xác số lượt gọi mạng.
+  // NHƯNG không gắn vào nhánh sai bí mật: người lạ gõ bừa một lần không được biết thêm gì về bản
+  // đang chạy. (`phienBan` hiện vẫn lọt ở nhánh đó — đó là việc riêng ở mục 3.1, không nới thêm.)
+  if (o.banDung == null && o.loi !== 'SAI_BI_MAT' && typeof BAN_DUNG !== 'undefined') o.banDung = BAN_DUNG;
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -390,6 +395,44 @@ function coDauHieu_(s, dauHieu) {
  * nó TRƯỚC nhóm thiếu quyền; đảo lại là mọi ca ID sai bị đổ oan cho quyền.
  * @returns {'KHONG_MO_DUOC_FILE'|'KHONG_CO_QUYEN'|'KHONG_THAY_FILE'|''}
  */
+/**
+ * CHỈ CÓ QUYỀN XEM — ca `openById` không bắt được.
+ *
+ * `moFileThang_` chỉ chạm `openById`, mà file chia sẻ quyền **Xem** thì lệnh đó MỞ TRÓT LỌT.
+ * Lỗi chỉ nổ ra ở lệnh ghi đầu tiên, với một câu thô khác hẳn. Và ca này hay gặp hơn ca "quên
+ * chia sẻ hẳn": hộp Chia sẻ của Google mặc định là **Người xem**, nên chia sẻ nhầm mức là chuyện
+ * tự nhiên, còn quên chia sẻ hẳn mới là ca hiếm.
+ *
+ * Cùng nguyên tắc fail-safe với `phanLoaiLoiMoFile_`: đây là chuỗi Google đã công bố, CHƯA đo được
+ * trên tài khoản thật (máy dev không có quyền Deploy). Chuỗi lạ thì NÉM NGUYÊN lỗi cũ — xấu nhất
+ * cũng chỉ bằng hiện trạng, không bao giờ đổ oan cho quyền.
+ */
+var DAU_HIEU_CHI_QUYEN_XEM = [
+  'read-only mode',                                  // "The document is currently in read-only mode"
+  'chế độ chỉ đọc',
+  'do not have permission to modify',
+  'does not have permission to modify',
+  'không có quyền chỉnh sửa',
+  'not authorized to edit',
+  'cannot edit'
+];
+
+function thuGhiDauTien_(sh, viec) {
+  try { return viec(); } catch (e) {
+    var s = String((e && e.message) ? e.message : e || '').toLowerCase();
+    if (!coDauHieu_(s, DAU_HIEU_CHI_QUYEN_XEM)) throw e;
+    var ten = '';
+    try { ten = sh.getParent().getName(); } catch (e2) { ten = ''; }
+    var er = new Error('Không ghi được vào file' + (ten ? ' "' + ten + '"' : '') +
+      '. File đang chia sẻ cho tài khoản chạy tool ở mức CHỈ XEM nên mở được mà không ghi được. ' +
+      'Mở file đó, bấm Chia sẻ, tìm dòng của tài khoản đã deploy Web App rồi đổi từ "Người xem" ' +
+      'thành "Người chỉnh sửa", bấm Xong, sau đó chạy lại tool.');
+    er.maKeodon = 'CHI_CO_QUYEN_XEM';
+    er.loiGoc = String((e && e.message) ? e.message : e);
+    throw er;
+  }
+}
+
 function phanLoaiLoiMoFile_(loi) {
   var s = String((loi && loi.message) ? loi.message : loi || '').toLowerCase();
   if (!s) return '';
@@ -648,6 +691,12 @@ function doPost(e) {
           moTa: moTaMoNeo_(mn.ten, kyMn)
         } : null,
         loiMoNeo: loiMoNeo || null,
+        // Dấu vân tay bản dựng: `PHIEN_BAN` không phân biệt được hai bản dựng cùng số phiên bản,
+        // nên tự nó không trả lời được câu "bản trên Google là bản nào". Máy so ba thứ này với
+        // chính `src/` của nó rồi cảnh báo — cảnh báo thôi, không chặn, để không tắc buổi chạy thử.
+        banDung: (typeof BAN_DUNG !== 'undefined') ? BAN_DUNG : null,
+        vanTay: vanTayBanDung_(),
+        hamLoi: hamLoiCoMat_(),
         thoiDiem: Utilities.formatDate(new Date(), MUI_GIO, 'HH:mm:ss dd/MM/yyyy')
       });
     }
@@ -991,7 +1040,11 @@ function ghiMotSheet_(sh, donDS, k, tk, viTri, canhBao, thongBao, daDoVung) {
   // ('2608028Q4VMUAA') nên trông vô hại, nhưng mã toàn chữ số sẽ bị Sheets đổi thành số và MẤT SỐ 0
   // ĐẦU: '0012345' thành 12345, lần chạy sau đọc lại không khớp mã cũ → ghi trùng đơn.
   var cMa = sh.getRange(r0Khoi, k.cot_ma_don, soDongTong, 1);
-  cMa.setNumberFormat('@');
+  // LỆNH GHI ĐẦU TIÊN của cả lượt chạy — bọc để đổi lỗi thô của Google thành câu chỉ việc phải làm.
+  // Vì sao đúng chỗ này: file được chia sẻ quyền XEM thì `openById` mở TRÓT LỌT, `moFileThang_`
+  // không thấy gì bất thường, và lỗi chỉ nổ ra ở đây. Mà hộp Chia sẻ của Google mặc định là
+  // "Người xem", nên "chia sẻ nhầm quyền Xem" hay gặp hơn hẳn "quên chia sẻ hẳn".
+  thuGhiDauTien_(sh, function () { cMa.setNumberFormat('@'); });
   cMa.setValues(C);
 
   // Cột NGÀY: cũng đặt định dạng trước, nhưng CỐ Ý KHÔNG dùng '@'.
@@ -1612,6 +1665,70 @@ function thuDinhTuyenThang() {
  * Không ghi gì, không mở file tháng nào — chỉ hỏi bốn đối tượng lõi có mặt chưa.
  * Thiếu file thì lần chạy thật đầu tiên mới hỏng, mà lúc đó nhân viên đã thả file và đang chờ.
  */
+/**
+ * DẤU VÂN TAY BẢN DỰNG — trả lời câu "bản trên Google là bản nào".
+ *
+ * VÌ SAO CẦN. Mười một file `.gs` do người dán tay, còn `PHIEN_BAN` chỉ đổi khi lên phiên bản mới.
+ * Nghĩa là mọi bản dựng trong cùng một số phiên bản TRÔNG GIỐNG HỆT NHAU: dán sót một file, hay
+ * dán nhầm bản cũ, thì tool vẫn chạy êm và sai lặng lẽ. Đã xảy ra đúng một lần như thế: nhật ký
+ * không có câu cảnh báo nào về công thức, nhưng cột E/F/N trên Google lại trống — và không ai
+ * phân biệt được "mã chạy đúng, công thức trả chuỗi rỗng" với "bản trên Google cũ hơn bản máy".
+ *
+ * VÌ SAO PHẢI THEO TỪNG FILE. Một số chung chỉ nằm được ở MỘT file. Dán đúng file đó bản mới mà
+ * sót `Normalize.gs` bản cũ thì số chung vẫn khớp — trong khi `Normalize.gs` mới là chỗ tính tiền.
+ * Ca "sót đúng một file" là ca dễ xảy ra nhất khi dán tay mười một file, nên nó phải là ca bắt
+ * được chắc nhất. `typeof` là biểu thức duy nhất không ném ReferenceError với tên chưa khai báo.
+ */
+function vanTayBanDung_() {
+  var v = {};
+  v['CaiDat.gs'] = (typeof VAN_TAY_CAIDAT !== 'undefined') ? VAN_TAY_CAIDAT : null;
+  v['Config.gs'] = (typeof VAN_TAY_CONFIG !== 'undefined') ? VAN_TAY_CONFIG : null;
+  v['DanhMuc.gs'] = (typeof VAN_TAY_DANHMUC !== 'undefined') ? VAN_TAY_DANHMUC : null;
+  v['KeyIn.gs'] = (typeof VAN_TAY_KEYIN !== 'undefined') ? VAN_TAY_KEYIN : null;
+  v['Main.gs'] = (typeof VAN_TAY_MAIN !== 'undefined') ? VAN_TAY_MAIN : null;
+  v['MapListing.gs'] = (typeof VAN_TAY_MAPLISTING !== 'undefined') ? VAN_TAY_MAPLISTING : null;
+  v['Normalize.gs'] = (typeof VAN_TAY_NORMALIZE !== 'undefined') ? VAN_TAY_NORMALIZE : null;
+  v['Schema.gs'] = (typeof VAN_TAY_SCHEMA !== 'undefined') ? VAN_TAY_SCHEMA : null;
+  v['ShellAppsScript.gs'] = (typeof VAN_TAY_SHELL !== 'undefined') ? VAN_TAY_SHELL : null;
+  v['TaoThangMoi.gs'] = (typeof VAN_TAY_TAOTHANGMOI !== 'undefined') ? VAN_TAY_TAOTHANGMOI : null;
+  v['Utils.gs'] = (typeof VAN_TAY_UTILS !== 'undefined') ? VAN_TAY_UTILS : null;
+  return v;
+}
+
+/**
+ * Tên các hàm lõi THỰC SỰ CÓ MẶT trên Web App — dấu vân tay thứ hai, độc lập với dấu băm.
+ *
+ * Băm bắt được "file này khác bản trên máy". Danh sách hàm bắt được thứ khác: bản dán lên là bản
+ * TRƯỚC KHI có tính năng đó. Hai phép độc lập nhau, và ca hỏng thật thường rơi vào cả hai.
+ *
+ * `camMaVanCo` là chiều ngược lại, quan trọng không kém: `capNhatMoNeo_` đã bị bỏ vì nó dời mỏ neo
+ * sang file tháng mới, mà bảng link của file đó dừng ở tháng trước — lần chạy sau tắc `KHONG_CO_THANG`.
+ * Nó CÒN trên Google nghĩa là bản dán lên cũ hơn, và cái bẫy đó vẫn đang giăng.
+ */
+/**
+ * Viết `typeof <tên>` thẳng cho từng hàm, KHÔNG tra động qua `this[ten]`: `this` chỉ là đối tượng
+ * toàn cục khi hàm chạy ở chế độ sloppy, mà điều đó khác nhau giữa Apps Script và bộ nạp phía Node,
+ * nên tra động sẽ báo "thiếu hết" ở một trong hai chỗ. `typeof <tên chưa khai báo>` là biểu thức
+ * DUY NHẤT không ném ReferenceError — cùng lý do `thuXuLyRong` đã dùng nó.
+ */
+function hamLoiCoMat_() {
+  var co = [], thieu = [], camMaVanCo = [];
+  function xet(ten, kieu) { if (kieu === 'function') co.push(ten); else thieu.push(ten); }
+  xet('mauChepCongThucDS_', typeof mauChepCongThucDS_);
+  xet('chepCongThucXuong_', typeof chepCongThucXuong_);
+  xet('cauDauThoiGian_', typeof cauDauThoiGian_);
+  xet('ghiDauThoiGian_', typeof ghiDauThoiGian_);
+  xet('moNeo_', typeof moNeo_);
+  xet('kyCuoiBangLink_', typeof kyCuoiBangLink_);
+  xet('phanLoaiLoiMoFile_', typeof phanLoaiLoiMoFile_);
+  xet('moFileThang_', typeof moFileThang_);
+  xet('kiemCotDuocGhi_', typeof kiemCotDuocGhi_);
+  xet('doCotNote_', typeof doCotNote_);
+  xet('hanhDongXuLy_', typeof hanhDongXuLy_);
+  if (typeof capNhatMoNeo_ === 'function') camMaVanCo.push('capNhatMoNeo_');
+  return { co: co, thieu: thieu, camMaVanCo: camMaVanCo };
+}
+
 function thuXuLyRong() {
   // `typeof <tên chưa khai báo>` là biểu thức DUY NHẤT không ném ReferenceError trong JavaScript —
   // đó là lý do dùng typeof ở đây thay vì thử gọi hàm rồi bắt lỗi.
@@ -1623,9 +1740,13 @@ function thuXuLyRong() {
   if (typeof DanhMuc === 'undefined') thieu.push('DanhMuc.gs');
   if (typeof MapListing === 'undefined') thieu.push('MapListing.gs');
   if (typeof Normalize === 'undefined') thieu.push('Normalize.gs');
+  var hl = hamLoiCoMat_();
+  var dau = ' · bản dựng ' + ((typeof BAN_DUNG !== 'undefined') ? BAN_DUNG : '(chưa có dấu vân tay)');
+  if (hl.thieu.length) dau += ' · THIẾU HÀM LÕI: ' + hl.thieu.join(', ') + ' — bản dán lên cũ hơn bản trên máy';
+  if (hl.camMaVanCo.length) dau += ' · CÒN HÀM ĐÃ BỎ: ' + hl.camMaVanCo.join(', ') + ' — bản dán lên cũ hơn bản trên máy';
   var tin = thieu.length
-    ? 'THIẾU FILE trong dự án Apps Script: ' + thieu.join(', ') + ' — hành động xuLy sẽ hỏng. Dán nốt rồi Deploy lại.'
-    : 'Bản ' + PHIEN_BAN + ' · đủ 7 file lõi · hành động xuLy dùng được.';
+    ? 'THIẾU FILE trong dự án Apps Script: ' + thieu.join(', ') + ' — hành động xuLy sẽ hỏng. Dán nốt rồi Deploy lại.' + dau
+    : 'Bản ' + PHIEN_BAN + ' · đủ 7 file lõi · hành động xuLy dùng được.' + dau;
   Logger.log(tin);
   return tin;
 }
@@ -1639,3 +1760,7 @@ function chayBoTest() {
   });
   return 'Tổng ' + kq.length + ' · hỏng ' + hong.length;
 }
+
+var VAN_TAY_SHELL = 'ed708598';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+
+var BAN_DUNG = 'bf97940bfccf';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay

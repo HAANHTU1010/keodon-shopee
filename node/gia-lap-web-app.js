@@ -406,6 +406,11 @@ let DEM_SIM = 0;
  *   ngay         mốc thời gian máy chủ Google, ISO hoặc Date (mặc định 2026-09-08T03:00:00Z)
  *   khongCaiDat  true → chưa chạy caiDat(), để thử nhánh CHUA_CAI_DAT
  *   soLinkThang  { 'yyyy-MM': tênFile }  các tháng đã khai trong SỔ LINK THÁNG
+ *   bangLinkDungChung
+ *                true → DỰNG LẠI BẢN GIẢ LẬP CŨ: mọi file tháng dùng CHUNG một đối tượng sheet bảng
+ *                link. Đây là tiền đề SAI đã được gỡ (xem khối "bảng định tuyến tháng" bên dưới).
+ *                Chỉ dùng cho ĐỐI CHỨNG ÂM — để chứng minh bản cũ làm lọt lỗi mà bản mới bắt được.
+ *                KHÔNG dùng cho test thường: bật lên là test lại xanh trong khi thực tế đỏ.
  */
 function taoGiaLap(tc) {
   const o = tc || {};
@@ -489,8 +494,23 @@ function taoGiaLap(tc) {
   // GV-v2.3 mục 1: bảng link các tháng nằm SẴN trong sheet `Thông tin shop ` (một dấu cách cuối tên)
   // của chính các file tháng, từ dòng 8: A năm · B tên kỳ · C link. Cột D trở đi là MẬT KHẨU GIAN HÀNG.
   //
-  // Giả lập dùng MỘT đối tượng sheet duy nhất rồi gắn vào mọi file tháng — đúng như thực tế, mỗi file
-  // tháng đều mang một bản của bảng này, nên "mỏ neo" dời sang file nào cũng đọc ra bảng ấy.
+  // MỖI FILE THÁNG MANG MỘT BẢN SAO RIÊNG CỦA BẢNG LINK — không phải cùng một đối tượng.
+  //
+  // Bản trước của giả lập này làm `ss.sheets.push(shShop)`, tức gắn CÙNG MỘT đối tượng sheet vào mọi
+  // file tháng, và chú thích cũ biện minh bằng "mỏ neo dời tới đâu cũng đọc được". Cơ chế dời mỏ neo
+  // ĐÃ BỎ (`capNhatMoNeo_` không còn — xem ShellAppsScript.gs, khối "KHÔNG DỜI MỎ NEO"), nên lời biện
+  // minh đó không còn đúng, và cái nó nướng sẵn vào giả lập là một TIỀN ĐỀ SAI: dùng chung đối tượng
+  // thì một dòng ghi vào bảng link của file tháng này TỰ ĐỘNG hiện ra ở bảng link của MỌI file tháng
+  // khác, kể cả file mỏ neo. Ngoài đời mỗi file tháng là một Google Sheet riêng: dòng chỉ có mặt ở
+  // file nào đã được ghi vào file đó. Giả lập chung đối tượng làm test XANH trong khi thực tế ĐỎ —
+  // loại sai nguy hiểm nhất, vì nó không báo gì cả.
+  //
+  // Cách làm đúng, chép theo `nap()` của `node/test-dinh-tuyen-thang.js` (ở đó mỗi file gọi
+  // `sheetThongTinShop(...)` một lần riêng): giữ một DANH SÁCH CHUẨN các dòng đã khai, và dựng cho
+  // mỗi file tháng một `SheetGia` mới phát lại danh sách đó. Khai thêm tháng thì ghi dòng mới vào
+  // TỪNG bản sao — đúng thao tác thật mà `3_TAO_FILE_THANG_MOI.bat` phải làm ở cả file tháng cũ lẫn
+  // file tháng mới (GV mục 1.6).
+  //
   // Bố cục cũ (`SỔ LINK THÁNG`: Tháng | Link | Ghi chú từ dòng 2) vẫn dựng kèm để bản `.gs` cũ chạy được.
   sim.CHUOI_MAT_KHAU_BAY = 'MAT-KHAU-GIAN-HANG-KHONG-DUOC-DOC-9988';
   sim.CHUOI_TEN_DANG_NHAP_BAY = 'TEN-DANG-NHAP-DONG-1-DEN-7-KHONG-DUOC-DOC';
@@ -502,30 +522,70 @@ function taoGiaLap(tc) {
   const shSoLink = soLink.themSheet(sim.vo.TEN_SHEET_SO_LINK || 'SỔ LINK THÁNG');
   shSoLink.datNen(1, 1, { v: 'Tháng' }); shSoLink.datNen(1, 2, { v: 'Link' }); shSoLink.datNen(1, 3, { v: 'Ghi chú' });
 
-  // Sheet dùng chung: dòng 1-7 là bảng KHÁC (STT | Tên shop | Tên đăng nhập) — vùng cấm đọc.
-  const shShop = new SheetGia(sim.TEN_SHEET_LINK, soLink);
-  for (let r = 1; r <= 6; r++) {
-    shShop.datNen(r, 1, { v: r });
-    shShop.datNen(r, 2, { v: 'Gian hàng ' + r });
-    shShop.datNen(r, 3, { v: sim.CHUOI_TEN_DANG_NHAP_BAY + '-' + r });
-    shShop.datNen(r, 4, { v: sim.CHUOI_MAT_KHAU_BAY + '-' + r });
+  // Danh sách chuẩn các dòng bảng link đã khai: { dong, nam, tenKy, link, matKhau }. Mỗi bản sao
+  // dựng sau đều phát lại danh sách này, nên bản sao nào cũng khớp nhau lúc vừa dựng.
+  const dongBangLink = [];
+  // Mọi bản sao đang sống, để khai thêm tháng thì ghi vào tất cả.
+  sim.banSaoBangLink = [];
+
+  /**
+   * Dựng MỘT bản sao mới của sheet `Thông tin shop ` cho bảng tính `ss`.
+   * Dòng 1-7 là bảng KHÁC (STT | Tên shop | Tên đăng nhập) — vùng cấm đọc; bảng link từ dòng 8.
+   */
+  function dungBanSaoBangLink(ss) {
+    // CHẾ ĐỘ DỰNG LẠI KHUYẾT TẬT (`bangLinkDungChung`) — chỉ dùng cho đối chứng âm, xem chú thích
+    // của tùy chọn ở đầu `taoGiaLap`. Trả về ĐÚNG đối tượng sheet đã dựng lần đầu, tức tái hiện
+    // nguyên si bản giả lập CŨ: một sheet gắn vào mọi file tháng.
+    if (o.bangLinkDungChung && sim.banSaoBangLink.length) {
+      const chung = sim.banSaoBangLink[0];
+      ss.sheets.push(chung);
+      return chung;
+    }
+    const sh = new SheetGia(sim.TEN_SHEET_LINK, ss);
+    for (let r = 1; r <= 6; r++) {
+      sh.datNen(r, 1, { v: r });
+      sh.datNen(r, 2, { v: 'Gian hàng ' + r });
+      sh.datNen(r, 3, { v: sim.CHUOI_TEN_DANG_NHAP_BAY + '-' + r });
+      sh.datNen(r, 4, { v: sim.CHUOI_MAT_KHAU_BAY + '-' + r });
+    }
+    sh.datNen(7, 1, { v: 'Năm' });
+    sh.datNen(7, 2, { v: 'Tên kỳ' });
+    sh.datNen(7, 3, { v: 'Link' });
+    sh.datNen(7, 4, { v: 'Mật khẩu' });
+    dongBangLink.forEach((d) => {
+      sh.datNen(d.dong, 1, { v: d.nam });
+      sh.datNen(d.dong, 2, { v: d.tenKy });
+      sh.datNen(d.dong, 3, { v: d.link });
+      sh.datNen(d.dong, 4, { v: d.matKhau });
+    });
+    ss.sheets.push(sh);
+    sim.banSaoBangLink.push(sh);
+    return sh;
   }
-  shShop.datNen(7, 1, { v: 'Năm' });
-  shShop.datNen(7, 2, { v: 'Tên kỳ' });
-  shShop.datNen(7, 3, { v: 'Link' });
-  shShop.datNen(7, 4, { v: 'Mật khẩu' });
-  soLink.sheets.push(shShop);
-  sim.sheetLinkThang = shShop;
+
+  // Bản sao của chính file SỔ LINK THÁNG (bố cục cũ vẫn cần một bảng link để đọc).
+  sim.sheetLinkThang = dungBanSaoBangLink(soLink);
 
   let demDongSoLink = 1, demDongShop = 7;
 
-  /** Khai một tháng: dựng vỏ file tháng và thêm một dòng vào bảng link (cả hai bố cục). */
-  sim.khaiThang = function (thang, tenFile) {
+  /**
+   * Khai một tháng: dựng vỏ file tháng, cấp cho nó BẢN SAO RIÊNG của bảng link, rồi ghi dòng mới
+   * vào MỌI bản sao (cả hai bố cục).
+   *
+   * @param {Object} [tuyChon]
+   *   chiGhiVaoFileNay  true → CỐ Ý chỉ ghi dòng mới vào bản sao của chính file tháng này, không
+   *                     ghi vào bản sao của các file tháng đã có. Đây là dựng lại đúng khuyết tật
+   *                     "người tạo file tháng mới quên thêm dòng vào file tháng cũ" — dùng cho đối
+   *                     chứng âm. Giả lập dùng chung một đối tượng KHÔNG dựng nổi ca này.
+   */
+  sim.khaiThang = function (thang, tenFile, tuyChon) {
+    const tc = tuyChon || {};
     const id = 'ID_FILE_' + thang.replace('-', '_');
     const ss = new BangTinhGia(tenFile || ('KINH DOANH T' + Number(thang.slice(5)) + '-' + thang.slice(0, 4)), id, sim);
     sim.file[id] = ss;
     sim.soLinkThang[thang] = ss;
-    ss.sheets.push(shShop);         // mỗi file tháng đều mang bảng link — mỏ neo dời tới đâu cũng đọc được
+    // Bản sao riêng, phát lại các dòng đã khai trước đó — không phải cùng một đối tượng.
+    const shCuaThangNay = dungBanSaoBangLink(ss);
 
     const link = 'https://docs.google.com/spreadsheets/d/' + id + '/edit#gid=0';
     demDongSoLink++;
@@ -534,12 +594,27 @@ function taoGiaLap(tc) {
     shSoLink.datNen(demDongSoLink, 3, { v: 'sổ tháng ' + Number(thang.slice(5)) });
 
     demDongShop++;
-    shShop.datNen(demDongShop, 1, { v: Number(thang.slice(0, 4)) });
-    shShop.datNen(demDongShop, 2, { v: 'Kinh Doanh T' + Number(thang.slice(5)) });
-    shShop.datNen(demDongShop, 3, { v: link });
-    shShop.datNen(demDongShop, 4, { v: sim.CHUOI_MAT_KHAU_BAY + '-T' + Number(thang.slice(5)) });
+    const d = {
+      dong: demDongShop,
+      nam: Number(thang.slice(0, 4)),
+      tenKy: 'Kinh Doanh T' + Number(thang.slice(5)),
+      link: link,
+      matKhau: sim.CHUOI_MAT_KHAU_BAY + '-T' + Number(thang.slice(5))
+    };
+    // Dòng mới phải được ghi vào bảng link của TỪNG file tháng đang có — đúng thao tác thật.
+    const dich = tc.chiGhiVaoFileNay ? [shCuaThangNay] : sim.banSaoBangLink;
+    dich.forEach((sh) => {
+      sh.datNen(d.dong, 1, { v: d.nam });
+      sh.datNen(d.dong, 2, { v: d.tenKy });
+      sh.datNen(d.dong, 3, { v: d.link });
+      sh.datNen(d.dong, 4, { v: d.matKhau });
+    });
+    // Chỉ vào danh sách chuẩn khi dòng đã có mặt ở mọi bản sao; ca thiếu sót cố ý thì không, để bản
+    // sao dựng sau này cũng thiếu đúng như thật.
+    if (!tc.chiGhiVaoFileNay) dongBangLink.push(d);
 
-    // Mỏ neo: file tháng đầu tiên được khai. Vỏ tự dời sang tháng đang dùng khi định tuyến xong.
+    // Mỏ neo: file tháng đầu tiên được khai. KHÔNG dời nữa — `capNhatMoNeo_` đã bị bỏ, nên bảng link
+    // được đọc luôn là bảng link CỦA FILE MỎ NEO, không phải của tháng đang dùng.
     const TT_NEO = sim.vo.TT_MO_NEO || sim.vo.TT_SO_LINK_THANG;
     if (!o.khongCaiDat && TT_NEO && !sim.thuocTinh[TT_NEO]) sim.thuocTinh[TT_NEO] = id;
     return ss;

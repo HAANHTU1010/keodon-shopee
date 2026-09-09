@@ -25,25 +25,11 @@ rem      /tu-dong                       khong dung lai cho bam phim
 rem ============================================================
 
 set "CN_TEP=%~f0"
+rem Cat duong dan thu muc TRUOC vong doc tham so: sau lenh `shift` thi %~dp0 KHONG con tro
+rem toi chinh file .bat nay nua. Bay nay da ghi trong DONG_GOI_GIAO_NHAN_VIEN.md muc 5.
+set "CN_GOC=%~dp0"
 set "CN_NGUON="
 set "CN_TU_DONG="
-
-rem ---- Do thu muc  Cau hinh  (khong go thang duoc vi ten co dau) ----------
-rem Chap nhan ca hai bo cuc: file nay nam CANH thu muc cau hinh (bo cuc moi),
-rem hoac nam NGAY TRONG thu muc cau hinh (bo cuc cu, hoac ai do chep nguoc lai).
-set "CN_BASE="
-if exist "%~dp0CAU_HINH_VAN_HANH.json" set "CN_BASE=%~dp0"
-if not defined CN_BASE for /d %%D in ("%~dp0*") do if exist "%%~fD\CAU_HINH_VAN_HANH.json" set "CN_BASE=%%~fD\"
-if not defined CN_BASE (
-  echo LOI: Khong tim thay file CAU_HINH_VAN_HANH.json.
-  echo.
-  echo   File do phai nam trong thu muc  Cau hinh  , ngay canh bon file .bat nay.
-  echo   Cach sua: bam dup  1_CAI_DAT_LAN_DAU.bat  mot lan. No tu tao file
-  echo             cau hinh tu ban mau roi chi ro phai dien nhung gi.
-  echo.
-  pause
-  exit /b 1
-)
 
 :doc_tham_so
 if "%~1"=="" goto het_tham_so
@@ -61,6 +47,28 @@ set "CN_TU_DONG=1"
 shift
 goto doc_tham_so
 :het_tham_so
+
+rem ---- Do thu muc  Cau hinh  (khong go thang duoc vi ten co dau) ----------
+rem PHAI DAT SAU vong doc tham so. Truoc day khoi nay nam TREN :doc_tham_so, nen luc no chay
+rem thi CN_TU_DONG chua duoc dat va lenh `pause` khong the nao tat duoc: may nhan vien TREO CHO
+rem BAM PHIM, ma nut 1 goi file nay bang `call ... /tu-dong` nen no dung im khong bao gi. Doc ma
+rem khong thay duoc, chay that bang cmd.exe moi lo ra.
+rem
+rem Chap nhan ca hai bo cuc: file nay nam CANH thu muc cau hinh (bo cuc moi),
+rem hoac nam NGAY TRONG thu muc cau hinh (bo cuc cu, hoac ai do chep nguoc lai).
+set "CN_BASE="
+if exist "%CN_GOC%CAU_HINH_VAN_HANH.json" set "CN_BASE=%CN_GOC%"
+if not defined CN_BASE for /d %%D in ("%CN_GOC%*") do if exist "%%~fD\CAU_HINH_VAN_HANH.json" set "CN_BASE=%%~fD\"
+if not defined CN_BASE (
+  echo LOI: Khong tim thay file CAU_HINH_VAN_HANH.json.
+  echo.
+  echo   File do phai nam trong thu muc  Cau hinh  , ngay canh bon file .bat nay.
+  echo   Cach sua: bam dup  1_CAI_DAT_LAN_DAU.bat  mot lan. No tu tao file
+  echo             cau hinh tu ban mau roi chi ro phai dien nhung gi.
+  echo.
+  if not defined CN_TU_DONG pause
+  exit /b 1
+)
 
 echo ============================================================
 echo   CAP NHAT TOOL - lay ban ma moi nhat ve may
@@ -116,8 +124,11 @@ if (-not $tool -and (Test-Path -LiteralPath (Join-Path $toolNgoai 'package.json'
 if (-not $tool) {
   if (Test-Path -LiteralPath (Split-Path $toolNgoai -Parent)) { $tool = $toolNgoai } else { $tool = $toolTrong }
 }
-# Thu muc chua bon file .bat: tren `Cau hinh` mot cap.
-$thuMucNut = [IO.Path]::GetFullPath((Join-Path $base '..'))
+# Thu muc chua bon file .bat = thu muc chua CHINH FILE NAY, khong phai "tren $base mot cap".
+# Hai cach chi trung nhau o bo cuc moi. O bo cuc cu (nut nam NGAY TRONG `Cau hinh` - truong hop ma
+# chu thich dau file noi ro la van chap nhan) thi "tren $base mot cap" tro ra ngoai `Cau hinh`, va
+# muc 6b se chep ba nut len nham mot cap. Lay thu muc cua chinh file nay thi dung ca hai bo cuc.
+$thuMucNut = [IO.Path]::GetDirectoryName($env:CN_TEP)
 $cfgTep = Join-Path $base 'CAU_HINH_VAN_HANH.json'
 $mocTep = Join-Path $base '_lan_kiem_cap_nhat.txt'
 $tam    = $null

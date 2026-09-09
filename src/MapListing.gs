@@ -389,3 +389,5 @@ var MapListing = (function () {
     tomTat: tomTat
   };
 })();
+
+var VAN_TAY_MAPLISTING = '4aa62129';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

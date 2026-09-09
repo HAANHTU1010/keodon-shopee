@@ -953,45 +953,97 @@ var TestSuite = (function () {
     return { ghiChu: 'file thật có cả hai cột (28 và 45), lệch 10/12 dòng — ví dụ 610.000 vs 494.100' };
   }
 
+  /**
+   * TS-T-39 — KÝ HIỆU IN RA PHẢI MANG TIỀN TỐ CỦA BỘ NÀY, VÀ KHÔNG BÀI NÀO ĐƯỢC TRÙNG KÝ HIỆU.
+   *
+   * VÌ SAO BÀI NÀY TỒN TẠI. Bảng bài của bộ này từng đánh số TRẦN — `T-01`…`T-38` — nên khi chạy
+   * thật nó in ra `ĐẠT T-38`. Mà `T-38` cũng là ký hiệu của một bài KHÁC HẲN trong kế hoạch kiểm
+   * thử của BA, và các bộ test khác của dự án cũng dùng dãy `T-…` riêng. Người nghiệm thu đọc dòng
+   * `ĐẠT T-38` không có cách nào biết đó là bài nào của bộ nào — BA đã đọc nhầm và phải chốt lại
+   * quy ước này hai lần.
+   *
+   * QUY ƯỚC ĐÃ CHỐT (`08_BA_TRA_LOI_DEV_v2.6.md` §5.2, và bảng mục 0 của `DOI_CHIEU_KE_HOACH_KIEM_THU.md`):
+   *   · Kế hoạch kiểm thử của BA  → `KT-T-nn` / `KT-INV-nn` / `KT-B-nn` / `KT-C-nn` / `KT-D-nn`
+   *   · BỘ NÀY (`TestSuite.gs`)   → `TS-T-nn`
+   *   · Các bộ khác của dự án     → `N-nn` / `INV-nn` / `T-DT-nn` / `T-WA-nn` / `T-XL-nn` / `NT-nn`
+   * Vì thế ký hiệu của bộ này là `TS-T-nn`, KHÔNG phải `KT-nn`: `KT-` là không gian tên của ĐỀ BÀI,
+   * lấy nó đặt cho bài chạy thật là dựng lại đúng cái va chạm vừa dẹp (`KT-T-07` của kế hoạch là
+   * "hai cột khác hoa/thường", còn `TS-T-07` của bộ này là "tiền cấp đơn" — hai bài khác hẳn nhau).
+   *
+   * Bài này chốt quy ước đó vào MÃ CHẠY ĐƯỢC. Ghi trên giấy thì lần đổi sau lại trôi.
+   */
+  function chamKyHieuBangBai(bang) {
+    var loi = [], daThay = {};
+    (bang || []).forEach(function (t, i) {
+      var ma = String(t && t[0]);
+      var oDau = 'bài thứ ' + (i + 1) + ' ("' + ma + '")';
+      if (!/^TS-T-\d{2}$/.test(ma)) loi.push(oDau + ' không đúng dạng TS-T-nn — ký hiệu in ra phải mang tiền tố của bộ này');
+      if (daThay[ma]) loi.push(oDau + ' TRÙNG ký hiệu với bài thứ ' + daThay[ma]);
+      daThay[ma] = i + 1;
+    });
+    return loi;
+  }
+
+  function T39_kyHieuInRaMangTienToCuaBo() {
+    var loi = chamKyHieuBangBai(DANH_SACH);
+    bang(loi.join(' | '), '', 'bảng bài sai quy ước ký hiệu');
+
+    // ĐỐI CHỨNG ÂM (quy tắc BA §9.2: phép kiểm chỉ có bài dương tính là phép kiểm chưa được kiểm).
+    // Dựng lại đúng ba khuyết tật phải bắt, rồi đòi phép chấm trên báo TRƯỢT ở cả ba.
+    var bangHong = [
+      ['T-38', 'ký hiệu TRẦN — đúng thứ đang in ra trước khi sửa', null],
+      ['KT-T-07', 'lấy nhầm không gian tên của ĐỀ BÀI', null],
+      ['TS-T-01', 'hợp lệ', null],
+      ['TS-T-01', 'TRÙNG với bài ngay trên', null]
+    ];
+    var loiGia = chamKyHieuBangBai(bangHong);
+    bang(loiGia.length, 3, 'đối chứng âm: phải bắt đúng 3 chỗ (T-38 trần · KT-T-07 sai không gian tên · TS-T-01 trùng), bắt được: ' + loiGia.join(' | '));
+    bang(loiGia[0].indexOf('T-38') >= 0, true, 'phải nêu đúng ký hiệu trần bị bắt');
+    bang(loiGia[2].indexOf('TRÙNG') >= 0, true, 'phải bắt được ca trùng ký hiệu');
+
+    return { ghiChu: DANH_SACH.length + ' bài đều mang tiền tố TS-T-, 0 trùng · đối chứng âm: bảng hỏng bị bắt 3/3 chỗ' };
+  }
+
   var DANH_SACH = [
-    ['T-01', 'Chống trùng: chạy 3 lần ra một kết quả', T01_chongTrungChay3Lan],
-    ['T-02', 'Tự nhận loại file: tab "Tất cả" bỏ đơn hủy/hoàn, tab "Chờ lấy hàng" xử lý hết', T02_tuNhanLoaiFile],
-    ['T-03', 'Thiếu cột bắt buộc → hỏng ồn ào, không ghi gì, không lộ dữ liệu cá nhân', T03_thieuCotBatBuoc],
-    ['T-04', 'Không lọt dữ liệu cá nhân người mua ra bất kỳ đâu', T04_khongLotDuLieuCaNhan],
-    ['T-05', 'Tiêu đề Unicode tách dấu thanh vẫn tra được cột', T05_tieuDeTachDauThanh],
-    ['T-06', 'Trạng thái so theo tiền tố; cột trả hàng/hoàn tiền ghi đè; lạ → KHAC', T06_trangThaiTienTo],
-    ['T-07', 'Tiền cấp đơn: H tổng các dòng, I/J lấy một lần; thuế đúng ở CẢ HAI cách làm tròn (lệch 1đ)', T07_tienCapDon],
-    ['T-08', 'Thuế ba mốc 2.100 / 7.054 / 14.037 và cách tính sai để so', T08_thueBaMoc],
-    ['T-09', 'GỘP Ô C, H, I, J, K, L cho đơn nhiều sản phẩm; D và G riêng từng dòng', T09_gopO],
-    ['T-10', 'Không sửa một ô nào của dòng đã có', T10_khongSuaDongCu],
-    ['T-11', 'Bung Cấu phần hàng mix: mỗi mã một dòng, mua 2 thì nhân đôi', T11_bungCauPhanMix],
-    ['T-12', 'Bung Cấu phần hàng TẶNG KÈM (mua thùng tặng lốc)', T12_cauPhanTangKem],
-    ['T-13', 'Cấu phần sai cú pháp: vẫn ghi đơn, D trống, tô vàng, Note nêu lý do', T13_cauPhanSaiCuPhap],
-    ['T-14', 'Nhiều lô "mã/mã": chọn lô còn tồn > 0 và nhỏ nhất', T14_nhieuLoChonTheoTon],
-    ['T-15', 'Mọi lô tồn 0 → mã đầu tiên + tô vàng + "tồn 0 — kiểm tra lô"', T15_moiLoDeuHetTon],
-    ['T-16', 'Chỉ dùng dòng Mapping đã ghi CÓ; chưa tick / tên lạ / để trống đều là chưa nhận ra', T16_chiDungDongDaXacNhan],
-    ['T-17', 'Tên hàng mới: append dòng vàng cuối Mapping, vẫn ghi đơn, không thêm trùng', T17_appendTenMoiVaoMapping],
-    ['T-18', 'Không đụng ô người đã điền trong Mapping; cột Mã hàng do tool tra', T18_khongDungONguoiDaDien],
-    ['T-19', 'Đọc Mapping layout fixture 13 cột (tiêu đề xuống dòng, cột lô phụ)', T19_docMappingLayoutFixture],
-    ['T-20', 'Chế độ EXCEL: kéo dài E, F, L, M, N', T20_cheDoExcelKeoNamCot],
-    ['T-21', 'Chế độ SHEET: chỉ kéo cột L, tuyệt đối không chạm E, F, M, N (ARRAYFORMULA)', T21_cheDoSheetChiKeoCotL],
-    ['T-22', 'Ô L số gõ tay mồ côi ở dòng ghi đơn mới → trả lại công thức + nhật ký; dòng cũ giữ nguyên', T22_oLSoTayMoCoi],
-    ['T-23', 'Dịch công thức khi kéo dài', T23_dichCongThuc],
-    ['T-24', 'Cảnh báo khi ghi vượt vùng dòng tổng và vùng SUMIF của Tổng xuất', T24_canhBaoVungCongThuc],
-    ['T-25', 'Cột Note tự dò (sau Còn Nợ) và đặt được bằng cấu hình', T25_cotNoteTuDo],
-    ['T-26', 'Danh mục kho: đọc tồn, không đọc giá vốn; thiếu tồn thì lấy mã đầu', T26_danhMucVaTon],
-    ['T-27', 'Mã đơn toàn số giữ số 0 đầu; cột A ngày chạy; cột B để trống', T27_maDonToanSoVaNgayGhi],
-    ['T-28', 'Shopee đổi tên cột → sửa cấu hình là chạy, không sửa mã', T28_doiTenCotTrongCauHinh],
-    ['T-29', 'Hai gian hàng trùng mã đơn → ghi vào hai sheet khác nhau', T29_haiGianHangKhacSheet],
-    ['T-30', 'Nạp file 900 dòng: đúng số, gộp 300 đơn, dưới 6 phút', T30_file900Dong],
-    ['T-31', 'File hỏng không làm hỏng file khác; file lỗi sang LOI', T31_fileHongKhongLamHongFileKhac],
-    ['T-32', 'D-06: Mapping chưa ai ghi CÓ → vẫn ghi đủ đơn, toàn dòng vàng, nhưng cảnh báo ĐẦU TIÊN nói thẳng kết quả chưa dùng được', T32_mappingChuaAiTickVanGhiNhungNoiThang],
-    ['T-33', 'Dòng vàng trên 50% cũng kêu đúng tỷ lệ; số liệu Mapping hiện ra mọi lần chạy', T33_nguongDongVangVaSoLieuMappingLuonHien],
-    ['T-34', 'T-48/D-15: cảnh báo vùng công thức E, F, M, N — dư nhiều im lặng · dư ít vàng · sẽ vượt đỏ mà vẫn ghi đủ đơn', T34_canhBaoVuotVungCongThucBonCot],
-    ['T-35', 'Đo vùng công thức chịu được cả hai hình dạng: từng dòng · ARRAYFORMULA một ô · ARRAY_CONSTRAIN', T35_doVungCongThucChiuHaiHinhDang],
-    ['T-36', 'KT-T-24: Hệ số quy đổi — SL Shopee 2 × Hệ số 12 = 24; tiền KHÔNG dính hệ số', T36_heSoQuyDoi],
-    ['T-37', 'KT-T-27: dòng Mapping có cả Hệ số lẫn Cấu phần → dùng Cấu phần, BỎ QUA Hệ số (sai là trừ kho gấp bội)', T37_cauPhanDeHeSo],
-    ['T-38', 'KT-T-07: hai cột chỉ khác hoa/thường cùng tồn tại → lấy đúng cột đã chỉ định', T38_haiCotKhacHoaThuong]
+    ['TS-T-01', 'Chống trùng: chạy 3 lần ra một kết quả', T01_chongTrungChay3Lan],
+    ['TS-T-02', 'Tự nhận loại file: tab "Tất cả" bỏ đơn hủy/hoàn, tab "Chờ lấy hàng" xử lý hết', T02_tuNhanLoaiFile],
+    ['TS-T-03', 'Thiếu cột bắt buộc → hỏng ồn ào, không ghi gì, không lộ dữ liệu cá nhân', T03_thieuCotBatBuoc],
+    ['TS-T-04', 'Không lọt dữ liệu cá nhân người mua ra bất kỳ đâu', T04_khongLotDuLieuCaNhan],
+    ['TS-T-05', 'Tiêu đề Unicode tách dấu thanh vẫn tra được cột', T05_tieuDeTachDauThanh],
+    ['TS-T-06', 'Trạng thái so theo tiền tố; cột trả hàng/hoàn tiền ghi đè; lạ → KHAC', T06_trangThaiTienTo],
+    ['TS-T-07', 'Tiền cấp đơn: H tổng các dòng, I/J lấy một lần; thuế đúng ở CẢ HAI cách làm tròn (lệch 1đ)', T07_tienCapDon],
+    ['TS-T-08', 'Thuế ba mốc 2.100 / 7.054 / 14.037 và cách tính sai để so', T08_thueBaMoc],
+    ['TS-T-09', 'GỘP Ô C, H, I, J, K, L cho đơn nhiều sản phẩm; D và G riêng từng dòng', T09_gopO],
+    ['TS-T-10', 'Không sửa một ô nào của dòng đã có', T10_khongSuaDongCu],
+    ['TS-T-11', 'Bung Cấu phần hàng mix: mỗi mã một dòng, mua 2 thì nhân đôi', T11_bungCauPhanMix],
+    ['TS-T-12', 'Bung Cấu phần hàng TẶNG KÈM (mua thùng tặng lốc)', T12_cauPhanTangKem],
+    ['TS-T-13', 'Cấu phần sai cú pháp: vẫn ghi đơn, D trống, tô vàng, Note nêu lý do', T13_cauPhanSaiCuPhap],
+    ['TS-T-14', 'Nhiều lô "mã/mã": chọn lô còn tồn > 0 và nhỏ nhất', T14_nhieuLoChonTheoTon],
+    ['TS-T-15', 'Mọi lô tồn 0 → mã đầu tiên + tô vàng + "tồn 0 — kiểm tra lô"', T15_moiLoDeuHetTon],
+    ['TS-T-16', 'Chỉ dùng dòng Mapping đã ghi CÓ; chưa tick / tên lạ / để trống đều là chưa nhận ra', T16_chiDungDongDaXacNhan],
+    ['TS-T-17', 'Tên hàng mới: append dòng vàng cuối Mapping, vẫn ghi đơn, không thêm trùng', T17_appendTenMoiVaoMapping],
+    ['TS-T-18', 'Không đụng ô người đã điền trong Mapping; cột Mã hàng do tool tra', T18_khongDungONguoiDaDien],
+    ['TS-T-19', 'Đọc Mapping layout fixture 13 cột (tiêu đề xuống dòng, cột lô phụ)', T19_docMappingLayoutFixture],
+    ['TS-T-20', 'Chế độ EXCEL: kéo dài E, F, L, M, N', T20_cheDoExcelKeoNamCot],
+    ['TS-T-21', 'Chế độ SHEET: chỉ kéo cột L, tuyệt đối không chạm E, F, M, N (ARRAYFORMULA)', T21_cheDoSheetChiKeoCotL],
+    ['TS-T-22', 'Ô L số gõ tay mồ côi ở dòng ghi đơn mới → trả lại công thức + nhật ký; dòng cũ giữ nguyên', T22_oLSoTayMoCoi],
+    ['TS-T-23', 'Dịch công thức khi kéo dài', T23_dichCongThuc],
+    ['TS-T-24', 'Cảnh báo khi ghi vượt vùng dòng tổng và vùng SUMIF của Tổng xuất', T24_canhBaoVungCongThuc],
+    ['TS-T-25', 'Cột Note tự dò (sau Còn Nợ) và đặt được bằng cấu hình', T25_cotNoteTuDo],
+    ['TS-T-26', 'Danh mục kho: đọc tồn, không đọc giá vốn; thiếu tồn thì lấy mã đầu', T26_danhMucVaTon],
+    ['TS-T-27', 'Mã đơn toàn số giữ số 0 đầu; cột A ngày chạy; cột B để trống', T27_maDonToanSoVaNgayGhi],
+    ['TS-T-28', 'Shopee đổi tên cột → sửa cấu hình là chạy, không sửa mã', T28_doiTenCotTrongCauHinh],
+    ['TS-T-29', 'Hai gian hàng trùng mã đơn → ghi vào hai sheet khác nhau', T29_haiGianHangKhacSheet],
+    ['TS-T-30', 'Nạp file 900 dòng: đúng số, gộp 300 đơn, dưới 6 phút', T30_file900Dong],
+    ['TS-T-31', 'File hỏng không làm hỏng file khác; file lỗi sang LOI', T31_fileHongKhongLamHongFileKhac],
+    ['TS-T-32', 'D-06: Mapping chưa ai ghi CÓ → vẫn ghi đủ đơn, toàn dòng vàng, nhưng cảnh báo ĐẦU TIÊN nói thẳng kết quả chưa dùng được', T32_mappingChuaAiTickVanGhiNhungNoiThang],
+    ['TS-T-33', 'Dòng vàng trên 50% cũng kêu đúng tỷ lệ; số liệu Mapping hiện ra mọi lần chạy', T33_nguongDongVangVaSoLieuMappingLuonHien],
+    ['TS-T-34', 'T-48/D-15: cảnh báo vùng công thức E, F, M, N — dư nhiều im lặng · dư ít vàng · sẽ vượt đỏ mà vẫn ghi đủ đơn', T34_canhBaoVuotVungCongThucBonCot],
+    ['TS-T-35', 'Đo vùng công thức chịu được cả hai hình dạng: từng dòng · ARRAYFORMULA một ô · ARRAY_CONSTRAIN', T35_doVungCongThucChiuHaiHinhDang],
+    ['TS-T-36', 'KT-T-24: Hệ số quy đổi — SL Shopee 2 × Hệ số 12 = 24; tiền KHÔNG dính hệ số', T36_heSoQuyDoi],
+    ['TS-T-37', 'KT-T-27: dòng Mapping có cả Hệ số lẫn Cấu phần → dùng Cấu phần, BỎ QUA Hệ số (sai là trừ kho gấp bội)', T37_cauPhanDeHeSo],
+    ['TS-T-38', 'KT-T-07: hai cột chỉ khác hoa/thường cùng tồn tại → lấy đúng cột đã chỉ định', T38_haiCotKhacHoaThuong],
+    ['TS-T-39', 'Ký hiệu IN RA mang tiền tố TS-T- của bộ này, không bài nào trùng ký hiệu (chống bẫy trùng ký hiệu với KT- của kế hoạch)', T39_kyHieuInRaMangTienToCuaBo]
   ];
 
   function chayTatCa() {

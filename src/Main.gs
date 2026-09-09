@@ -209,3 +209,5 @@ function dongNhatKy(thoiDiem, tk, mac) {
   Object.keys(mac || {}).forEach(function (k) { o[k] = mac[k]; });
   return Utils.doiTuongSangMang(LOG_COT, o);
 }
+
+var VAN_TAY_MAIN = 'e2196e33';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

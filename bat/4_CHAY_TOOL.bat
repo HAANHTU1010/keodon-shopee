@@ -32,7 +32,7 @@ if not defined CFGDIR for /d %%D in ("%~dp0*") do if exist "%%~fD\CAU_HINH_VAN_H
 if not defined CFGDIR (
   echo LOI: Khong tim thay file CAU_HINH_VAN_HANH.json.
   echo.
-  echo   File do phai nam trong thu muc  Cau hinh  , ngay canh ba file .bat nay.
+  echo   File do phai nam trong thu muc  Cau hinh  , ngay canh bon file .bat nay.
   echo   Cach sua: bam dup  1_CAI_DAT_LAN_DAU.bat  mot lan. No tu tao file
   echo             cau hinh tu ban mau roi chi ro phai dien nhung gi.
   echo.

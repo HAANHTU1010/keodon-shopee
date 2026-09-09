@@ -177,6 +177,29 @@ function sheetGianHang(moiTruong) {
   return sh;
 }
 
+/**
+ * DỰNG LẠI KHUYẾT TẬT cho đối chứng âm của T-DT-42: gỡ đúng HÀNG RÀO TẦNG 2 khỏi mã nguồn thật
+ * trước khi nạp, rồi chạy lại y hệt ba ca kia. Nếu ba ca đó vẫn ĐẠT khi hàng rào đã bị gỡ thì
+ * chúng không kiểm gì cả — đó chính là bệnh N-10 ("phép kiểm luôn luôn ĐẠT").
+ *
+ * Gỡ ở đâu: câu `if (COT_CAM_GHI.indexOf(c) >= 0) throw ...` bên trong `kiemCotDuocGhi_` của
+ * `ShellAppsScript.gs`. Đây đúng kịch bản chú thích trong chính hàm đó đã cảnh báo — "người sửa mã
+ * sáu tuần sau" xóa một câu lệnh chặn. Cố ý KHÔNG động tới `COT_CAM_GHI` (vẫn `[5,6,13,14]`) để
+ * `cauSuaCotNote_` và phép đo vùng công thức giữ nguyên hành vi: chỉ đúng một hàng rào bị gỡ.
+ *
+ * Nếu mã nguồn đổi làm chuỗi này không còn khớp, hàm NÉM LỖI chứ không im lặng trả về nguyên văn —
+ * bằng không đối chứng âm sẽ tự xanh giả trong khi không gỡ được gì.
+ */
+function goHangRaoTang2_(nguon) {
+  const CU = "if (COT_CAM_GHI.indexOf(c) >= 0)\n    throw new Error('TỪ CHỐI GHI: '";
+  const MOI = "if (false)\n    throw new Error('TỪ CHỐI GHI: '";
+  const soLan = nguon.split(CU).length - 1;
+  if (soLan !== 1)
+    throw new Error('ĐỐI CHỨNG ÂM HỎNG: cần đúng 1 chỗ khớp hàng rào tầng 2 trong ShellAppsScript.gs, ' +
+      'tìm được ' + soLan + '. Mã đã đổi — sửa lại goHangRaoTang2_ cho khớp, ĐỪNG bỏ qua.');
+  return nguon.split(CU).join(MOI);
+}
+
 function nap(tuyChon) {
   const t = tuyChon || {};
   const moiTruong = {
@@ -232,8 +255,9 @@ function nap(tuyChon) {
   };
   const Logger = { log: (x) => moiTruong.daIn.push(String(x)) };
 
-  const nguon = ['Utils.gs', 'Schema.gs', 'CaiDat.gs', 'Config.gs', 'ShellAppsScript.gs']
+  let nguon = ['Utils.gs', 'Schema.gs', 'CaiDat.gs', 'Config.gs', 'ShellAppsScript.gs']
     .map((f) => fs.readFileSync(path.join(SRC, f), 'utf8')).join('\n;\n');
+  if (t.goHangRaoTang2) nguon = goHangRaoTang2_(nguon);   // chỉ dùng cho đối chứng âm T-DT-42d
   const ten = new Set();
   for (const m of nguon.matchAll(/^(?:var|function)\s+([A-Za-z_$][\w$]*)/gm)) ten.add(m[1]);
   const than = nguon + '\nreturn {' + [...ten].map((n) => `${n}: ${n}`).join(', ') + '};';
@@ -555,17 +579,84 @@ console.log('--- Ghi: định dạng trước, chống trùng hai tầng (mục 
       }
     });
   });
-  test('T-DT-42 INV-3 chặn ở tầng ghi: cấu hình trỏ nhầm vào cột M là NÉM LỖI, không ghi', () => {
-    const g2 = nap({ thangGiaLap: '2026-07' });
+  // ---------------------------------------------------------------- T-DT-42: HÀNG RÀO TẦNG 2
+  //
+  // HAI TẦNG, ĐỪNG LẪN. Cấu hình trỏ nhầm vào cột công thức bị chặn ở hai chỗ khác nhau:
+  //   · TẦNG 1 — `Config.tao` (Config.gs): so `cot_cong_thuc` với danh sách cột tool ghi, câu lỗi
+  //     "Cột công thức M trùng cột tool ghi giá trị". Nổ SỚM, trước khi chạm vỏ ghi.
+  //   · TẦNG 2 — `kiemCotDuocGhi_` ở đầu `ghiMotSheet_` (ShellAppsScript.gs), câu lỗi mở đầu bằng
+  //     "TỪ CHỐI GHI:". Đây là cửa duy nhất mọi chỉ số cột phải đi qua.
+  //
+  // BẢN CŨ CỦA BÀI NÀY CHỈ CHẠM TẦNG 1. Đo được: `cauHinh:{keyin:{cot_thue:'M'}}` để mặc định
+  // `cot_cong_thuc='E,F,L,M,N'` nên tầng 1 nổ trước và tầng 2 KHÔNG BAO GIỜ được gọi; regex cũ
+  // `/TỪ CHỐI GHI|cột công thức|trùng cột/i` lại khớp luôn câu của tầng 1 nên bài vẫn xanh. Tức
+  // hàng rào tầng 2 của luồng gần vận hành nhất (qua Web App) chưa từng bị chạm tới lần nào.
+  // Thêm `cot_cong_thuc:'L'` là để tắt tầng 1, ép bài đi tới tầng 2 — vì thế phép chấm dưới đây
+  // đòi ĐÚNG chữ ký của tầng 2, không nhận câu của tầng 1 nữa.
+  //
+  // Hai ca `cot_doanh_thu` và `cot_note` KHÔNG có tầng 1 che: `Config.gs` cố ý loại
+  // `cot_doanh_thu` khỏi phép so trùng, còn `cot_note` không nằm trong `KEYIN_COT`. Với hai khóa
+  // này, tầng 2 là hàng rào DUY NHẤT — gỡ nó ra là ghi đè thẳng lên cột ARRAYFORMULA của chủ shop.
+  const CA_TRO_NHAM_COT = [
+    ['T-DT-42  keyin.cot_thue trỏ vào M (tầng 1 đã tắt bằng cot_cong_thuc=L)',
+      { cot_thue: 'M', cot_cong_thuc: 'L' }, 'keyin.cot_thue'],
+    ['T-DT-42b keyin.cot_doanh_thu trỏ vào M — Config cố ý KHÔNG kiểm khóa này, tầng 2 là cửa duy nhất',
+      { cot_doanh_thu: 'M', cot_cong_thuc: 'L' }, 'keyin.cot_doanh_thu'],
+    ['T-DT-42c keyin.cot_note trỏ vào M — không nằm trong KEYIN_COT, tầng 2 là cửa duy nhất',
+      { cot_note: 'M', cot_cong_thuc: 'L' }, 'keyin.cot_note'],
+  ];
+
+  /**
+   * Chấm một ca. Trả về DANH SÁCH LÝ DO TRƯỢT (rỗng = đạt) thay vì ném lỗi, để đối chứng âm
+   * T-DT-42d gọi lại đúng phép chấm này trên bản đã gỡ hàng rào và chứng minh nó báo TRƯỢT.
+   */
+  function chamCaTroNhamCot(keyin, khoaMongDoi, tuyChonNap) {
+    const g2 = nap(Object.assign({ thangGiaLap: '2026-07' }, tuyChonNap || {}));
     const r = goi(g2, {
       token: BM, hanhDong: 'ghi', phienBanMongDoi: g2.PHIEN_BAN, thang: '2026-07',
-      cauHinh: { keyin: { cot_thue: 'M' } },
+      cauHinh: { keyin: keyin },
       lenh: [{ tenSheet: 'Shopee mall', don: [{ maDon: 'MOI001', ngay: '2026-07-06', tien: {}, dong: [{}] }] }]
     });
-    dung(!r.ok, 'phải từ chối: ' + JSON.stringify(r));
-    dung(/TỪ CHỐI GHI|cột công thức|trùng cột/i.test(r.thongBao), r.thongBao);
     const sh = g2.__moiTruong.cacFile[ID_T7].sheets['Shopee mall'];
-    bang(sh._o[5][3].v, '', 'từ chối rồi mà vẫn ghi được dòng mới là hỏng');
+    const tb = String(r.thongBao || '');
+    const truot = [];
+    if (r.ok) truot.push('lệnh ghi được CHẤP NHẬN: ' + JSON.stringify(r).slice(0, 160));
+    // Chữ ký của TẦNG 2. Câu của tầng 1 ("Cột công thức M trùng cột tool ghi giá trị") KHÔNG khớp.
+    if (tb.indexOf('TỪ CHỐI GHI:') < 0) truot.push('không phải câu của tầng 2 (kiemCotDuocGhi_): ' + tb.slice(0, 160));
+    if (tb.indexOf(khoaMongDoi) < 0) truot.push('câu lỗi không nêu tên khóa cấu hình sai (' + khoaMongDoi + '): ' + tb.slice(0, 160));
+    if (tb.indexOf(' M') < 0) truot.push('câu lỗi không nêu cột M: ' + tb.slice(0, 160));
+    if (sh._o[5][3].v !== '') truot.push('từ chối rồi mà DÒNG MỚI vẫn được ghi: C5 = ' + JSON.stringify(sh._o[5][3].v));
+    if (sh._o[5][13].v !== '' || sh._o[5][13].f) truot.push('CỘT M ĐÃ BỊ ĐỤNG: M5 = ' + JSON.stringify(sh._o[5][13]));
+    // Không thao tác ghi giá trị/công thức nào được chạm E, F, M, N.
+    g2.__moiTruong.thaoTac.filter((x) => x.sheet === 'Shopee mall').forEach((x) => {
+      if (x.viec === 'setBackgrounds' || x.viec === 'setBackground') return;   // tô vàng cả dòng được phép
+      for (let c = x.c; c < x.c + x.nc; c++)
+        if ([5, 6, 13, 14].indexOf(c) >= 0) truot.push('thao tác ' + x.viec + ' chạm cột ' + c);
+    });
+    return truot;
+  }
+
+  CA_TRO_NHAM_COT.forEach((ca) => {
+    test(ca[0] + ' → NÉM LỖI ở tầng ghi, không ô nào bị đụng', () => {
+      const truot = chamCaTroNhamCot(ca[1], ca[2]);
+      bang(truot.length, 0, 'hàng rào tầng 2 không chặn — ' + truot.join(' | '));
+    });
+  });
+
+  // ---------------------------------------------------------------- ĐỐI CHỨNG ÂM (quy tắc BA §9.2)
+  //
+  // Ba bài trên chỉ chứng minh mã HÔM NAY chặn. Chúng chưa chứng minh được rằng CHÍNH CHÚNG có mắt:
+  // một phép chấm hỏng theo hướng "luôn luôn ĐẠT" cũng cho ra đúng ba dòng ĐẠT như vậy. Bài này gỡ
+  // đúng câu lệnh chặn của tầng 2 khỏi mã nguồn thật rồi chạy lại y hệt phép chấm đó, và đòi cả ba
+  // ca phải TRƯỢT. Chỉ khi cả ba cùng trượt thì ba dòng ĐẠT ở trên mới có nghĩa.
+  test('T-DT-42d ĐỐI CHỨNG ÂM: gỡ hàng rào tầng 2 khỏi kiemCotDuocGhi_ → cả ba ca PHẢI TRƯỢT', () => {
+    const conSot = [];
+    CA_TRO_NHAM_COT.forEach((ca) => {
+      const truot = chamCaTroNhamCot(ca[1], ca[2], { goHangRaoTang2: true });
+      if (!truot.length) conSot.push(ca[0] + ' vẫn ĐẠT dù hàng rào đã bị gỡ');
+      else console.log('        · ' + ca[2] + ' → TRƯỢT đúng như phải: ' + truot[0].slice(0, 110));
+    });
+    bang(conSot.length, 0, 'phép chấm MÙ (bệnh N-10: luôn luôn ĐẠT) — ' + conSot.join(' | '));
   });
 }
 
@@ -588,6 +679,61 @@ console.log('--- Không ghi lùi tháng (T-53) ---');
     dung(kq.thongBao.indexOf('Chưa có file cho tháng 9/2026.') === 0, kq.thongBao);
     bang(g.__moiTruong.thaoTac.length, 0, 'không được ghi gì');
     dung(kq.thongBao.indexOf(MOI_MAT_KHAU) < 0 && kq.thongBao.indexOf(MOI_TEN_DANG_NHAP) < 0, 'lộ bí mật trong thông báo');
+  });
+}
+
+// ============================== 8b. GIẢ LẬP WEB APP PHẢI CHO MỖI FILE THÁNG MỘT BẢN SAO BẢNG LINK
+//
+// Bài này KHÔNG kiểm mã vận hành — nó kiểm CÁI THƯỚC: `khaiThang` trong `node/gia-lap-web-app.js`.
+// Bản cũ làm `ss.sheets.push(shShop)`, gắn CÙNG MỘT đối tượng sheet bảng link vào mọi file tháng,
+// biện minh bằng "mỏ neo dời tới đâu cũng đọc được". Mỏ neo KHÔNG dời nữa (`capNhatMoNeo_` đã bỏ),
+// nên bảng link được đọc luôn là bảng của FILE MỎ NEO. Dùng chung một đối tượng thì dòng ghi vào
+// bảng link của file tháng mới TỰ ĐỘNG hiện ra ở file mỏ neo — chuyện không bao giờ xảy ra ngoài đời.
+//
+// Khuyết tật dựng lại ở đây là khuyết tật THẬT, sẽ gặp ngay tháng 10 (GV mục 1.6): người tạo file
+// tháng mới ghi dòng bảng link vào file tháng MỚI mà quên ghi vào file tháng CŨ. Máy nhân viên sẽ
+// không định tuyến được sang tháng mới. Đây đúng bài học N-10: hai bên dùng chung một cái thước sai
+// thì cả hai cùng không thấy gì.
+console.log('--- Giả lập Web App: bảng link phải là BẢN SAO RIÊNG cho từng file tháng ---');
+{
+  /**
+   * Khai T8 (thành mỏ neo) rồi khai T9 mà CỐ Ý chỉ ghi dòng bảng link vào file T9.
+   * Trả về kết quả định tuyến sang tháng 9 — ngoài đời phải là TỪ CHỐI.
+   */
+  function thuDinhTuyenKhiThieuDongOFileMoNeo(tuyChonSim) {
+    const gl = require('./gia-lap-web-app');
+    const sim = gl.taoGiaLap(Object.assign({ ngay: '2026-09-08T03:00:00Z' }, tuyChonSim || {}));
+    try {
+      sim.khaiThang('2026-08', 'THÁNG 8-2026 KINH DOANH');                                // → mỏ neo
+      sim.khaiThang('2026-09', 'THÁNG 9-2026 KINH DOANH', { chiGhiVaoFileNay: true });    // KHUYẾT TẬT
+      const raw = sim.vo.doPost({
+        postData: { contents: JSON.stringify({ token: sim.biMat, hanhDong: 'doc', thang: '2026-09' }) }
+      });
+      const r = JSON.parse(raw.getContent());
+      return { ok: !!r.ok, thongBao: String(r.thongBao || ''), soBanSao: sim.banSaoBangLink.length };
+    } finally {
+      sim.thaoGo();
+    }
+  }
+
+  test('T-DT-46 mỗi file tháng mang BẢN SAO RIÊNG của bảng link → thiếu dòng ở file mỏ neo BỊ LỘ', () => {
+    const r = thuDinhTuyenKhiThieuDongOFileMoNeo();
+    bang(r.soBanSao, 3, 'phải có 3 bản sao riêng: SỔ LINK THÁNG + file T8 + file T9');
+    dung(!r.ok, 'bảng link ở file mỏ neo T8 KHÔNG có dòng T9 mà vẫn định tuyến được — giả lập vẫn sai');
+    dung(r.thongBao.indexOf('Chưa có file cho tháng 9/2026.') === 0, r.thongBao);
+  });
+
+  // ---------------------------------------------------------------- ĐỐI CHỨNG ÂM (quy tắc BA §9.2)
+  //
+  // Bài trên chỉ chứng minh giả lập MỚI bắt được. Bài này chạy ĐÚNG khuyết tật đó trên bản giả lập
+  // CŨ (dùng chung một đối tượng) và đòi nó LỌT — đó mới là bằng chứng bản cũ nướng sẵn tiền đề sai,
+  // chứ không phải bản mới khắt khe quá tay.
+  test('T-DT-46b ĐỐI CHỨNG ÂM: bản giả lập CŨ (dùng chung một đối tượng) LÀM LỌT đúng khuyết tật đó', () => {
+    const cu = thuDinhTuyenKhiThieuDongOFileMoNeo({ bangLinkDungChung: true });
+    bang(cu.soBanSao, 1, 'bản cũ chỉ có đúng một đối tượng sheet cho mọi file tháng');
+    dung(cu.ok, 'bản cũ lẽ ra phải LỌT khuyết tật này — nếu nó cũng chặn thì phép so sánh vô nghĩa: ' + cu.thongBao);
+    console.log('        · giả lập CŨ: định tuyến sang 2026-09 TRÓT LỌT dù file mỏ neo T8 thiếu dòng → test xanh, thực tế đỏ');
+    console.log('        · giả lập MỚI: bị TỪ CHỐI đúng như ngoài đời → khuyết tật lộ ra ngay');
   });
 }
 

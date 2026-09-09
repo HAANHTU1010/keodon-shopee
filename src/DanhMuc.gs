@@ -100,3 +100,5 @@ var DanhMuc = (function () {
 
   return { doc: doc, docGiaVon: docGiaVon };
 })();
+
+var VAN_TAY_DANHMUC = '194ca754';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

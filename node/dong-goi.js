@@ -47,6 +47,33 @@ const DUOI_CAM = ['.xlsx', '.xls', '.csv', '.docx', '.md', '.log'];
 const TEN_CAM = ['moc-nghiem-thu.json', '.clasp.json'];
 const THU_MUC_CAM = ['src', 'node', 'node_modules', '.git'];
 
+/**
+ * MIỄN TRỪ HẸP CHO CÂY `Cấu hình/node-portable/`.
+ *
+ * Bản Node.js chính thức vi phạm hai luật ở trên mà không có cách nào tránh: `node_modules\npm\docs\`
+ * có **198 file `.md`**, và bố cục npm **bắt buộc** có `node_modules\npm\`. Chạy `--node-portable`
+ * mà không miễn trừ thì `kiemGoi()` báo hàng trăm lỗi rồi phủ quyết chính bản Node vừa đặt vào.
+ *
+ * ĐÂY KHÔNG PHẢI LÝ DO ĐỂ NỚI LUẬT. Hai luật đó đang canh đúng thứ cần canh — dữ liệu thật của
+ * shop lọt vào gói. Tài liệu của npm không phải thứ đó. Nên miễn trừ **chỉ hai luật đó, chỉ trong
+ * đúng cây này**, và bù lại bằng một hàng rào khác: DANH SÁCH TRẮNG ở lớp ngoài cùng của cây.
+ * Thừa một thứ ở lớp ngoài là phạm — đó là chỗ một file `.xlsx` của shop sẽ bị bắt.
+ *
+ * `TEN_CAM` và phép quét chuỗi bí mật VẪN ÁP ĐỦ cho cả cây: miễn trừ hai luật, không miễn cả phép kiểm.
+ *
+ * Vì sao không cắt `docs\` đi cho gọn: `PHIEN_BAN.txt` hướng dẫn người sau tải bản `.zip` chính thức
+ * từ nodejs.org rồi chép đè, mà bản chính thức CÓ `docs\` và CÓ `node_modules`. Gói dựng từ bản tải
+ * thẳng cũng phải qua được `kiemGoi()`, nếu không thì luật này sẽ bị người ta tắt đi cho xong việc.
+ */
+const TEN_NODE_PORTABLE = 'node-portable';
+const CAY_NODE_PORTABLE = path.join('Cấu hình'.normalize('NFC'), TEN_NODE_PORTABLE) + path.sep;
+const LOP_NGOAI_NODE_PORTABLE = ['node.exe', 'npm', 'npm.cmd', 'npx', 'npx.cmd', 'PHIEN_BAN.txt', 'node_modules'];
+
+/** Đường dẫn tương đối này có nằm TRONG cây node-portable không (không tính chính thư mục gốc cây). */
+function trongCayNodePortable(duong) {
+  return duong.normalize('NFC').startsWith(CAY_NODE_PORTABLE);
+}
+
 function doc(t) { return fs.readFileSync(t, 'utf8').replace(/^﻿/, ''); }
 
 /** Liệt kê mọi file trong cây, trả đường dẫn tương đối đã chuẩn hóa NFC. */
@@ -207,13 +234,28 @@ function kiemGoi(dich) {
 
   for (const x of ds) {
     const ten = path.basename(x.duong);
+    // Trong cây node-portable: miễn trừ ĐÚNG hai luật DUOI_CAM và THU_MUC_CAM. Xem chú thích ở
+    // CAY_NODE_PORTABLE. Danh sách trắng lớp ngoài (ngay dưới đây) là hàng rào thay thế.
+    const mienTru = trongCayNodePortable(x.duong);
     if (x.laThuMuc) {
-      if (THU_MUC_CAM.indexOf(ten) >= 0) pham.push('có thư mục cấm  ' + x.duong);
+      if (!mienTru && THU_MUC_CAM.indexOf(ten) >= 0) pham.push('có thư mục cấm  ' + x.duong);
       continue;
     }
     const duoi = path.extname(ten).toLowerCase();
-    if (DUOI_CAM.indexOf(duoi) >= 0) pham.push('có file đuôi cấm  ' + x.duong);
-    if (TEN_CAM.indexOf(ten) >= 0) pham.push('có file cấm  ' + x.duong);
+    if (!mienTru && DUOI_CAM.indexOf(duoi) >= 0) pham.push('có file đuôi cấm  ' + x.duong);
+    if (TEN_CAM.indexOf(ten) >= 0) pham.push('có file cấm  ' + x.duong);   // KHÔNG miễn trừ
+  }
+
+  // Danh sách trắng lớp ngoài cùng của cây node-portable — thay cho hai luật vừa miễn trừ.
+  const goiNP = path.join(dich, TEN_CAU_HINH, TEN_NODE_PORTABLE);
+  if (fs.existsSync(goiNP)) {
+    const la = fs.readdirSync(goiNP).map((t) => t.normalize('NFC'))
+      .filter((t) => LOP_NGOAI_NODE_PORTABLE.indexOf(t) < 0);
+    if (la.length) {
+      pham.push('node-portable có thứ lạ ở lớp ngoài cùng: ' + la.join(', ') +
+        ' (chỉ được có ' + LOP_NGOAI_NODE_PORTABLE.join(', ') + ')');
+    }
+    if (!fs.existsSync(path.join(goiNP, 'node.exe'))) pham.push('node-portable thiếu node.exe');
   }
 
   // 2. nhật ký phải rỗng — nhật ký cũ mang mã đơn thật
@@ -313,6 +355,7 @@ function main() {
   process.exit(0);
 }
 
-module.exports = { dungGoi, kiemGoi, dongBoBat, kiemDongBoBat, THU_MUC_BAT_KHO, dsFileBat, BON_NUT, TEN_GOI, TEN_CAU_HINH, TEN_NHAT_KY, TEN_THA, KHOA_CHI_CHO_EXCEL, HAI_DONG_BI_MAT };
+module.exports = { dungGoi, kiemGoi, dongBoBat, kiemDongBoBat, THU_MUC_BAT_KHO, dsFileBat,
+  TEN_NODE_PORTABLE, LOP_NGOAI_NODE_PORTABLE, trongCayNodePortable, BON_NUT, TEN_GOI, TEN_CAU_HINH, TEN_NHAT_KY, TEN_THA, KHOA_CHI_CHO_EXCEL, HAI_DONG_BI_MAT };
 
 if (require.main === module) main();

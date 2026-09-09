@@ -59,6 +59,55 @@ function thongBaoLechPhienBan(banThuc, banCan) {
 }
 
 /**
+ * So DẤU VÂN TAY BẢN DỰNG của Web App với `src/` trên máy này. Trả danh sách câu cảnh báo
+ * (rỗng = khớp). **Cảnh báo thôi, không chặn** — theo đúng chốt của BA, để không tắc buổi chạy thử.
+ *
+ * VÌ SAO KHÔNG DỰA VÀO `phienBan`. `PHIEN_BAN` chỉ đổi khi lên phiên bản mới, nên hai bản dựng
+ * cùng số phiên bản trông giống hệt nhau. Dán sót một file hay dán nhầm bản cũ thì tool chạy êm
+ * và sai lặng lẽ — đã xảy ra đúng một lần: cột E/F/N trống trên Google mà nhật ký không một câu
+ * cảnh báo, và không ai phân biệt được "mã đúng, công thức trả rỗng" với "bản trên Google cũ hơn".
+ *
+ * Bọc try: máy không đọc được `src/` (ví dụ bản đóng gói cấu trúc khác) thì mất phép so này chứ
+ * không được làm hỏng lượt chạy — nó là phép phụ, không phải cửa chặn.
+ */
+function soDauVanTay(pingKq) {
+  const ra = [];
+  if (!pingKq || typeof pingKq !== 'object') return ra;
+  // Nhánh sai bí mật CỐ Ý không mang `banDung` (xem `traLoi_`). Không có nghĩa là bản cũ — kêu ở
+  // đây là kêu oan, và tệ hơn: nó chen một câu sai vào đúng lúc người ta chỉ gõ nhầm chuỗi bí mật.
+  if (pingKq.loi === 'SAI_BI_MAT') return ra;
+
+  const hl = pingKq.hamLoi;
+  if (hl && Array.isArray(hl.thieu) && hl.thieu.length) {
+    ra.push('Bản Apps Script trên Google CŨ HƠN bản trên máy: thiếu ' + hl.thieu.length +
+      ' hàm lõi (' + hl.thieu.join(', ') + '). Mở Apps Script, dán lại 11 file trong src/ rồi Deploy lại.');
+  }
+  if (hl && Array.isArray(hl.camMaVanCo) && hl.camMaVanCo.length) {
+    ra.push('Bản trên Google còn hàm ĐÃ BỎ: ' + hl.camMaVanCo.join(', ') +
+      '. Đó là bản cũ, và cái bẫy hàm đó gây ra vẫn đang giăng. Dán lại 11 file rồi Deploy lại.');
+  }
+
+  let van;
+  try { van = require('./dau-van-tay').tinh(); }
+  catch (e) { return ra; }
+
+  if (pingKq.banDung == null) {
+    ra.push('Bản Apps Script trên Google chưa có dấu vân tay bản dựng (bản cũ). ' +
+      'Máy đang chạy bản dựng ' + van.tong + '. Dán lại 11 file trong src/ rồi Deploy lại.');
+    return ra;
+  }
+  if (String(pingKq.banDung) === van.tong) return ra;
+
+  const tuXa = (pingKq.vanTay && typeof pingKq.vanTay === 'object') ? pingKq.vanTay : {};
+  const lech = Object.keys(van.tungFile).filter((t) => String(tuXa[t] == null ? '' : tuXa[t]) !== van.tungFile[t]);
+  ra.push('Bản Apps Script trên Google KHÁC bản trên máy — Google: ' + pingKq.banDung +
+    ' · máy: ' + van.tong +
+    (lech.length ? ('. Lệch ở ' + lech.length + ' file: ' + lech.join(', ')) : '.') +
+    ' Mở Apps Script, dán lại đúng ' + (lech.length ? 'các file đó' : '11 file trong src/') + ' rồi Deploy lại.');
+  return ra;
+}
+
+/**
  * Cổng chặn ghi — HÀM THUẦN, kiểm được không cần mạng.
  * `banThuc` rỗng/không có nghĩa là Web App đang chạy bản CŨ, bản chưa biết trả `phienBan` về.
  * Đó chính là ca nguy hiểm nhất (hỏng âm thầm) nên cũng phải chặn, không được coi là "chắc là ok".
@@ -172,6 +221,7 @@ class WebAppGoogleSheet {
     this.duong = chuanDuong(c.duong);
     this.cotPII = c.cotPII || null;
     this.phienBanWebApp = null;      // điền từ phản hồi đầu tiên; null = chưa nói chuyện lần nào
+    this.canhBaoBanDung = [];        // câu cảnh báo lệch dấu vân tay bản dựng, điền sau lượt ping
     if (this.bat) {
       if (!this.url) throw new Error('Bật ghi Google Sheet nhưng thiếu web_app_url trong CAU_HINH_VAN_HANH.json');
       if (!this.biMat) throw new Error('Bật ghi Google Sheet nhưng thiếu chuoi_bi_mat trong CAU_HINH_VAN_HANH.json');
@@ -248,6 +298,9 @@ class WebAppGoogleSheet {
           // Nhớ lại bản THẬT của Web App ngay cả khi phản hồi là lỗi — nhờ vậy `ghi()` chặn được
           // trước khi gửi lô đầu tiên, không phải chờ tới lúc Google trả lời.
           if (kq.phienBan != null) this.phienBanWebApp = String(kq.phienBan);
+          // So dấu vân tay trên MỌI phản hồi, không riêng `ping`: `banDung` đi kèm mọi phản hồi đã
+          // qua cửa bí mật, nên không tốn thêm lượt gọi nào. Gộp câu, không lặp lại câu đã có.
+          soDauVanTay(kq).forEach((c) => { if (this.canhBaoBanDung.indexOf(c) < 0) this.canhBaoBanDung.push(c); });
           if (!kq.ok) {
             // Câu báo lệch phiên bản phải tới tay người dùng NGUYÊN VĂN, không bọc thêm tiền tố
             // "Web App từ chối [...]" — đây là câu duy nhất nói thẳng việc phải làm.
@@ -509,6 +562,6 @@ function lenhTuDon(tenSheet, donDS, ngayGhi) {
 module.exports = {
   WebAppGoogleSheet, chiaLo, chiaLoTheoDon, lenhTuDon, chuanDuong,
   TOI_DA_DON_MOT_LO, TOI_DA_DON_MOT_LO_XU_LY, SO_LAN_GOI_TIEP_TOI_DA,
-  PHIEN_BAN, kiemPhienBan, thongBaoLechPhienBan,
+  PHIEN_BAN, kiemPhienBan, thongBaoLechPhienBan, soDauVanTay,
   kiemPII, TRUONG_DONG_LOP_1, RE_DIEN_THOAI
 };

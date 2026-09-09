@@ -155,6 +155,17 @@ function inCanhBaoVungCongThuc(lop, ds, in_) {
  * TẮC HẲN — "Chưa có file cho tháng N". Câu này báo trước cả tháng, nhưng nó chỉ có tác dụng nếu
  * nhân viên NHÌN THẤY; nằm im trong mảng canhBao của phản hồi thì không ai đọc.
  */
+/**
+ * In cảnh báo LỆCH BẢN DỰNG. Chỉ nói, không chặn — theo chốt của BA, để không tắc buổi chạy thử.
+ * Đặt ở cả hai đường ('xuLy' và 'ghi'): bản `.gs` trên Google cũ hơn thì hai đường sai như nhau.
+ */
+function inCanhBaoBanDung(web, in_) {
+  const ds = (web && web.canhBaoBanDung) || [];
+  if (!ds.length) return;
+  in_('  ! BẢN TRÊN GOOGLE KHÔNG KHỚP BẢN TRÊN MÁY:');
+  ds.forEach((c) => in_('    ! ' + c));
+}
+
 function inCanhBaoBangLink(ds, in_) {
   (ds || []).filter((c) => String(c).indexOf('Bảng link mới khai tới') === 0)
     .forEach((c) => in_('  ! ' + c));
@@ -223,6 +234,7 @@ async function duongXuLy(web, tuyChon, thang, ngayGhi, in_) {
 
   in_('File tháng: ' + (kq.tenFile || '(không rõ tên)') + ' · ' + kq.soLo + ' lô · ' + kq.soLanGoi + ' lượt gọi');
   const canhBaoLo = gomCanhBaoVungCongThuc(tuyChon.lop, kq.canhBao);
+  inCanhBaoBanDung(web, in_);
   inCanhBaoBangLink(canhBaoLo, in_);
   inCanhBaoVungCongThuc(tuyChon.lop, canhBaoLo, in_);
   return {
@@ -263,6 +275,7 @@ async function duongGhiCu(web, tuyChon, thang, ngayGhi, in_) {
   in_('Gửi lệnh ghi ' + goi.thongKe.donGhi + ' đơn (' + goi.thongKe.dongGhi + ' dòng) …');
   const kq = await web.ghi(thang, goi.lenh, goi.mappingThem);
   const canhBaoLo = gomCanhBaoVungCongThuc(lop, goi.canhBao.concat(kq.canhBao || []));
+  inCanhBaoBanDung(web, in_);
   inCanhBaoBangLink(canhBaoLo, in_);
   inCanhBaoVungCongThuc(lop, canhBaoLo, in_);
   return {
@@ -288,5 +301,5 @@ function demDong(cacFile) {
 module.exports = {
   chayLenGoogleSheet, dungGoiGhi, bangCuaSheet, thangCua, ngayCua,
   napVoGoogle, chuanDuong, demDon, demDong,
-  gomCanhBaoVungCongThuc, inCanhBaoVungCongThuc, inCanhBaoBangLink
+  gomCanhBaoVungCongThuc, inCanhBaoVungCongThuc, inCanhBaoBangLink, inCanhBaoBanDung
 };

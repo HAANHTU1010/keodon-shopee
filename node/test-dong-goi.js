@@ -177,6 +177,77 @@ test('DG-06', 'bat/ của kho GitHub khớp TỪNG BYTE với 03_VAN_HANH — kh
   return DG.dsFileBat().length + ' file khớp từng byte · ' + dc;
 });
 
+/**
+ * Dựng một cây `node-portable` GIẢ, đúng bảy thứ ở lớp ngoài như bản chính thức, kèm một file
+ * `.md` và một `node_modules` — đúng hai thứ mà bản Node thật bắt buộc phải có và `kiemGoi()`
+ * vốn cấm. Dùng cây giả thay vì chép 102 MB thật: phép kiểm chỉ nhìn tên và bố cục, không nhìn
+ * nội dung, nên cây giả chứng minh được đúng thứ cần chứng minh mà chạy trong tích tắc.
+ */
+function dungNodePortableGia(goi) {
+  const np = path.join(goi, CAU_HINH, 'node-portable');
+  fs.mkdirSync(path.join(np, 'node_modules', 'npm', 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(np, 'node.exe'), 'khong phai node that');
+  for (const t of ['npm', 'npm.cmd', 'npx', 'npx.cmd']) fs.writeFileSync(path.join(np, t), '@echo off');
+  fs.writeFileSync(path.join(np, 'PHIEN_BAN.txt'), 'Node.js v24.9.0 (gia lap)');
+  fs.writeFileSync(path.join(np, 'node_modules', 'npm', 'docs', 'README.md'), '# tai lieu npm');
+  return np;
+}
+
+test('DG-07', 'Miễn trừ node-portable ĐÚNG hai luật .md và node_modules, không hơn', () => {
+  const np = dungNodePortableGia(GOI);
+  try {
+    bang(DG.kiemGoi(GOI).length, 0, 'bản Node hợp lệ phải qua được (có .md và node_modules là bình thường)');
+
+    // Đối chứng âm 1 của BA: file .xlsx thật nhét vào node-portable → danh sách trắng phải bắt.
+    const dc1 = doiChungAm('lén nhét .xlsx số liệu thật vào chính cây node-portable', () => {
+      const x = path.join(np, 'THANG-8-KINH-DOANH.xlsx');
+      fs.writeFileSync(x, 'so lieu that');
+      try {
+        const p = DG.kiemGoi(GOI);
+        if (p.length) throw new Error(p[0]);
+      } finally { fs.unlinkSync(x); }
+    });
+
+    // Miễn trừ KHÔNG được rò ra ngoài cây: TEN_CAM vẫn áp đủ ngay trong node-portable.
+    const dc2 = doiChungAm('file trong TEN_CAM nằm sâu trong node-portable — miễn trừ không được che', () => {
+      const x = path.join(np, 'node_modules', 'moc-nghiem-thu.json');
+      fs.writeFileSync(x, '{}');
+      try {
+        const p = DG.kiemGoi(GOI);
+        if (p.length) throw new Error(p[0]);
+      } finally { fs.unlinkSync(x); }
+    });
+
+    return '.md + node_modules trong cây → sạch · ' + dc1 + ' · ' + dc2;
+  } finally { fs.rmSync(np, { recursive: true, force: true }); }
+});
+
+test('DG-08', 'Miễn trừ KHÔNG rò ra ngoài cây node-portable', () => {
+  const np = dungNodePortableGia(GOI);
+  try {
+    // Đối chứng âm 2 của BA: .md đặt trong Cấu hình\ nhưng NGOÀI node-portable → vẫn phải phạm.
+    const dc = doiChungAm('.md đặt trong Cấu hình\\ nhưng ngoài cây node-portable', () => {
+      const x = path.join(GOI, CAU_HINH, 'GHI_CHU_NOI_BO.md');
+      fs.writeFileSync(x, '# doanh thu thang 8');
+      try {
+        const p = DG.kiemGoi(GOI);
+        if (p.length) throw new Error(p[0]);
+      } finally { fs.unlinkSync(x); }
+    });
+    const dcTM = doiChungAm('thư mục node_modules đặt ở gốc gói, ngoài cây node-portable', () => {
+      const d = path.join(GOI, 'node_modules');
+      fs.mkdirSync(d, { recursive: true });
+      try {
+        const p = DG.kiemGoi(GOI);
+        if (p.length) throw new Error(p[0]);
+      } finally { fs.rmSync(d, { recursive: true, force: true }); }
+    });
+    bang(DG.trongCayNodePortable(path.join(CAU_HINH, 'x.md')), 'false', 'ngay trong Cấu hình\\ thì chưa phải trong cây');
+    bang(DG.trongCayNodePortable(path.join(CAU_HINH, 'node-portable', 'x.md')), 'true', 'trong cây');
+    return dc + ' · ' + dcTM;
+  } finally { fs.rmSync(np, { recursive: true, force: true }); }
+});
+
 // ================================================ NHÓM CN — chạy thật nút cập nhật
 
 /** Dựng một "máy nhân viên" giả: bốn nút + Cấu hình có bí mật mồi, CHƯA có mã nào. */
