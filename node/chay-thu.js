@@ -102,8 +102,8 @@ function kiemTraGianQuaMapping(daDoc, bangMap, cfg) {
   if (!kq.chan.length) return;
   throw new Error(
     kq.chan.map((x) => '  ' + x.cau + '\n' +
-      '      · ' + x.tenFile + ': ' + x.soKhac + '/' + x.khop + ' tên hàng đã khai ở gian kia, ' +
-      x.soMinh + '/' + x.khop + ' ở gian đang thả').join('\n') + '\n' +
+      '      · ' + x.tenFile + ': ' + x.soKhac + '/' + x.tong + ' tên hàng đã khai ở gian kia, ' +
+      x.soMinh + '/' + x.tong + ' ở gian đang thả').join('\n') + '\n' +
     '  File đúng chỗ mà vẫn bị chặn: sheet Mapping sản phẩm đang khai sai gian cho các tên hàng đó\n' +
     '            (thường do một lần chạy nhầm trước để lại). Sửa cột "Gian hàng" của các dòng đó rồi chạy lại.\n' +
     '  Tool chưa ghi gì cả.');
@@ -236,7 +236,7 @@ function chonFileTracking(cv, thoiDiem) {
   const thang = cv.thang && typeof cv.thang === 'object' ? cv.thang : {};
 
   if (Object.keys(thang).length) {
-    const khoa = thoiDiem.getFullYear() + '-' + String(thoiDiem.getMonth() + 1).padStart(2, '0');
+    const khoa = thangCua(thoiDiem);                   // giờ Việt Nam, không theo múi giờ máy (YC-40.4)
     if (!thang[khoa]) {
       throw new Error('Chưa khai báo file tracking cho tháng ' + khoa + '.\n' +
         '  Cách sửa: mở CAU_HINH_VAN_HANH.json, trong mục "thang" thêm dòng\n' +

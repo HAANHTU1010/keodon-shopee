@@ -200,7 +200,7 @@ test('DG-05', 'Không mã nguồn, không tài liệu .md lọt vào gói', () =
       if (p.length) throw new Error(p[0]);
     } finally { fs.rmSync(s, { recursive: true, force: true }); }
   });
-  return moi.length + ' mục, 0 .md, 0 thư mục mã nguồn · ' + dc;
+  return moi.length + ' mục, 1 .md (hướng dẫn, danh sách trắng C-3), 0 thư mục mã nguồn · ' + dc;
 });
 
 DS_CHO.push(() => testCho('DG-09', 'File .zip giao đi: ĐÚNG MỘT thư mục gốc không dấu, giải nén ra vẫn qua kiemGoi', async () => {
@@ -269,6 +269,53 @@ DS_CHO.push(() => testCho('DG-10', 'C-5: bốn thư mục gian hàng SỐNG SÓT
   bang(coFile.length, 0, 'bỏ .keep rồi thì không còn FILE nào giữ bốn thư mục gian hàng — đúng như phải');
   return '4 file .keep trong zip · đối chứng âm: bỏ .keep → 0 file giữ chỗ, thư mục chỉ còn là mục rỗng';
 }));
+
+test('DG-11', 'Bản .txt của hướng dẫn SINH RA từ bản .md — không có chuyện hai bản lệch nhau', () => {
+  // YC-40.3: trước đây `.txt` do người chuyển tay. Bản `.md` đã sửa mà `.txt` vẫn giữ câu cũ thì user mở
+  // Notepad sẽ đọc đúng câu đã bị bỏ. Nay `.txt` phải bằng từng byte `mdSangTxt(.md)`.
+  const BAT = path.join(__dirname, '..', 'bat');
+  const md = fs.readFileSync(path.join(BAT, 'HUONG_DAN_1_TRANG.md'), 'utf8');
+  const txt = fs.readFileSync(path.join(BAT, 'HUONG_DAN_1_TRANG.txt'), 'utf8');
+  bang(txt === DG.mdSangTxt(md), true, 'HUONG_DAN_1_TRANG.txt khác bản sinh từ .md — chạy lại bước sinh .txt');
+  dung(txt.charCodeAt(0) === 0xFEFF, '.txt phải có BOM để Notepad đọc đúng tiếng Việt');
+  dung(txt.indexOf('\r\n') > 0 && txt.replace(/\r\n/g, '').indexOf('\n') < 0, '.txt phải xuống dòng CRLF thuần');
+  dung(txt.indexOf('**') < 0 && txt.indexOf('`') < 0, '.txt còn ký hiệu markdown');
+
+  const dc = doiChungAm('sửa .md mà quên sinh lại .txt', () => {
+    const md2 = md.replace('Bấm đúp', 'Nhấn đúp');
+    bang(txt === DG.mdSangTxt(md2), true, '.txt cũ so với .md mới');
+  });
+  return txt.length + ' ký tự, BOM + CRLF, khớp bản sinh từ .md · ' + dc;
+});
+
+test('DG-12', 'kiemGoi soát NỘI DUNG hướng dẫn: có câu "gói chứa khóa", không bảo user điền tay, không trỏ file vắng mặt', () => {
+  const tep = path.join(GOI, CAU_HINH, 'HUONG_DAN_1_TRANG.md');
+  const tepTxt = path.join(GOI, CAU_HINH, 'HUONG_DAN_1_TRANG.txt');
+  bang(DG.kiemGoi(GOI).length, 0, 'gói vừa dựng phải sạch');
+  const goc = fs.readFileSync(tep, 'utf8');
+  const gocTxt = fs.readFileSync(tepTxt, 'utf8');
+  const dat = (md) => { fs.writeFileSync(tep, md, 'utf8'); fs.writeFileSync(tepTxt, DG.mdSangTxt(md), 'utf8'); };
+
+  // Ba đối chứng âm — đúng ba khuyết tật BA tìm thấy trong bản hướng dẫn 2.5.0.
+  const ds = [];
+  for (const [nhan, hong] of [
+    ['bỏ câu cảnh báo "gói chứa khóa"', (m) => m.replace(/> \*\*GÓI NÀY CHỨA KHÓA[^\n]*\n/, '')],
+    ['còn câu "dừng ở bước 6 và bảo bạn điền hai dòng"', (m) => m + '\nGần như chắc chắn nó sẽ dừng ở bước 6 và bảo bạn điền hai dòng.\n'],
+    ['trỏ tới BAT_GOOGLE_SHEET.md không có trong gói', (m) => m + '\nCách lấy: xem BAT_GOOGLE_SHEET.md.\n']
+  ]) {
+    // Dựng bản lỗi NGOÀI doiChungAm: ném lỗi bên trong nó sẽ bị tính là "LỆCH" và bài xanh giả.
+    const xau = hong(goc);
+    if (xau === goc) throw new Error('KHÔNG dựng được bản lỗi "' + nhan + '" — mẫu đã đổi, sửa đối chứng âm');
+    ds.push(doiChungAm(nhan, () => {
+      dat(xau);
+      try {
+        const p = DG.kiemGoi(GOI);
+        if (p.length) throw new Error(p[0]);
+      } finally { fs.writeFileSync(tep, goc, 'utf8'); fs.writeFileSync(tepTxt, gocTxt, 'utf8'); }
+    }));
+  }
+  return 'hướng dẫn trong gói sạch · ' + ds.length + ' đối chứng âm đều LỆCH đúng như phải';
+});
 
 test('DG-06', 'bat/ của kho GitHub khớp TỪNG BYTE với 03_VAN_HANH — không được có hai bản lệch nhau', () => {
   const lech = DG.kiemDongBoBat();
@@ -370,6 +417,8 @@ function dungMayGia(nut2) {
   const ch = path.join(may, CAU_HINH);
   fs.mkdirSync(path.join(ch, NHAT_KY), { recursive: true });
   fs.writeFileSync(path.join(ch, 'CAU_HINH_VAN_HANH.json'), JSON.stringify({
+    // Khóa chú thích của bản CŨ trên máy user — YC-40.1: nút 2 phải THAY bằng câu của bản mẫu.
+    _thu_muc_tha_file: 'CAU CHU THICH CU CUA MAY',
     thu_muc_tha_file: '1_THA_FILE_XUAT',
     thu_muc_gian_hang: { SP_MALL: 'Shopee mall' },
     ten_thu_muc_da_xu_ly: 'đã xử lý',
@@ -400,7 +449,8 @@ async function dungZip(phienBan, nut2KhacBanDangChay) {
     ? '@echo off\r\nrem BAN NUT CAP NHAT MOI HON\r\n'
     : fs.readFileSync(path.join(VAN_HANH, '2_CAP_NHAT.bat'), 'latin1'));
   b.file('CAU_HINH_VAN_HANH.mau.json', JSON.stringify({
-    thu_muc_tha_file: '1_THA_FILE_XUAT',
+    _thu_muc_tha_file: 'CAU CHU THICH MOI CUA BAN MAU',
+    thu_muc_tha_file: 'THU_MUC_KHAC_CUA_BAN_MAU',
     thu_muc_gian_hang: { SP_MALL: 'Shopee mall' },
     ten_thu_muc_da_xu_ly: 'đã xử lý',
     google_sheet: { bat: true, web_app_url: '', chuoi_bi_mat: '' },
@@ -466,7 +516,7 @@ function chayNut(may, ten, themTv) {
     return sau.length + ' byte, y nguyên · có in dòng nhắc xin bản đóng gói mới';
   });
 
-  test('CN-04', 'KHÔNG BAO GIỜ ghi đè CAU_HINH_VAN_HANH.json: giữ nguyên bí mật, chỉ THÊM khóa mới', () => {
+  test('CN-04', 'KHÔNG BAO GIỜ ghi đè giá trị trong CAU_HINH_VAN_HANH.json: giữ bí mật, THÊM khóa mới, THAY khóa chú thích', () => {
     const s = doc(path.join(may, CAU_HINH, 'CAU_HINH_VAN_HANH.json'));
     const c = JSON.parse(s);
     bang(c.google_sheet.chuoi_bi_mat, BI_MAT_MOI, 'chuỗi bí mật của máy');
@@ -474,7 +524,29 @@ function chayNut(may, ten, themTv) {
     bang(c.cap_nhat.ten_repo, 'kho-nao-do', 'khai báo kho của máy');
     bang(c.khoa_hoan_toan_moi, 'gia tri mac dinh', 'khóa mới của bản mới phải được THÊM vào');
     dung(s !== cfgTruoc, 'phải có thêm khóa mới, nghĩa là file có đổi');
-    return 'bí mật còn nguyên · khóa mới  khoa_hoan_toan_moi  đã được thêm';
+    // YC-40.1: khóa CHÚ THÍCH được thay bằng câu của bản mẫu…
+    bang(c._thu_muc_tha_file, 'CAU CHU THICH MOI CUA BAN MAU', 'khóa chú thích `_…` phải nhận câu của bản mẫu');
+    // …còn khóa GIÁ TRỊ cùng tên thì KHÔNG BAO GIỜ bị thay, dù bản mẫu có giá trị khác.
+    bang(c.thu_muc_tha_file, '1_THA_FILE_XUAT', 'khóa giá trị KHÔNG được thay theo bản mẫu');
+    dung(!fs.existsSync(path.join(may, CAU_HINH, 'CAU_HINH_VAN_HANH.json.__moi')), 'còn sót file tạm .__moi');
+
+    // ĐỐI CHỨNG ÂM: bản nút 2 CŨ (chỉ thêm khóa thiếu) để nguyên câu chú thích cũ — phép chấm trên phải bắt.
+    const dc = doiChungAm('bản nút 2 cũ không thay khóa chú thích', () => {
+      const cu = path.join(os.tmpdir(), 'keodon-nut2-khong-thay-chu-thich-' + Date.now() + '.bat');
+      const s0 = fs.readFileSync(path.join(VAN_HANH, '2_CAP_NHAT.bat'), 'latin1');
+      const s1 = s0.replace("} elseif ($k.StartsWith('_') -and ($m.$k -is [string]) -and ($t.$k -ne $m.$k)) {",
+        "} elseif ($false) {");
+      if (s1 === s0) throw new Error('KHÔNG dựng được bản lỗi: chuỗi mốc đã đổi — sửa đối chứng âm, đừng bỏ qua');
+      fs.writeFileSync(cu, s1, 'latin1');
+      try {
+        const m2 = dungMayGia(cu);
+        const r2 = chayNut(m2, '2_CAP_NHAT.bat', ['/nguon', zip]);
+        const c2 = JSON.parse(doc(path.join(m2, CAU_HINH, 'CAU_HINH_VAN_HANH.json')));
+        if (r2.ma !== 0) throw new Error('bản lỗi thoát mã ' + r2.ma);   // chạy hỏng hẳn cũng là LỆCH
+        bang(c2._thu_muc_tha_file, 'CAU CHU THICH MOI CUA BAN MAU', 'bản cũ');
+      } finally { fs.unlinkSync(cu); }
+    });
+    return 'bí mật còn nguyên · khóa mới đã thêm · khóa chú thích đã thay · khóa giá trị giữ nguyên · ' + dc;
   });
 
   test('CN-05', 'Không đụng thư mục thả file của user', () => {

@@ -61,9 +61,26 @@ const SO_LAN_GOI_TIEP_TOI_DA = 12;
 const TIMEOUT_MS = 180000;
 
 /** 'yyyy-MM' theo giờ máy — chỉ dùng để điền vào câu lỗi khi gói không mang `thang` (ví dụ lượt ping). */
-function thangHienTaiMay() {
-  const d = new Date();
-  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+/**
+ * Năm / tháng / ngày của một thời điểm THEO GIỜ VIỆT NAM, bất kể máy đặt múi giờ nào (YC-40.4).
+ *
+ * Vì sao phải ép: tháng quyết định ghi vào FILE THÁNG nào. Máy đặt múi giờ UTC (hay gặp ở máy mới cài lại
+ * Windows) thì từ 0h đến 7h sáng ngày 1 giờ máy vẫn là ngày cuối tháng trước — đơn của tháng mới ghi lùi
+ * vào sổ tháng cũ. Google chạy theo `Asia/Ho_Chi_Minh` nên còn tự chặn "ghi lùi" và làm tắc cả lượt.
+ *
+ * Việt Nam không đổi giờ mùa hè, nên cộng cố định 7 giờ là ĐÚNG, và không phụ thuộc bộ dữ liệu múi giờ
+ * của bản Node xách tay (bản rút gọn có thể không có `Intl` đầy đủ).
+ */
+const LECH_GIO_VN_MS = 7 * 3600 * 1000;
+function phanNgayVN(thoiDiem) {
+  const d = new Date((thoiDiem ? new Date(thoiDiem) : new Date()).getTime() + LECH_GIO_VN_MS);
+  return { nam: d.getUTCFullYear(), thang: d.getUTCMonth() + 1, ngay: d.getUTCDate() };
+}
+function haiSo(n) { return ('0' + n).slice(-2); }
+
+function thangHienTaiMay(thoiDiem) {
+  const x = phanNgayVN(thoiDiem);
+  return x.nam + '-' + haiSo(x.thang);
 }
 
 /** Nguyên văn câu báo lệch phiên bản. Bản Apps Script (`thongBaoLechPhienBan_`) phải giống hệt từng chữ. */
@@ -737,6 +754,6 @@ module.exports = {
   TOI_DA_DON_MOT_LO, TOI_DA_DON_MOT_LO_XU_LY, SO_LAN_GOI_TIEP_TOI_DA,
   PHIEN_BAN, kiemPhienBan, thongBaoLechPhienBan, soDauVanTay,
   kiemPII, TRUONG_DONG_LOP_1, RE_DIEN_THOAI,
-  idFileThang, cauThieuLinkThang, thangSau, canhBaoThangSau, RE_LINK_SHEET, thangHienTaiMay,
+  idFileThang, cauThieuLinkThang, thangSau, canhBaoThangSau, RE_LINK_SHEET, thangHienTaiMay, phanNgayVN,
   cauLoiQuyen, loiQuyen, MA_LOI_QUYEN_WEBAPP, laTrangHtml
 };

@@ -146,8 +146,8 @@ async function docBang(file, tenSheet) {
       return { tenFile: x.tenFile, khop: khop };
     });
     const yeu = khopCua.filter((x) => x.khop < mong);
-    // Không đòi 12/12: `importmart_tháng 6.xlsx` chỉ có 4 tên hàng khớp được vì gian Importmart còn ít
-    // dòng trong Mapping. Luật CỐ Ý im lặng ở ngưỡng đó (thà bỏ sót còn hơn chặn oan), nên đòi 12/12 là
+    // Không đòi 12/12: `importmart_tháng 6.xlsx` chỉ có 4 tên hàng KHÁC NHAU trong cả file (4/4 khớp Mapping),
+    // tức file ít mặt hàng chứ không phải Mapping thiếu. Dưới ngưỡng thì luật chỉ cảnh báo, nên đòi 12/12 là
     // đòi mã làm trái luật của chính nó. Cái phải canh là con số đó không ÂM THẦM tụt: 11/12 là mức
     // hiện tại, tụt xuống nữa thì phép kiểm mỏng dần mà không ai biết.
     dung(yeu.length <= 1, 'có ' + yeu.length + ' file khớp dưới ' + mong + ' tên — phép kiểm đang mỏng đi: ' +
@@ -163,7 +163,7 @@ async function docBang(file, tenSheet) {
     return soTen + ' tên hàng chỉ đích danh một gian · phân bố ' + JSON.stringify(gian) +
       '\n        · số tên khớp được của từng file: ' +
       khopCua.map((x) => x.tenFile.replace('.xlsx', '') + '=' + x.khop).join(', ') +
-      (yeu.length ? '\n        · DƯỚI NGƯỠNG (phép kiểm im lặng, đã báo BA): ' +
+      (yeu.length ? '\n        · DƯỚI NGƯỠNG (thả nhầm thì chỉ CẢNH BÁO rồi vẫn ghi, xem T-GH-11): ' +
         yeu.map((x) => x.tenFile).join(', ') : '');
   });
 
@@ -186,11 +186,11 @@ async function docBang(file, tenSheet) {
       bang(x.gianThuMuc, 'SP_IMPORT', 'phải nêu đúng thư mục đang thả');
       bang(x.cau, 'FILE NÀY GIỐNG GIAN Shopee mall, ĐANG THẢ VÀO Importmart — tool không ghi. ' +
         'Kéo file sang đúng thư mục rồi bấm lại.', 'nguyên văn câu D-04 của YC-36');
-      dung(x.soKhac / x.khop >= 0.8, 'tỷ lệ khớp gian kia phải ≥ 80%, nhận ' + x.soKhac + '/' + x.khop);
-      dung(x.soMinh / x.khop < 0.2, 'tỷ lệ khớp gian đang thả phải < 20%, nhận ' + x.soMinh + '/' + x.khop);
+      dung(x.soKhac / x.tong >= 0.8, 'tỷ lệ tên hàng thuộc gian kia phải ≥ 80% TỔNG tên trong file, nhận ' + x.soKhac + '/' + x.tong);
+      dung(x.soMinh / x.tong < 0.2, 'tỷ lệ tên hàng thuộc gian đang thả phải < 20%, nhận ' + x.soMinh + '/' + x.tong);
     });
-    return kq.chan.map((x) => x.tenFile + ': ' + x.soKhac + '/' + x.khop + ' thuộc Shopee mall, ' +
-      x.soMinh + '/' + x.khop + ' thuộc Importmart').join('\n        · ');
+    return kq.chan.map((x) => x.tenFile + ': ' + x.soKhac + '/' + x.tong + ' tên trong file thuộc Shopee mall, ' +
+      x.soMinh + '/' + x.tong + ' thuộc Importmart').join('\n        · ');
   });
 
   await test('T-GH-04', 'Mọi cặp gian thả nhầm đều bị bắt, không riêng cặp của vụ 07/9', () => {
@@ -263,6 +263,63 @@ async function docBang(file, tenSheet) {
     bang(kq.chan.length, 0, 'không có cột Gian hàng thì không được chặn ai');
     bang(kq.canhBao.length, 0, 'và cũng không kêu ca gì');
     return 'bỏ cột "Gian hàng" → 0 chặn, 0 cảnh báo';
+  });
+
+  await test('T-GH-10', 'GIAN MỚI MỞ, file có tên hàng chưa hề có trong Mapping → KHÔNG chặn oan (YC-40.6)', () => {
+    // Ca bản 2.5.0 chặn oan: Mapping chưa có dòng nào của gian mới; file có 10 tên hàng, 6 tên trùng hàng
+    // đã khai ở Shopee mall, 4 tên hoàn toàn mới. Chia cho số tên KHỚP (6) thì ra 100% "thuộc gian khác".
+    const idx = lop.MapListing.chiMucGianTheoListing(bangMap, cfg);
+    const cuaMall = Object.keys(idx).filter((t) => idx[t] === 'SP_MALL').slice(0, 6);
+    dung(cuaMall.length === 6, 'cần 6 tên hàng của Shopee mall để dựng ca này');
+    const moiHan = ['hang moi chua tung ban 1', 'hang moi chua tung ban 2', 'hang moi chua tung ban 3', 'hang moi chua tung ban 4'];
+    moiHan.forEach((t) => dung(!idx[lop.Utils.chuanHoaChuoi(t)], 'tên "' + t + '" lẽ ra không có trong Mapping'));
+    const fileGianMoi = { maGianHang: 'SP_GIAN_MOI', tenFile: 'gian_moi.xlsx', tenListing: cuaMall.concat(moiHan) };
+
+    const kq = lop.MapListing.soatThaNhamGian([fileGianMoi], bangMap, cfg);
+    bang(kq.chan.length, 0, 'gian mới có 6/10 tên trùng gian cũ (60%) KHÔNG được chặn');
+
+    // ĐỐI CHỨNG ÂM: dựng lại đúng khuyết tật — mẫu số là số tên KHỚP chỉ mục — thì phải chặn.
+    const khop = fileGianMoi.tenListing.filter((t) => idx[lop.Utils.chuanHoaChuoi(t)]).length;
+    const soKhac = fileGianMoi.tenListing.filter((t) => idx[lop.Utils.chuanHoaChuoi(t)] === 'SP_MALL').length;
+    bang(soKhac / khop >= 0.8, true, 'đối chứng âm: mẫu số cũ phải cho ra ≥ 80% — nếu không, ca này không dựng đúng lỗi');
+
+    // Và chiều dương: bỏ 4 tên mới đi (file toàn hàng gian khác, đủ 5 tên) thì PHẢI chặn.
+    const toanKhac = Object.keys(idx).filter((t) => idx[t] === 'SP_MALL').slice(0, 8);
+    const kq2 = lop.MapListing.soatThaNhamGian([{ maGianHang: 'SP_IMPORT', tenFile: 'toan_khac.xlsx', tenListing: toanKhac }], bangMap, cfg);
+    bang(kq2.chan.length, 1, 'file toàn tên hàng của gian khác vẫn phải bị chặn');
+    return 'gian mới 6/10 tên trùng: không chặn · mẫu số cũ ra ' + soKhac + '/' + khop + ' (sẽ chặn oan) · file toàn hàng gian khác: vẫn chặn';
+  });
+
+  await test('T-GH-11', 'File quá ít tên hàng mà giống gian khác → CẢNH BÁO và VẪN GHI, không im lặng', () => {
+    // Đính chính báo cáo Đợt 1: `importmart_tháng 6.xlsx` chỉ có 4 tên hàng KHÁC NHAU (4/4 khớp Mapping),
+    // dưới ngưỡng 5. Thả nhầm sang gian khác thì tool CẢNH BÁO rồi ghi tiếp — không phải "im lặng".
+    const f = doc.find((x) => x.tenFile === 'importmart_tháng 6.xlsx');
+    const khacNhau = new Set(f.tenListing.map((t) => lop.Utils.chuanHoaChuoi(t)).filter(Boolean)).size;
+    bang(khacNhau, 4, 'importmart_tháng 6.xlsx có bao nhiêu tên hàng khác nhau');
+    const kq = lop.MapListing.soatThaNhamGian([Object.assign({}, f, { maGianHang: 'SP_MALL' })], bangMap, cfg);
+    bang(kq.chan.length, 0, 'dưới ngưỡng thì không chặn');
+    bang(kq.canhBao.length, 1, 'nhưng PHẢI có đúng một câu cảnh báo');
+    dung(/VẪN GHI/.test(kq.canhBao[0]), 'câu cảnh báo phải nói rõ vẫn ghi: ' + kq.canhBao[0]);
+    // Đối chứng âm: cùng file ở ĐÚNG gian thì không được kêu.
+    const dung2 = lop.MapListing.soatThaNhamGian([f], bangMap, cfg);
+    bang(dung2.canhBao.length + dung2.chan.length, 0, 'đúng gian thì không được kêu gì');
+    return '4 tên khác nhau → thả nhầm: cảnh báo + vẫn ghi · đúng gian: im lặng';
+  });
+
+  await test('T-GH-12', 'Hàng BÁN CHUNG nhiều gian không pha loãng tỷ lệ: Tmart tháng 7 thả nhầm vẫn bị chặn', () => {
+    // Đo 13/9: Tmart tháng 7 có 25 tên khác nhau = 19 tên chỉ của Shopee mall + 6 tên bán chung nhiều gian,
+    // 0 tên vắng mặt. Chia cho cả 25 thì ra 76% và vụ 07/9 dựng trên tháng này lọt qua im lặng.
+    const f = doc.find((x) => x.tenFile === 'Tmart_tháng 7.xlsx');
+    const kq = lop.MapListing.soatThaNhamGian([Object.assign({}, f, { maGianHang: 'SP_IMPORT' })], bangMap, cfg);
+    bang(kq.chan.length, 1, 'Tmart tháng 7 thả vào Importmart phải bị chặn');
+    const x = kq.chan[0];
+
+    // ĐỐI CHỨNG ÂM: dựng lại mẫu số "mọi tên trong file" (tính cả hàng bán chung) → phải tụt dưới 80%.
+    const tatCa = new Set(f.tenListing.map((t) => lop.Utils.chuanHoaChuoi(t)).filter(Boolean)).size;
+    dung(x.soKhac / tatCa < 0.8, 'đối chứng âm: chia cho mọi tên (' + x.soKhac + '/' + tatCa + ') phải dưới 80%, ' +
+      'nếu không ca này không chứng minh được gì');
+    return 'mẫu số đúng: ' + x.soKhac + '/' + x.tong + ' → chặn · mẫu số "mọi tên": ' + x.soKhac + '/' + tatCa +
+      ' = ' + Math.round(x.soKhac / tatCa * 100) + '% → sẽ lọt';
   });
 
   // ================================================================ 2. VỎ GOOGLE THẬT SỰ GỌI LUẬT

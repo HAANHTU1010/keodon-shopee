@@ -12,7 +12,8 @@
  * tự điền — mà điền tay thì có máy điền sai, có máy điền nhầm dòng, và không ai kiểm được. Nay gói mang
  * SẴN cấu hình đầy đủ lấy từ máy chủ dự án: `web_app_url`, `chuoi_bi_mat`, `link_thang` (40 kỳ) và
  * `cap_nhat`. Đổi lại, GÓI TRỞ THÀNH THỨ PHẢI GIỮ: ai có gói là ghi được vào sổ tiền. Gói chỉ đi kênh
- * nội bộ, và `HUONG_DAN_1_TRANG` nói thẳng điều đó ngay dòng đầu.
+ * nội bộ, và `HUONG_DAN_1_TRANG` nói thẳng điều đó ở khối cảnh báo trên cùng — `kiemGoi()` soát câu đó
+ * có mặt thật (YC-40.3: bản 2.5.0 ghi dòng này mà hướng dẫn thì chưa có câu nào như vậy).
  *
  * KHO GITHUB VẪN KHÔNG CHỨA GÌ: `bat/CAU_HINH_VAN_HANH.mau.json` để rỗng như cũ, và INV-7 trong
  * `test-bat-bien.js` quét cả kho mỗi lượt chạy test.
@@ -70,6 +71,43 @@ const HAI_DONG_BI_MAT = ['web_app_url', 'chuoi_bi_mat'];
  * doanh thu thật; hai file này là ngoại lệ DUY NHẤT, và phải kê đích danh chứ không nới luật theo đuôi.
  */
 const TRANG_HUONG_DAN = ['HUONG_DAN_1_TRANG.md', 'HUONG_DAN_1_TRANG.txt'];
+
+/**
+ * Câu cảnh báo bắt buộc có trong hướng dẫn (YC-28 điểm 4, YC-32). So theo bản bỏ dấu, không phân biệt hoa
+ * thường, để đổi cách in đậm hay viết hoa không làm phép soát mù đi.
+ */
+const CAU_CANH_BAO_GOI = 'goi nay chua khoa ghi vao google sheet: khong dang cong khai, khong gui cho nguoi ngoai';
+
+function boDau(x) {
+  return String(x).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
+}
+
+/**
+ * Sinh bản `.txt` (mở bằng Notepad) từ bản `.md`. Hai bản PHẢI đi cùng nhau: trước YC-40.3 bản `.txt` do
+ * người chuyển tay nên có ngày lệch bản `.md` mà không ai biết. Nay `.txt` là thứ SINH RA, và DG-11 bắt
+ * mọi khác biệt giữa `.txt` trên đĩa với `mdSangTxt(.md)`.
+ *
+ * Bỏ: dấu `#` tiêu đề, `**`, dấu backtick, rào khối mã, dòng gạch ngang của bảng, cú pháp link. Bảng thành
+ * các cột cách nhau bằng khoảng trắng. Thêm BOM và CRLF — thiếu BOM thì Notepad bản cũ mở ra ký tự rác.
+ */
+function mdSangTxt(md) {
+  const ra = [];
+  for (const dong of String(md).replace(/\r\n/g, '\n').split('\n')) {
+    let d = dong;
+    if (/^```/.test(d)) continue;                                   // rào khối mã: giữ ruột, bỏ rào
+    if (/^\s*\|[\s|:-]+\|\s*$/.test(d)) continue;                  // |---|---| của bảng
+    if (/^\s*\|.*\|\s*$/.test(d)) {
+      d = d.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((o) => o.trim()).join('   ·   ');
+      d = '   ' + d;
+    }
+    d = d.replace(/^#{1,6}\s+/, '')
+      .replace(/\*\*/g, '')
+      .replace(/`/g, '')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1');
+    ra.push(d);
+  }
+  return '\uFEFF' + ra.join('\r\n');
+}
 
 /** C-5: file giữ chỗ trong từng thư mục thả — không có nó thì giải nén xong mất luôn thư mục rỗng. */
 const TEN_GIU_CHO = '.keep';
@@ -212,10 +250,10 @@ function dungGoi(dich, nodePortable) {
     fs.copyFileSync(tu, path.join(dich, t));
   }
 
-  // --- hai file hướng dẫn, qua DANH SÁCH TRẮNG (C-3) ---
+  // --- hai file hướng dẫn, qua DANH SÁCH TRẮNG (C-3), lấy từ bat/ (bản có phiên bản) ---
   for (const t of TRANG_HUONG_DAN) {
-    const tu = path.join(NGUON, TEN_CAU_HINH, t);
-    if (!fs.existsSync(tu)) { canhBao.push('thiếu ' + t + ' trong ' + path.join(NGUON, TEN_CAU_HINH)); continue; }
+    const tu = path.join(NGUON_NUT, t);
+    if (!fs.existsSync(tu)) { canhBao.push('thiếu ' + t + ' trong ' + NGUON_NUT); continue; }
     fs.copyFileSync(tu, path.join(thuMucCauHinh, t));
   }
 
@@ -259,7 +297,7 @@ function dungGoi(dich, nodePortable) {
  * chính nó (Windows khóa file .bat đang chạy). Bản thứ tư nằm đó để so và nhắc.
  */
 const THU_MUC_BAT_KHO = path.join(__dirname, '..', 'bat');
-const KEM_THEO_BAT = ['CAU_HINH_VAN_HANH.mau.json'];
+const KEM_THEO_BAT = ['CAU_HINH_VAN_HANH.mau.json'].concat(TRANG_HUONG_DAN);
 
 function dsFileBat() {
   return BON_NUT.map((t) => ({ ten: t, tu: path.join(NGUON, t) }))
@@ -405,9 +443,23 @@ function kiemGoi(dich) {
     }
   }
 
-  // 5. C-3: đủ hai file hướng dẫn, đúng chỗ
+  // 5. C-3: đủ hai file hướng dẫn, đúng chỗ — và nội dung phải đúng với gói "giải nén là chạy"
   for (const t of TRANG_HUONG_DAN) {
-    if (!fs.existsSync(path.join(dich, TEN_CAU_HINH, t))) pham.push('thiếu ' + TEN_CAU_HINH + '/' + t);
+    const tep = path.join(dich, TEN_CAU_HINH, t);
+    if (!fs.existsSync(tep)) { pham.push('thiếu ' + TEN_CAU_HINH + '/' + t); continue; }
+    const nd = doc(tep);
+    // YC-40.3: câu cảnh báo "gói chứa khóa" phải có thật trong hướng dẫn user đọc.
+    if (boDau(nd).replace(/[*`>]/g, '').replace(/\s+/g, ' ').indexOf(CAU_CANH_BAO_GOI) < 0) {
+      pham.push(t + ' thiếu câu cảnh báo "gói này chứa khóa ghi vào Google Sheet…" (YC-28 điểm 4)');
+    }
+    // Hướng dẫn không được bảo user mở một file không có trong gói (bản 2.5.0 trỏ BAT_GOOGLE_SHEET.md).
+    for (const m of nd.matchAll(/\b([A-Za-z0-9_]+\.md)\b/g)) {
+      if (TRANG_HUONG_DAN.indexOf(m[1]) < 0) pham.push(t + ' nhắc file "' + m[1] + '" không có trong gói');
+    }
+    // Hướng dẫn không được còn câu của thời "ép rỗng" (D-44 đã bỏ việc bắt user điền tay).
+    if (/dien hai dong|dung o buoc 6/.test(boDau(nd))) {
+      pham.push(t + ' còn hướng dẫn user tự điền cấu hình — trái D-44 "giải nén là chạy"');
+    }
   }
 
   // 6. cấu hình thật KHÔNG được rò sang file khác trong gói
@@ -554,7 +606,7 @@ function inKetQua(kq, pham) {
   (kq.canhBao || []).forEach((c) => console.log('\nCHÚ Ý: ' + c));
 }
 
-module.exports = { dungGoi, kiemGoi, dongGoiZip, nenZip, dongBoVanHanh, kiemDongBoBat,
+module.exports = { dungGoi, kiemGoi, dongGoiZip, nenZip, dongBoVanHanh, kiemDongBoBat, mdSangTxt, CAU_CANH_BAO_GOI,
   THU_MUC_BAT_KHO, THU_MUC_BAN_GIAO, NGUON_NUT, dsFileBat, TRANG_HUONG_DAN, TEN_GIU_CHO,
   TEN_NODE_PORTABLE, LOP_NGOAI_NODE_PORTABLE, trongCayNodePortable, BON_NUT, TEN_GOI, TEN_CAU_HINH,
   TEN_NHAT_KY, TEN_THA, KHOA_CHI_CHO_EXCEL, HAI_DONG_BI_MAT };

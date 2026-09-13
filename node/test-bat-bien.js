@@ -197,9 +197,19 @@ test('INV-10', 'Web App KHÔNG đụng sheet `Thông tin shop ` — sheet đó c
   const con = CAM.filter((t) => maNgoaiHamLoi.indexOf(t) >= 0);
   phai(con.length === 0, 'còn mã của cơ chế bảng link cũ (ngoài hamLoiCoMat_): ' + con.join(', '));
   // Chiều ngược: `hamLoiCoMat_` PHẢI còn nhắc chúng, nếu không thì bản cũ trên Google đi lọt không ai biết.
+  //
+  // YC-40.2: bản 2.5.0 của phép này ÉP `hamLoiCoMat_` phải xếp `biMatDung_` và `caiDat` vào danh sách
+  // "đã bỏ" — tức bài test cố định đúng cái lỗi. Hai hàm đó là mã hiện hành (YC-28), nên nay chúng phải
+  // nằm ở chiều NGƯỢC LẠI: được `xet(...)` như hàm phải có, và tuyệt đối không nằm trong `camMaVanCo`.
   const thanHL = (iHL >= 0 && jHL > iHL) ? s.slice(iHL, jHL) : '';
-  ['moNeo_', 'fileCuaThang_', 'biMatDung_', 'caiDat'].forEach((t) => {
-    phai(thanHL.indexOf(t) >= 0, 'hamLoiCoMat_ phải canh hàm đã bỏ "' + t + '" để bắt bản Google cũ');
+  ['moNeo_', 'fileCuaThang_', 'capNhatMoNeo_', 'bangLinkThang_'].forEach((t) => {
+    phai(new RegExp("typeof " + t + " === 'function'\\) camMaVanCo\\.push").test(thanHL),
+      'hamLoiCoMat_ phải canh hàm đã bỏ "' + t + '" để bắt bản Google cũ');
+  });
+  ['biMatDung_', 'caiDat', 'bam256_'].forEach((t) => {
+    phai(!new RegExp("typeof " + t + " === 'function'\\) camMaVanCo").test(thanHL),
+      'hamLoiCoMat_ xếp nhầm hàm HIỆN HÀNH "' + t + '" vào danh sách đã bỏ (YC-40.2)');
+    phai(thanHL.indexOf("xet('" + t + "'") >= 0, 'hamLoiCoMat_ phải canh "' + t + '" như hàm phải có');
   });
 
   // 4. Chiều ngược lại: phải có đường MỚI, nếu không thì "không đụng sheet nào" là do mã rỗng chứ không

@@ -392,8 +392,8 @@ async function chay() {
 
     await test('T-WA-14 LỖI PHÍA APPS SCRIPT (mã 500) → nêu mã lỗi VÀ việc người vận hành phải làm', async () => {
       // Vì sao bài này tồn tại: 500 là lỗi bên Google, người vận hành KHÔNG sửa được bằng cách gõ lại
-      // cấu hình. Câu báo phải nói thẳng "chạy lại sau / xem nhật ký Apps Script", nếu không thì nhân
-      // viên sẽ đi sửa lung tung ba thứ khác trước khi hỏi người phụ trách.
+      // cấu hình. Câu báo phải nói thẳng "chạy lại sau / xem nhật ký Apps Script", nếu không thì user
+      // sẽ đi sửa lung tung ba thứ khác trước khi hỏi người phụ trách.
       await ban('ma500', (sim) => sim.datLoi({ ma500: true }));
       const c = cau.ma500;
       dung(/500/.test(c), 'không nêu mã lỗi HTTP: ' + c);

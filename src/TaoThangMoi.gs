@@ -180,7 +180,8 @@ var TaoThangMoi = (function () {
    * Ô "có dữ liệu" = ô KHÔNG PHẢI công thức và có giá trị.
    *
    * Triệu chứng đang chống: vỏ file tháng mới do chủ dự án nhân bản **vẫn còn công thức** —
-   * 4 ARRAYFORMULA ở `E4`,`F4`,`M4`,`N4` và `L4` từng dòng. Coi "ô có công thức" là "ô có dữ liệu"
+   * công thức TỪNG DÒNG ở E, F, L, M, N (bọc `ARRAY_CONSTRAIN`, KHÔNG phải ARRAYFORMULA một ô), kéo sẵn
+   * tới dòng 2003 theo D-57. Coi "ô có công thức" là "ô có dữ liệu"
    * thì mọi vỏ file đều bị chấm là "đã dùng dở" và tool KHÔNG BAO GIỜ chịu khởi tạo file nào.
    * Ngược lại, đơn user gõ tay luôn là GIÁ TRỊ, nên luật này vẫn bắt được file đã dùng dở.
    */
@@ -924,4 +925,4 @@ var TaoThangMoi = (function () {
   };
 })();
 
-var VAN_TAY_TAOTHANGMOI = 'f9013fb6';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_TAOTHANGMOI = 'cd116df1';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

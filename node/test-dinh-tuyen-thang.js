@@ -664,7 +664,10 @@ console.log('--- Hàng rào tầng 2: cấu hình trỏ nhầm vào cột công 
     ['T-DT-36  keyin.cot_note trỏ vào M — không nằm trong KEYIN_COT, tầng 2 là cửa duy nhất',
       { cot_note: 'M', cot_cong_thuc: 'L' }, 'keyin.cot_note'],
     ['T-DT-37  keyin.cot_nguon_don trỏ vào N — khóa TỪNG LỌT CỬA trước 12/9 (C-6.3)',
-      { cot_nguon_don: 'N', cot_cong_thuc: 'L' }, 'keyin.cot_nguon_don']
+      { cot_nguon_don: 'N', cot_cong_thuc: 'L' }, 'keyin.cot_nguon_don'],
+    // YC-40.5(e): cùng khóa đó trỏ vào M. Nằm trong CA nên đối chứng âm T-DT-38 tự phủ luôn ca này.
+    ['T-DT-37b keyin.cot_nguon_don trỏ vào M — cùng khóa, cột Mã hàng (YC-33 điểm 5)',
+      { cot_nguon_don: 'M', cot_cong_thuc: 'L' }, 'keyin.cot_nguon_don']
   ];
 
   /**
@@ -722,6 +725,66 @@ console.log('--- Hàng rào tầng 2: cấu hình trỏ nhầm vào cột công 
     const g3 = nap();
     dung(g3.Config.KEYIN_COT.indexOf('cot_nguon_don') >= 0, 'KEYIN_COT phải có cot_nguon_don');
     bang(g3.Config.KEYIN_COT.length, 10, 'KEYIN_COT phải đủ 10 khóa');
+  });
+}
+
+// ==================================================================== 7b. YC-40.4
+
+console.log('--- YC-40.4: tháng theo giờ Việt Nam · caiDat gỡ thuộc tính mỏ neo cũ ---');
+{
+  const { spawnSync } = require('child_process');
+  const THOI_DIEM_BIEN = '2026-09-30T18:30:00Z';     // = 01:30 sáng 01/10/2026 giờ Việt Nam
+
+  /** Chạy một đoạn JS trong tiến trình Node RIÊNG đặt múi giờ máy là UTC. */
+  function chayTrongMayUTC(ma) {
+    const r = spawnSync(process.execPath, ['-e', ma], {
+      cwd: path.join(__dirname, '..'), encoding: 'utf8', env: Object.assign({}, process.env, { TZ: 'UTC' })
+    });
+    if (r.status !== 0) throw new Error('tiến trình con hỏng: ' + (r.stderr || r.stdout));
+    return String(r.stdout).trim();
+  }
+
+  test('T-DT-44 máy đặt múi giờ UTC, 01:30 sáng ngày 1 giờ VN → vẫn ra THÁNG MỚI (không ghi lùi)', () => {
+    const ra = chayTrongMayUTC(
+      "const G=require('./node/chay-google-sheet');const W=require('./node/gsheet-web-app');" +
+      "const t=new Date('" + THOI_DIEM_BIEN + "');" +
+      "console.log([new Date().getTimezoneOffset(), G.thangCua(t), G.ngayCua(t), W.thangHienTaiMay(t)].join('|'))");
+    const [lech, thang, ngay, thang2] = ra.split('|');
+    bang(lech, '0', 'tiến trình con phải thật sự chạy ở múi giờ UTC, nếu không bài này không chứng minh gì');
+    bang(thang, '2026-10', 'thangCua');
+    bang(ngay, '2026-10-01', 'ngayCua');
+    bang(thang2, '2026-10', 'thangHienTaiMay');
+
+    // ĐỐI CHỨNG ÂM: cách tính cũ theo giờ máy, cùng thời điểm, cùng máy UTC → phải ra tháng CŨ.
+    const cu = chayTrongMayUTC("const d=new Date('" + THOI_DIEM_BIEN + "');" +
+      "console.log(d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2))");
+    bang(cu, '2026-09', 'đối chứng âm: cách tính theo giờ máy phải ra tháng cũ trên máy UTC');
+    return 'máy UTC lúc ' + THOI_DIEM_BIEN + ': tool ra 2026-10 · cách cũ ra ' + cu + ' (đúng cái lỗi YC-40.4)';
+  });
+
+  test('T-DT-45 caiDat() GỠ HẲN Script Property mỏ neo cũ KEODON_MO_NEO_ID (không chỉ báo)', () => {
+    const gl = require('./gia-lap-web-app');
+    const sim = gl.taoGiaLap({});
+    sim.thuocTinh['KEODON_MO_NEO_ID'] = 'ID_MO_NEO_CU_GIA_LAP_0001';
+    const tin = sim.vo.caiDat();
+    const conSot = 'KEODON_MO_NEO_ID' in sim.thuocTinh;
+    sim.thaoGo();
+    bang(conSot, false, 'thuộc tính mỏ neo cũ phải bị gỡ');
+    dung(/Đã gỡ thuộc tính cũ KEODON_MO_NEO_ID/.test(tin), 'phải nói đã gỡ: ' + tin);
+    dung(tin.indexOf('ID_MO_NEO_CU_GIA_LAP_0001') < 0, 'câu tình trạng không được in giá trị ID');
+
+    // ĐỐI CHỨNG ÂM: bỏ lệnh gỡ khỏi mã → thuộc tính còn nguyên, phép chấm phải thấy.
+    const CU = 'p.deleteProperty(TT_MO_NEO_CU);';
+    const sim2 = gl.taoGiaLap({ suaNguon: (src) => {
+      if (src.split(CU).length !== 2) throw new Error('ĐỐI CHỨNG ÂM HỎNG: không tìm thấy đúng 1 lệnh gỡ');
+      return src.split(CU).join('');
+    } });
+    sim2.thuocTinh['KEODON_MO_NEO_ID'] = 'ID_MO_NEO_CU_GIA_LAP_0001';
+    sim2.vo.caiDat();
+    const conSot2 = 'KEODON_MO_NEO_ID' in sim2.thuocTinh;
+    sim2.thaoGo();
+    bang(conSot2, true, 'đối chứng âm: bản không gỡ phải để thuộc tính còn nguyên');
+    return 'gỡ xong, câu tình trạng không lộ ID · đối chứng âm: bỏ lệnh gỡ → thuộc tính còn nguyên';
   });
 }
 

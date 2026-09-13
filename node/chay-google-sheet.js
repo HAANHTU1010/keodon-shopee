@@ -38,20 +38,23 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { WebAppGoogleSheet, kiemPhienBan, chuanDuong, PHIEN_BAN } = require('./gsheet-web-app');
+const { WebAppGoogleSheet, kiemPhienBan, chuanDuong, PHIEN_BAN, phanNgayVN } = require('./gsheet-web-app');
 
 const FILE_VO_GOOGLE = path.join(__dirname, '..', 'src', 'ShellAppsScript.gs');
 
-/** 'yyyy-MM' của một mốc thời gian, theo giờ máy đang chạy. */
+/**
+ * 'yyyy-MM' của một mốc thời gian THEO GIỜ VIỆT NAM (YC-40.4) — không theo múi giờ máy đang đặt.
+ * Xem `phanNgayVN` trong gsheet-web-app.js để biết vì sao phải ép.
+ */
 function thangCua(thoiDiem) {
-  const d = thoiDiem || new Date();
-  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+  const x = phanNgayVN(thoiDiem);
+  return x.nam + '-' + ('0' + x.thang).slice(-2);
 }
 
-/** 'yyyy-MM-dd' của một mốc thời gian. */
+/** 'yyyy-MM-dd' của một mốc thời gian, theo giờ Việt Nam. */
 function ngayCua(thoiDiem) {
-  const d = thoiDiem || new Date();
-  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  const x = phanNgayVN(thoiDiem);
+  return x.nam + '-' + ('0' + x.thang).slice(-2) + '-' + ('0' + x.ngay).slice(-2);
 }
 
 // ==================================================================== nạp vỏ Google vào Node

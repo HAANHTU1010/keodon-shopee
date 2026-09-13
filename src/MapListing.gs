@@ -385,8 +385,22 @@ var MapListing = (function () {
   // không khớp gì, thì đó là thả nhầm.
   //
   // HAI ĐIỀU KIỆN, PHẢI ĐỦ CẢ HAI (YC-36):
-  //   · ≥ 80% tên hàng khớp được thuộc về MỘT gian khác
-  //   · < 20% tên hàng khớp được thuộc về gian đang thả
+  //   · ≥ 80% TÊN HÀNG TRONG FILE thuộc về MỘT gian khác
+  //   · < 20% TÊN HÀNG TRONG FILE thuộc về gian đang thả
+  //
+  // MẪU SỐ (YC-40.6) = số tên hàng khác nhau TRONG FILE, TRỪ những tên Mapping đã khai ở NHIỀU gian.
+  //
+  // Bản 2.5.0 chia cho số tên khớp được chỉ mục, và cái sai đó lộ ra ở một gian MỚI MỞ: Mapping chưa có
+  // dòng nào của gian đó, file có 10 tên hàng mà 6 tên trùng hàng gian cũ → 6/6 = 100% "thuộc gian khác",
+  // 0% "của mình" → CHẶN OAN. Tệ hơn, nó không tự thoát được: dòng Mapping mới chỉ được nối SAU bước kiểm
+  // này, nên bấm lại bao nhiêu lần cũng bị chặn. Tên VẮNG MẶT khỏi Mapping phải nằm trong mẫu số: ca đó
+  // thành 6/10 = 60%, không chặn.
+  //
+  // Nhưng tên khai ở NHIỀU gian (hàng bán chung) thì KHÔNG được nằm trong mẫu số. Đo 13/9 trên ba file
+  // Tmart thật: toàn bộ tên không khớp chỉ mục đều là hàng bán chung, 0 tên vắng mặt. Chia cho tổng tên
+  // trong file thì hàng bán chung pha loãng tỷ lệ — Tmart tháng 7 tụt từ 19/19 xuống 19/25 = 76% và vụ
+  // thả nhầm 07/9 dựng lại trên tháng đó LỌT QUA IM LẶNG. Tên bán chung không cho bằng chứng theo phía nào,
+  // nên bỏ ra khỏi cả tử lẫn mẫu.
   // Điều kiện thứ hai là thứ cứu những gian bán hàng chung nhau: hai gian cùng bán 30 mã giống nhau thì
   // điều kiện một có thể đúng, nhưng điều kiện hai sẽ sai, và tool không chặn oan.
   //
@@ -406,6 +420,12 @@ var MapListing = (function () {
    * BỎ — không kết luận được gì từ nó. Không dòng nào khai gian hàng → trả null, vỏ bỏ qua phép kiểm.
    */
   function chiMucGianTheoListing(bangMapping, cfg) {
+    var pl = phanLoaiTenMapping_(bangMapping, cfg);
+    return pl ? pl.idx : null;
+  }
+
+  /** { idx: tên → gian (tên chỉ khai ở MỘT gian), nhieuGian: tên → true (khai ở ≥ 2 gian) } hoặc null. */
+  function phanLoaiTenMapping_(bangMapping, cfg) {
     if (!bangMapping || !bangMapping.length) return null;
     var head = (bangMapping[0] || []).map(function (h) { return tenCotChuan(h); });
     var iTen = head.indexOf('Tên trên Shopee'), iGian = head.indexOf('Gian hàng');
@@ -419,12 +439,12 @@ var MapListing = (function () {
       if (!gianCua[ten]) gianCua[ten] = {};
       gianCua[ten][g] = 1;
     }
-    var idx = {}, co = 0;
+    var idx = {}, nhieuGian = {}, co = 0;
     Object.keys(gianCua).forEach(function (t) {
       var g = Object.keys(gianCua[t]);
-      if (g.length === 1) { idx[t] = g[0]; co++; }
+      if (g.length === 1) { idx[t] = g[0]; co++; } else nhieuGian[t] = true;
     });
-    return co ? idx : null;
+    return co ? { idx: idx, nhieuGian: nhieuGian } : null;
   }
 
   /**
@@ -438,14 +458,19 @@ var MapListing = (function () {
   function soatThaNhamGian(cacFile, bangMapping, cfg) {
     var ra = { chan: [], canhBao: [] };
     if (cfg && cfg.chung && cfg.chung.canh_bao_gian_hang_la === false) return ra;   // cố ý tắt
-    var idx = chiMucGianTheoListing(bangMapping, cfg);
-    if (!idx) return ra;                       // Mapping chưa khai gian nào → không đoán bừa
+    var pl = phanLoaiTenMapping_(bangMapping, cfg);
+    if (!pl) return ra;                        // Mapping chưa khai gian nào → không đoán bừa
+    var idx = pl.idx;
     (cacFile || []).forEach(function (x) {
-      var dem = {}, daXet = {}, khop = 0;
+      var dem = {}, daXet = {}, khop = 0, tong = 0;
       (x.tenListing || []).forEach(function (t) {
         var k = Utils.chuanHoaChuoi(t);
-        if (!k || daXet[k] || !idx[k]) return;
-        daXet[k] = 1; khop++;
+        if (!k || daXet[k]) return;
+        daXet[k] = 1;
+        if (pl.nhieuGian[k]) return;           // hàng bán chung: không bằng chứng phía nào → ngoài mẫu số
+        tong++;                                // mẫu số: tên thuộc một gian + tên VẮNG MẶT khỏi Mapping
+        if (!idx[k]) return;
+        khop++;
         dem[idx[k]] = (dem[idx[k]] || 0) + 1;
       });
       var cuaMinh = dem[x.maGianHang] || 0;
@@ -454,28 +479,28 @@ var MapListing = (function () {
         if (g !== x.maGianHang && (khac === null || dem[g] > dem[khac])) khac = g;
       });
       if (!khac) return;                       // không gian nào khác có mặt → không có gì để nói
-      if (khop < D04_TOI_THIEU) {
-        // Có dấu hiệu nhưng chưa đủ số để kết luận. Nói một câu rồi ghi tiếp.
+      if (tong < D04_TOI_THIEU) {
+        // File quá ít tên hàng để kết luận. Có dấu hiệu thì nói một câu rồi GHI TIẾP — không im lặng.
         if (dem[khac] > cuaMinh) {
-          ra.canhBao.push('File "' + x.tenFile + '" chỉ khớp được ' + khop + ' tên hàng trong Mapping ' +
+          ra.canhBao.push('File "' + x.tenFile + '" chỉ có ' + tong + ' tên hàng khác nhau ' +
             '(cần ' + D04_TOI_THIEU + ' để kết luận), trong đó ' + dem[khac] + ' tên thuộc gian ' +
             tenGian_(cfg, khac) + ' chứ không phải ' + tenGian_(cfg, x.maGianHang) +
             '. Tool VẪN GHI — kiểm lại xem file có đúng thư mục không.');
         }
         return;
       }
-      var tyLeKhac = dem[khac] / khop;
-      var tyLeMinh = cuaMinh / khop;
+      var tyLeKhac = dem[khac] / tong;
+      var tyLeMinh = cuaMinh / tong;
       if (tyLeKhac >= D04_TY_LE_KHAC && tyLeMinh < D04_TY_LE_MINH) {
         ra.chan.push({
           tenFile: x.tenFile, gianThat: khac, gianThuMuc: x.maGianHang,
-          khop: khop, soKhac: dem[khac], soMinh: cuaMinh,
+          tong: tong, khop: khop, soKhac: dem[khac], soMinh: cuaMinh,
           cau: cauThaNhamGian(cfg, khac, x.maGianHang)
         });
       } else if (tyLeKhac >= D04_TY_LE_KHAC) {
         // Đủ áp đảo nhưng gian đang thả cũng khớp kha khá → hai gian bán chung hàng. Không chặn.
-        ra.canhBao.push('File "' + x.tenFile + '": ' + dem[khac] + '/' + khop + ' tên hàng cũng có ở gian ' +
-          tenGian_(cfg, khac) + ', nhưng ' + cuaMinh + '/' + khop + ' có ở gian ' +
+        ra.canhBao.push('File "' + x.tenFile + '": ' + dem[khac] + '/' + tong + ' tên hàng cũng có ở gian ' +
+          tenGian_(cfg, khac) + ', nhưng ' + cuaMinh + '/' + tong + ' có ở gian ' +
           tenGian_(cfg, x.maGianHang) + ' nên tool không chặn (hai gian bán chung hàng).');
       }
     });
@@ -520,4 +545,4 @@ var MapListing = (function () {
   };
 })();
 
-var VAN_TAY_MAPLISTING = 'f2bc43a1';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_MAPLISTING = '40a20cc6';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

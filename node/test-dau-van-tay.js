@@ -152,6 +152,37 @@ test('DV-07', 'Bản KHỚP thì IM LẶNG — không kêu oan, kể cả trên 
   return 'khớp → 0 câu · rỗng → 0 câu · phản hồi lỗi nhưng khớp bản dựng → 0 câu';
 });
 
+test('DV-09', 'ping THẬT trên mã hiện hành: không thiếu hàm lõi, KHÔNG báo "còn hàm đã bỏ" (YC-40.2)', () => {
+  // Bài này chạy `ping` qua chính `ShellAppsScript.gs` (giả lập dịch vụ Google), không đọc mã bằng mắt.
+  // Bản 2.5.0 lọt lỗi vì DV-06 chỉ thử `soDauVanTay` với phản hồi tự dựng tay, còn DV-08 chỉ soi chuỗi —
+  // không bài nào gọi `hamLoiCoMat_` thật để xem nó trả gì.
+  const gl = require('./gia-lap-web-app');
+  const goiPing = (sim) => JSON.parse(sim.vo.doPost({
+    postData: { contents: JSON.stringify({ token: sim.biMat, hanhDong: 'ping' }) }
+  }).getContent());
+
+  const sim = gl.taoGiaLap({});
+  const kq = goiPing(sim);
+  sim.thaoGo();
+  dung(kq.ok, 'ping phải chạy: ' + JSON.stringify(kq).slice(0, 120));
+  bang(JSON.stringify(kq.hamLoi.camMaVanCo), '[]', 'camMaVanCo của bản ĐÚNG');
+  bang(JSON.stringify(kq.hamLoi.thieu), '[]', 'hàm lõi thiếu của bản ĐÚNG');
+  const cau = soDauVanTay(kq).filter((c) => /ĐÃ BỎ|THIẾU|thiếu/.test(c));
+  bang(cau.length, 0, 'máy không được in câu cảnh báo nào về hàm: ' + cau.join(' | '));
+  for (const t of ['biMatDung_', 'caiDat', 'bam256_']) {
+    dung(kq.hamLoi.co.indexOf(t) >= 0, 'ping phải báo "' + t + '" là hàm đang có');
+  }
+
+  // ĐỐI CHỨNG ÂM: dán thêm một hàm của bản cũ vào mã → ping PHẢI báo nó, và máy PHẢI kêu.
+  const dc = doiChungAm('bản Google còn sót hàm mỏ neo moNeo_', () => {
+    const simCu = gl.taoGiaLap({ suaNguon: (src) => src + '\nfunction moNeo_() { return null; }\n' });
+    const kqCu = goiPing(simCu);
+    simCu.thaoGo();
+    bang(JSON.stringify(kqCu.hamLoi.camMaVanCo), '[]', 'bản cũ');
+  });
+  return kq.hamLoi.co.length + ' hàm lõi có mặt · camMaVanCo rỗng · máy im lặng · ' + dc;
+});
+
 test('DV-08', 'ShellAppsScript.gs khai đủ hằng và hàm mà máy trông đợi', () => {
   const s = fs.readFileSync(path.join(SRC, 'ShellAppsScript.gs'), 'utf8');
   for (const t of ['vanTayBanDung_', 'hamLoiCoMat_', 'BAN_DUNG']) {

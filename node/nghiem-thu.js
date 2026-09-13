@@ -55,7 +55,7 @@ function napMoc() {
   const p = path.join(ROOT, 'moc-nghiem-thu.json');
   if (!fs.existsSync(p)) {
     console.log('KHÔNG CÓ `moc-nghiem-thu.json` → in số đo được, không tự chấm đạt/lệch.');
-    console.log('  Chép `moc-nghiem-thu.mau.json` thành `moc-nghiem-thu.json` rồi điền số thật của shop.');
+    console.log('  Dựng `moc-nghiem-thu.json` theo danh sách khóa ở README.md mục 4, điền số thật của shop.');
     return null;
   }
   return JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -478,7 +478,7 @@ async function main() {
     console.log(String.fromCharCode(10) + '=> ' + soChuaCoMoc + '/' + bangKQ.length + ' chỉ tiêu CHƯA CÓ MỐC để so.');
     console.log('   Số ở cột `Bản JS` là số thật vừa đo. Chép vào `moc-nghiem-thu.json` thì lần sau tự chấm.');
   }
-  console.log(String.fromCharCode(10) + '=> ' + (soLech ? soLech + ' CHỈ TIÊU LỆCH — dừng lại, ghi NOTES_DEV.md và báo BA'
+  console.log(String.fromCharCode(10) + '=> ' + (soLech ? soLech + ' CHỈ TIÊU LỆCH — dừng lại, ghi vào BAO_CAO_DEV.md mục 4 và báo BA'
     : (soChuaCoMoc ? 'KHÔNG CHỈ TIÊU NÀO LỆCH (còn ' + soChuaCoMoc + ' chỉ tiêu chưa có mốc)' : 'TẤT CẢ CHỈ TIÊU ĐẠT')));
 }
 

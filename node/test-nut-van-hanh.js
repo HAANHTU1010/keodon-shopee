@@ -125,6 +125,73 @@ test('N-27 không nút nào còn gọi tên cũ của nút khác', () => {
   return 'bốn nút chỉ gọi nhau bằng tên hiện hành';
 });
 
+/**
+ * YC-27 / YC-40.1: cách gọi người dùng cũ (đổi thành "user" ở YC-27) không được còn trong bất cứ câu nào
+ * tool in ra, nhắn, ghi nhật ký.
+ *
+ * Vì sao phải có bài tự quét thay vì tin một lần grep: lần grep ở Đợt 1 báo 0 mà vẫn sót một chỗ, vì
+ * chữ bị NGẮT qua hai dòng chú thích: nửa đầu ở cuối một dòng, nửa sau ở đầu dòng kế. Grep theo dòng không thấy.
+ * Phép quét dưới đây bỏ dấu, gộp mọi khoảng trắng và dấu chú thích nằm giữa hai chữ, và đọc cả dạng
+ * Unicode tổ hợp (NFD) — ba cách một chuỗi có thể né grep.
+ */
+function boDau(s) {
+  return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
+}
+// Dựng biểu thức từ mảnh ghép, để chính file này không tự dính phép quét của nó.
+const RX_CHU_CU = new RegExp('nh' + 'an' + '(?:[\\s/*#;]|\\brem\\b|\\becho\\b)*' + 'vi' + 'en');
+function quetChuCu(noiDung) {
+  const t = boDau(noiDung);
+  const m = t.match(RX_CHU_CU);
+  if (!m) return null;
+  return t.slice(0, m.index).split('\n').length;       // số dòng đầu tiên dính
+}
+
+test('N-35 không file nào trong src/, node/, bat/ còn cách gọi người dùng cũ của YC-27 — kể cả bị ngắt dòng hay dạng NFD', () => {
+  const KHO = path.resolve(__dirname, '..');
+  const xau = [];
+  let soFile = 0;
+  (function di(d) {
+    for (const t of fs.readdirSync(d)) {
+      if (t === 'node_modules' || t === 'fixtures') continue;
+      const p = path.join(d, t);
+      if (fs.statSync(p).isDirectory()) { di(p); continue; }
+      if (!/\.(js|gs|bat|json|md|txt)$/i.test(t)) continue;
+      soFile++;
+      const dong = quetChuCu(fs.readFileSync(p, 'utf8'));
+      if (dong) xau.push(path.relative(KHO, p) + ':' + dong);
+    }
+  })(KHO + path.sep + 'src');
+  (function di(d) {
+    for (const t of fs.readdirSync(d)) {
+      const p = path.join(d, t);
+      if (fs.statSync(p).isDirectory()) { if (t !== 'fixtures') di(p); continue; }
+      if (!/\.(js|gs|bat|json|md|txt)$/i.test(t)) continue;
+      soFile++;
+      const dong = quetChuCu(fs.readFileSync(p, 'utf8'));
+      if (dong) xau.push(path.relative(KHO, p) + ':' + dong);
+    }
+  })(KHO + path.sep + 'node');
+  for (const t of fs.readdirSync(path.join(KHO, 'bat'))) {
+    soFile++;
+    const dong = quetChuCu(fs.readFileSync(path.join(KHO, 'bat', t), 'utf8'));
+    if (dong) xau.push('bat/' + t + ':' + dong);
+  }
+  if (xau.length) throw new Error('còn chữ cũ ở: ' + xau.join(', '));
+
+  // ĐỐI CHỨNG ÂM — bốn cách một chuỗi né được grep theo dòng, phép quét phải bắt đủ cả bốn.
+  const W = 'nh' + '\u00e2n vi' + '\u00ean';                 // dạng NFC có dấu
+  const ca = [
+    ['câu in ra có dấu', "console.log('Goi cho may " + W + "')"],
+    ['dạng Unicode tổ hợp NFD', "throw new Error('" + W.normalize('NFD') + "')"],
+    ['bị ngắt qua hai dòng chú thích', '// neu khong thi nh\u00e2n\n  // vi\u00ean se di sua'],
+    ['không dấu, viết hoa, trong echo', 'echo   Goi giao cho may ' + 'NH' + 'AN   VI' + 'EN']
+  ];
+  const mu = ca.filter(([, v]) => !quetChuCu(v)).map(([n]) => n);
+  if (mu.length) throw new Error('phép quét MÙ với: ' + mu.join(', '));
+  if (quetChuCu("console.log('Goi cho may user')")) throw new Error('phép quét bắt oan câu sạch');
+  return soFile + ' file sạch · đối chứng âm: bắt đủ 4/4 cách né grep, không bắt oan câu sạch';
+});
+
 /* ==========================================================================
  * PHẦN 2 — CÁC CỬA CHẶN, CHẠY THẬT BẰNG cmd.exe
  *

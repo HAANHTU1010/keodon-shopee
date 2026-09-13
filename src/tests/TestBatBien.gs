@@ -455,15 +455,17 @@ var TestBatBien = (function () {
    * VÌ SAO TEST NÀY TỒN TẠI: INV-3a chỉ chứng minh mã HÔM NAY không ghi nhầm. GV-v2.3 mục 2.2 yêu cầu
    * "chặn ở tầng ghi bằng cách ném lỗi, KHÔNG dựa vào người viết mã nhớ" — vì cái hỏng ở đây không phục hồi
    * được bằng Ctrl+Z và người sửa mã sáu tuần sau không đọc lại chú thích. Chỉ cần một dòng cấu hình lệch
-   * (`cot_ten_viet_tat` trỏ vào E) hay một lần sửa `ghiMotSheet_` là cả cột ARRAYFORMULA của sheet chết.
+   * (`cot_ten_viet_tat` trỏ vào E) hay một lần sửa `ghiMotSheet_` là công thức từng dòng của chủ shop bị
+   * đè bằng giá trị — im lặng, không `#REF!`, dòng đó cứ thế ra số sai.
    *
    * CÁCH KIỂM: dựng cấu hình cố ý trỏ cột tool ghi vào E (và một biến thể trỏ vào N ngay Ô ĐẦU CỘT), rồi gọi
    * hàm ghi thật. Phải NÉM LỖI ngay, chưa ghi ô nào. Kiểm tra hiện có của `Config.tao` (cột công thức trùng
    * cột ghi) KHÔNG đủ: nó bị vô hiệu chỉ bằng cách khai `cot_cong_thuc = 'L'`, đúng như bối cảnh giai đoạn 2
    * nơi E/F/M/N không còn nằm trong `cot_cong_thuc` nữa.
    *
-   * TEST NÀY ĐANG HỎNG LÀ ĐÚNG THỰC TRẠNG: hàng rào chưa tồn tại. KHÔNG được nới test cho qua —
-   * xem đề xuất cách sửa trong báo cáo (thêm hàm chặn ở đầu `ghiMotSheet_`).
+   * Hàng rào nay đã có (`kiemCotDuocGhi_` ở đầu `ghiMotSheet_`, danh sách cửa dựng từ `Config.KEYIN_COT`).
+   * Đối chứng âm của hàng rào này nằm ở `node/test-dinh-tuyen-thang.js` T-DT-38: gỡ hàng rào khỏi mã rồi
+   * chạy lại đúng các ca này — ca nào vẫn ĐẠT là phép chấm mù.
    */
   function INV3b_tangGhiPhaiNemLoi() {
     if (typeof ghiMotSheet_ !== 'function') {
@@ -483,7 +485,7 @@ var TestBatBien = (function () {
 
     // (1) cột `Tên viết tắt` bị trỏ vào E — `cot_cong_thuc = 'L'` nên phép kiểm hiện có của Config không bắt được
     var a = thuGhiVaoCot({ cot_ten_viet_tat: 'E', cot_cong_thuc: 'L' }, 'ghi cột D vào E');
-    // (2) cột `Thông tin ĐH` bị trỏ vào N, và dòng đầu tiên là Ô ĐẦU CỘT (nơi đặt ARRAYFORMULA)
+    // (2) cột `Thông tin ĐH` bị trỏ vào N, và dòng đầu tiên là Ô ĐẦU CỘT (ô công thức đầu tiên của cột)
     var b = thuGhiVaoCot({ dong_header: 1, dong_tong: 1, dong_dau: 2, cot_ma_don: 'N', cot_cong_thuc: 'L' }, 'ghi cột C vào N2 — ô đầu cột');
 
     // (3) LỖ 1 — `cot_doanh_thu` là khóa DUY NHẤT bị Config.gs:74 cố ý loại khỏi phép kiểm trùng
@@ -494,7 +496,7 @@ var TestBatBien = (function () {
 
     // (4) LỖ 2 — `cot_note` không nằm trong KEYIN_COT nên phép kiểm trùng của Config không thấy nó,
     //     và không có lời gọi kiemCotDuocGhi_ nào cho nó. Ca xấu nhất: ô tiêu đề đang trống thì
-    //     ShellAppsScript.gs:747 ghi thẳng chữ `Note` vào đúng ô đặt ARRAYFORMULA.
+    //     `ghiMotSheet_` ghi thẳng chữ `Note` vào ô công thức của chủ shop.
     var d = thuGhiVaoCot({ cot_note: 'M' }, 'ghi ghi chú vào M');
 
     // (5) LỖ 3 — không cần một khóa cột nào cả. `doCotNote_` (ShellAppsScript.gs:502-513) tự dò cột
@@ -502,11 +504,15 @@ var TestBatBien = (function () {
     //     trống là cột Note rơi về cột A, và ShellAppsScript.gs:747 ghi chữ `Note` vào dòng tổng.
     var e = thuGhiVaoCot({ dong_header: 3 }, 'cột Note tự dò rơi vào cột cấm');
 
+    // (6) YC-33 điểm 5 / YC-40.5(e) — `cot_nguon_don` là khóa từng LỌT CỬA trước 12/9 vì danh sách cửa gõ
+    //     tay 9 khóa trong khi KEYIN_COT có 10. Trỏ nó vào M (cột Mã hàng, công thức của chủ shop).
+    var f = thuGhiVaoCot({ cot_nguon_don: 'M', cot_cong_thuc: 'L' }, 'ghi nguồn đơn vào M');
+
     var chuaChan = [];
-    [a, b, c, d, e].forEach(function (x) { if (!x.loi) chuaChan.push(x.moTa + ': đã ghi ' + x.cham.length + ' vùng vào E/F/M/N mà KHÔNG ném lỗi'); });
+    [a, b, c, d, e, f].forEach(function (x) { if (!x.loi) chuaChan.push(x.moTa + ': đã ghi ' + x.cham.length + ' vùng vào E/F/M/N mà KHÔNG ném lỗi'); });
     bang(chuaChan.length, 0, 'tầng ghi chưa có hàng rào ném lỗi — ' + chuaChan.join(' | '));
 
-    return { ghiChu: 'năm lệnh ghi cố ý nhắm E/M/N (kể cả qua cot_doanh_thu, cot_note và cột Note tự dò) đều bị chặn bằng lỗi' };
+    return { ghiChu: 'sáu lệnh ghi cố ý nhắm E/M/N (kể cả qua cot_doanh_thu, cot_note, cot_nguon_don và cột Note tự dò) đều bị chặn bằng lỗi' };
   }
 
   // ================================================================== INV-4

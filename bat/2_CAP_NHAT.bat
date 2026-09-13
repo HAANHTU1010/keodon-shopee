@@ -178,7 +178,12 @@ function SoSanh($a, $b) {
 # THEM khoa con thieu tu ban mau vao file cau hinh THAT, giu nguyen moi gia tri
 # dang co. Day la rang buoc nang nhat cua nut nay: file cau hinh giu link Web App
 # va chuoi bi mat rieng cua tung may, ghi de len no la mat sach.
-# Tra ve danh sach ten khoa da them (rong = khong phai dong gi vao file).
+# NGOAI LE DUY NHAT: khoa CHU THICH (ten bat dau bang dau gach duoi `_`) thi THAY
+# bang cau cua ban mau. Khoa chu thich khong mang gia tri nao cua may, chi la loi
+# giai thich; khong thay thi may cai tu ban cu giu mai cau cu (vi du cach goi
+# nguoi dung truoc YC-27). Khoa GIA TRI thi KHONG BAO GIO bi thay.
+# Ghi FILE TAM roi doi ten: dut giua chung thi file cu con nguyen ven.
+# Tra ve danh sach ten khoa da them / da thay (rong = khong dong gi vao file).
 function GopKhoaThieu($mauTep, $thatTep) {
   $them = New-Object 'System.Collections.Generic.List[string]'
   if (-not (Test-Path -LiteralPath $thatTep)) { return $them }
@@ -192,6 +197,9 @@ function GopKhoaThieu($mauTep, $thatTep) {
       if (-not $co) {
         Add-Member -InputObject $t -MemberType NoteProperty -Name $k -Value $m.$k
         $script:themDS.Add($ten)
+      } elseif ($k.StartsWith('_') -and ($m.$k -is [string]) -and ($t.$k -ne $m.$k)) {
+        $t.$k = $m.$k
+        $script:themDS.Add($ten + ' (chu thich)')
       } elseif ($m.$k -is [PSCustomObject] -and $t.$k -is [PSCustomObject]) {
         DiSau $m.$k $t.$k $ten
       }
@@ -200,9 +208,13 @@ function GopKhoaThieu($mauTep, $thatTep) {
   $script:themDS = $them
   DiSau $mau $that ''
   if ($them.Count -gt 0) {
-    # Ghi lai bang UTF8 khong BOM: Node doc file nay.
+    # Ghi lai bang UTF8 khong BOM: Node doc file nay. Ghi file tam, doc lai kiem
+    # JSON hop le, roi moi thay file that bang File.Replace (mot buoc tren NTFS).
     $chu = ($that | ConvertTo-Json -Depth 20)
-    [IO.File]::WriteAllText($thatTep, $chu, (New-Object Text.UTF8Encoding($false)))
+    $tam = $thatTep + '.__moi'
+    [IO.File]::WriteAllText($tam, $chu, (New-Object Text.UTF8Encoding($false)))
+    $null = (Get-Content -LiteralPath $tam -Raw -Encoding UTF8) | ConvertFrom-Json
+    [IO.File]::Replace($tam, $thatTep, [NullString]::Value)
   }
   return $them
 }
@@ -509,13 +521,14 @@ try {
       }
     }
 
-    # Khoa cau hinh moi: THEM khoa con thieu, GIU NGUYEN moi gia tri dang co.
+    # Khoa cau hinh moi: THEM khoa con thieu, THAY khoa chu thich `_...`,
+    # GIU NGUYEN moi gia tri dang co.
     $mauMoi = Join-Path $thuMucBat 'CAU_HINH_VAN_HANH.mau.json'
     if (Test-Path -LiteralPath $mauMoi) {
       try {
         Copy-Item -LiteralPath $mauMoi -Destination (Join-Path $base 'CAU_HINH_VAN_HANH.mau.json') -Force
         $them = GopKhoaThieu $mauMoi $cfgTep
-        if ($them.Count -gt 0) { Bao ('Da them khoa cau hinh :  ' + ($them -join ', ')) }
+        if ($them.Count -gt 0) { Bao ('Da cap nhat cau hinh  :  ' + ($them -join ', ')) }
       } catch {
         Bao ('CHU Y: khong gop duoc khoa cau hinh moi (' + $_.Exception.Message + ').')
         Bao '       File cau hinh cua may van nguyen ven, khong bi dung toi.'

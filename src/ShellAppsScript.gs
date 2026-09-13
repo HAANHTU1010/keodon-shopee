@@ -72,6 +72,9 @@ var PHIEN_BAN = '2.5.0';
  */
 var TT_BI_MAT = 'KEODON_BI_MAT';
 
+/** Script Property của cơ chế mỏ neo đã bỏ (D-42). Chỉ còn để `caiDat()` tìm và gỡ trên dự án cũ. */
+var TT_MO_NEO_CU = 'KEODON_MO_NEO_ID';
+
 var MUI_GIO = 'Asia/Ho_Chi_Minh';
 var MAU_VANG = '#FFF2CC';
 var TOI_DA_DON_MOT_LO = 400;
@@ -82,7 +85,7 @@ var TOI_DA_DON_MOT_LO = 400;
  * Chọn 240 (4 phút) chứ không sát 360, vì sau khi vượt ngưỡng script CÒN PHẢI làm xong:
  *   · khối ghi đang dở (tới 100 đơn: setValues 8 cột + mergeVertically 6 cột + setBackgrounds cả dòng),
  *   · SpreadsheetApp.flush() — lệnh này mới là lúc Google thật sự đẩy dữ liệu đi, đo được tới hàng chục giây
- *     trên sheet nhiều công thức như file tháng (18 sheet nối nhau bằng ARRAYFORMULA),
+ *     trên sheet nhiều công thức như file tháng (19 sheet tham chiếu chéo, hàng nghìn ô công thức từng dòng),
  *   · dựng và trả phản hồi JSON.
  * 120 giây dự phòng là chỗ cho ba việc đó. Ngưỡng nhỏ hơn thì tốn thêm lượt gọi; lớn hơn thì rủi ro
  * bị Google cắt ngang giữa lúc flush — đúng ca không ai biết đã ghi tới đâu.
@@ -143,8 +146,9 @@ var VIEC_KEO_DAI_CONG_THUC = 'kéo dài công thức 4 cột E, F, M, N xuống 
  * báo tình trạng, không đổi gì.
  *
  * Không còn tham số `fileMoNeo`: từ D-42 máy gửi thẳng `spreadsheetId` trong mỗi gói, Web App không giữ
- * id file nào. Script Property cũ `KEODON_MO_NEO_ID` nếu còn sót trên dự án thật thì vô hại — không mã
- * nào đọc nó nữa; `caiDat()` báo luôn để chủ dự án xóa tay cho sạch.
+ * id file nào. Script Property cũ `KEODON_MO_NEO_ID` nếu còn sót trên dự án thật thì `caiDat()` GỠ HẲN
+ * (YC-40.4 — đề YC-31 điểm 3 là "kiểm VÀ GỠ"; bản 2.5.0 chỉ báo). Không mã nào đọc nó nữa, nhưng để lại
+ * một ID file tháng nằm trong thuộc tính của dự án là để lại một đường vào sổ tiền không ai canh.
  *
  * @param {string} [chuoiBiMat] chuỗi mới; bỏ trống = chỉ xem tình trạng
  * @returns {string} câu tình trạng — CỐ Ý không chứa giá trị chuỗi
@@ -156,8 +160,9 @@ function caiDat(chuoiBiMat) {
     p.setProperty(TT_BI_MAT, String(chuoiBiMat));
   }
   var tin = 'Bản ' + PHIEN_BAN + ' · Chuỗi bí mật: ' + (p.getProperty(TT_BI_MAT) ? 'đã cài' : 'CHƯA CÀI');
-  if (p.getProperty('KEODON_MO_NEO_ID')) {
-    tin += ' · Còn sót thuộc tính cũ KEODON_MO_NEO_ID (không dùng nữa từ D-42, xóa tay được)';
+  if (p.getProperty(TT_MO_NEO_CU)) {
+    p.deleteProperty(TT_MO_NEO_CU);
+    tin += ' · Đã gỡ thuộc tính cũ ' + TT_MO_NEO_CU + ' (không dùng nữa từ D-42)';
   }
   Logger.log(tin);   // cố ý không in giá trị
   return tin;
@@ -1434,8 +1439,8 @@ function kiemGianHangCuaFile_(cacFile, tuXa, cfg, canhBao) {
   if (!kq.chan.length) return;
 
   var e = new Error(kq.chan.map(function (x) {
-    return x.cau + ' (' + x.soKhac + '/' + x.khop + ' tên hàng của file đã khai ở gian kia, ' +
-      x.soMinh + '/' + x.khop + ' ở gian đang thả)';
+    return x.cau + ' (' + x.soKhac + '/' + x.tong + ' tên hàng của file đã khai ở gian kia, ' +
+      x.soMinh + '/' + x.tong + ' ở gian đang thả)';
   }).join('\n'));
   e.maKeodon = 'SAI_GIAN_HANG';
   throw e;
@@ -1644,14 +1649,23 @@ function hamLoiCoMat_() {
   xet('kiemCotDuocGhi_', typeof kiemCotDuocGhi_);
   xet('doCotNote_', typeof doCotNote_);
   xet('hanhDongXuLy_', typeof hanhDongXuLy_);
-  // Hàm của bản CŨ (mỏ neo · bảng link trên Google · chuỗi bí mật). Còn trên Google nghĩa là bản dán lên
-  // cũ hơn bản trên máy — và cái bẫy mỏ neo cùng cửa bí mật vẫn đang giăng ở đó.
+  // Cửa chuỗi bí mật là mã HIỆN HÀNH (YC-28, D-43 sửa 13/9) — canh ở danh sách "phải có", KHÔNG phải
+  // danh sách "đã bỏ". `bam256_` mới từ 2.5.0 (C-6.2): Google thiếu nó nghĩa là còn so từng ký tự kiểu cũ.
+  xet('biMatDung_', typeof biMatDung_);
+  xet('bam256_', typeof bam256_);
+  xet('caiDat', typeof caiDat);
+  xet('kiemGianHangCuaFile_', typeof kiemGianHangCuaFile_);
+  // Hàm của bản CŨ (mỏ neo · bảng link trên Google). Còn trên Google nghĩa là bản dán lên cũ hơn bản trên
+  // máy — và cái bẫy mỏ neo vẫn đang giăng ở đó.
+  //
+  // YC-40.2: bản 2.5.0 từng để nhầm `biMatDung_` và `caiDat` ở đây — tàn dư của lúc đề bài ghi "bỏ chuỗi
+  // bí mật". Hai hàm đó đã được KHÔI PHỤC, nên mọi lượt `ping` trên bản ĐÚNG đều trả `camMaVanCo` khác rỗng
+  // và máy in câu "còn hàm ĐÃ BỎ… Deploy lại" — sai nguyên nhân, xui người ta Deploy lại vô ích.
+  // DV-09 chạy `ping` thật trên mã hiện hành và đòi danh sách này RỖNG.
   if (typeof capNhatMoNeo_ === 'function') camMaVanCo.push('capNhatMoNeo_');
   if (typeof moNeo_ === 'function') camMaVanCo.push('moNeo_');
   if (typeof fileCuaThang_ === 'function') camMaVanCo.push('fileCuaThang_');
   if (typeof bangLinkThang_ === 'function') camMaVanCo.push('bangLinkThang_');
-  if (typeof biMatDung_ === 'function') camMaVanCo.push('biMatDung_');
-  if (typeof caiDat === 'function') camMaVanCo.push('caiDat');
   return { co: co, thieu: thieu, camMaVanCo: camMaVanCo };
 }
 
@@ -1694,6 +1708,6 @@ function chayBoTest() {
   return 'Tổng ' + kq.length + ' · hỏng ' + hong.length;
 }
 
-var VAN_TAY_SHELL = '346c1fb5';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_SHELL = '642b147e';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
 
-var BAN_DUNG = '8f02bd753878';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay
+var BAN_DUNG = '39b4e4bf1027';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay
