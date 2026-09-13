@@ -1,6 +1,13 @@
 /**
- * test-chep-cong-thuc.js — bộ `T-CT`: CHÉP CÔNG THỨC DÒNG TRÊN XUỐNG cho E, F, M, N (+ L),
+ * test-chep-cong-thuc.js — bộ `T-CT`: CÔNG THỨC LUÔN CÓ SẴN Ở MỌI DÒNG (D-57 / YC-39) cho E, F, L, M, N,
  * DẤU THỜI GIAN Ở DÒNG 1, và BỎ CƠ CHẾ TỰ DỜI MỎ NEO.
+ *
+ * LUẬT D-57 (chủ dự án chốt 13/9, thay vế "để trống + vàng" của D-40):
+ *   · trước mỗi lượt ghi, cột nào còn DƯỚI 200 dòng công thức phía dưới dòng dữ liệu cuối → kéo CẢ NĂM CỘT
+ *     tới dòng dữ liệu cuối + 2.000, chép nguyên văn công thức của ô công thức gần nhất phía trên;
+ *   · không bao giờ ghi một dòng đơn thiếu công thức; cả cột không còn ô nào → DỪNG `THIEU_CONG_THUC`,
+ *     chưa ghi một ô nào;
+ *   · công thức có hay không có IFERROR đều chép y nguyên.
  *
  * Nguồn đề bài: `07_GIAO_VIEC_DEV_v2.6.md` §2 và §3 · `08_BA_TRA_LOI_DEV_v2.6.md` §1 (a)(b)(c) ·
  * `06_GIAO_VIEC_DEV_v2.5.md` §1 và §3 · `05_GIAO_VIEC_DEV_v2.4.md` Phụ lục A.
@@ -66,8 +73,11 @@ function khoaO(r, c) { return r + ':' + c; }
 
 /**
  * Sheet giả tối thiểu nhưng ĐỦ BỀ MẶT mà `ShellAppsScript.gs` dùng, và ghi lại MỌI lệnh chạm vào ô
- * để bài test soi được "đã ghi vào cột nào, dòng nào, kiểu gì". Không có `getFormulasR1C1` cả khối —
- * cố ý, để bài test ép mã thật chỉ được dùng `getFormulaR1C1` từng ô như chú thích của nó đã hứa.
+ * để bài test soi được "đã ghi vào cột nào, dòng nào, kiểu gì".
+ *
+ * Có `getFormulasR1C1` CẢ KHỐI (bản 2.5.0 cố ý không có, để ép đọc từng ô). D-57 lật lý do đó: mỗi cột nay
+ * có hơn 2.000 ô công thức, đọc từng ô là hàng nghìn lượt gọi dịch vụ Google một lượt ghi — đủ chạm trần
+ * 6 phút. Mã thật PHẢI đọc cả khối, nên sheet giả phải có lệnh đó.
  */
 class SheetGia {
   constructor(ten, ss) {
@@ -91,6 +101,8 @@ class SheetGia {
   }
   getLastRow() { return this._quet().dr; }
   getLastColumn() { return this._quet().dc; }
+  getMaxRows() { return Math.max(this.soDongToiDa || 1000, this.getLastRow()); }
+  insertRowsAfter(sau, n) { this.soDongToiDa = this.getMaxRows() + n; this.ss.sim.nhatKyGhi.push({ sheet: this.ten, kieu: 'chenDong', r: sau + 1, c: 1, nr: n, nc: 0, cot: [] }); return this; }
   getRange(r, c, nr, nc) { return new VungGia(this, r, c, nr == null ? 1 : nr, nc == null ? 1 : nc); }
   dat(r, c, o) {
     if (o.v !== undefined) this.giaTri[khoaO(r, c)] = o.v;
@@ -129,6 +141,11 @@ class VungGia {
   }
   getValue() { return this.getValues()[0][0]; }
   getFormulaR1C1() { return this.sh.congThuc[khoaO(this.r, this.c)] || ''; }
+  getFormulasR1C1() {
+    const ra = [];
+    this._duyet((r, c, i, j) => { if (!ra[i]) ra[i] = []; ra[i][j] = this.sh.congThuc[khoaO(r, c)] || ''; });
+    return ra;
+  }
   setValues(b) {
     this._ghi('giaTri');
     this._duyet((r, c, i, j) => {
@@ -174,8 +191,9 @@ class BangTinhGia {
 
 // ==================================================================== nạp vỏ Google
 
-function napVo(sim) {
-  const src = FILE_VO.map((f) => fs.readFileSync(path.join(SRC, f), 'utf8')).join('\n;\n');
+function napVo(sim, suaNguon) {
+  let src = FILE_VO.map((f) => fs.readFileSync(path.join(SRC, f), 'utf8')).join('\n;\n');
+  if (suaNguon) src = suaNguon(src);                 // CHỈ cho đối chứng âm: dựng lại đúng một khuyết tật
   const ten = new Set();
   for (const m of src.matchAll(/^(?:var|function)\s+([A-Za-z_$][\w$]*)/gm)) ten.add(m[1]);
 
@@ -256,6 +274,9 @@ const COT_CT = [5, 6, 12, 13, 14];
  *   ctToi     {5:n, 6:n, 12:n, 13:n, 14:n} — công thức của TỪNG CỘT kéo tới dòng nào (mặc định = dòng đơn cuối)
  *   soTieuDe  chỉ ghi ngần này tiêu đề ở dòng 2 (dựng ca `doCotNote_` rơi vào cột cấm)
  *   neoTran   true → cột 5 chỉ có ĐÚNG một ô ở dòng 4, là ARRAYFORMULA THẬT (không ARRAY_CONSTRAIN)
+ *   ct        {cot: text} — thay công thức mẫu của cột đó (dùng cho ca IFERROR)
+ *   donCuoiNhieuDong  n → dòng đơn cuối cùng là một ĐƠN n MẶT HÀNG: chỉ dòng đầu có mã ở cột C (ô gộp),
+ *                     các dòng con có Ngày / Tên viết tắt / SL nhưng cột C trống — đúng như Google trả về
  */
 function dungSheetGian(ss, ten, tc) {
   const o = tc || {};
@@ -277,10 +298,22 @@ function dungSheetGian(ss, ten, tc) {
     sh.dat(r, 7, { v: 1 });
     [8, 9, 10, 11].forEach((c, j) => sh.dat(r, c, { v: 100000 + j }));
   }
+  if (o.donCuoiNhieuDong) {
+    // Dòng con của đơn cuối: cột C TRỐNG (ô gộp), nhưng Ngày, Tên viết tắt, SL vẫn có ở từng dòng.
+    for (let i = 1; i < o.donCuoiNhieuDong; i++) {
+      const r = dongCuoi + i;
+      sh.dat(r, 1, { v: new Date(2026, 8, 1) });
+      sh.dat(r, 4, { v: 'con' + i });
+      sh.dat(r, 7, { v: 10 + i });
+    }
+    sh.gopO.push({ r1: dongCuoi, c1: 3, r2: dongCuoi + o.donCuoiNhieuDong - 1 });
+  }
+  const dongCuoiThat = dongCuoi + (o.donCuoiNhieuDong ? o.donCuoiNhieuDong - 1 : 0);
   COT_CT.forEach((c) => {
     if (c > nTieuDe) return;
-    const toi = (o.ctToi && o.ctToi[c] != null) ? o.ctToi[c] : dongCuoi;
-    for (let r = 4; r <= toi; r++) sh.dat(r, c, { ct: CT[c] });
+    const toi = (o.ctToi && o.ctToi[c] != null) ? o.ctToi[c] : dongCuoiThat;
+    const text = (o.ct && o.ct[c]) || CT[c];
+    for (let r = 4; r <= toi; r++) sh.dat(r, c, { ct: text });
   });
   if (o.neoTran) {
     Object.keys(sh.congThuc).forEach((k) => { if (Number(k.split(':')[1]) === 5) delete sh.congThuc[k]; });
@@ -307,7 +340,7 @@ function dungSim(tc) {
     moc: new Date(o.moc || '2026-09-08T03:00:00Z').getTime(),
     file: {}, thuocTinh: {}, nhatKy: [], nhatKyGhi: [], soLanFlush: 0
   };
-  const vo = napVo(sim);
+  const vo = napVo(sim, o.suaNguon);
   sim.vo = vo;
 
   // Như thể `caiDat(<chuỗi>)` đã chạy một lần trên dự án Apps Script (YC-28).
@@ -466,36 +499,37 @@ test('T-CT-03', 'chỉ chép vào DÒNG MỚI — dòng cũ không đổi một 
   }, 'sửa lén công thức E5 của dòng cũ');
 });
 
-test('T-CT-04', 'cột không còn công thức nào để chép → để trống + cảnh báo, KHÔNG tự dựng công thức', () => {
+test('T-CT-04', 'cột bị XÓA SẠCH công thức → DỪNG THIEU_CONG_THUC trước khi ghi, KHÔNG một ô nào đổi (D-57)', () => {
+  // Luật cũ (D-40, bản 2.5.0): để trống cột đó, cảnh báo, vẫn ghi. D-57 bỏ hẳn: chủ dự án "không muốn có
+  // những dòng trống công thức". Tool không tự dựng công thức (D-15) nên chỉ còn một đường: dừng và nói rõ.
   const sim = dungSim({ gianTC0: { dong: 3, ctToi: { 13: 0 } } });     // cột M trắng hoàn toàn
   const sh = sim.sheet('2026-09', 'Shopee mall');
   bang(sh.o(4, 13).ct, null, 'fixture: cột M không có công thức nào');
+  const truoc = chupDongCu(sh, 3000), tongTruoc = chupDongTong(sh);
 
   const kq = goiGhi(sim, '2026-09', 'Shopee mall', [don(), don()]);
-  dung(kq.ok, kq.thongBao);
-  bang(oThieuCongThuc(sh, 7, 8, [13]), ['R7C13', 'R8C13'], 'cột M phải để TRỐNG, không được đoán');
-  bang(oThieuCongThuc(sh, 7, 8, [5, 6, 12, 14]), [], 'bốn cột còn lại vẫn phải được chép');
-  const cau = (kq.canhBao || []).filter((c) => c.indexOf('KHÔNG CÒN CÔNG THỨC ĐỂ CHÉP') >= 0);
-  bang(cau.length, 1, 'phải có đúng một câu cảnh báo: ' + JSON.stringify(kq.canhBao));
-  dung(cau[0].indexOf('cột M') >= 0, 'câu cảnh báo phải nêu đúng tên cột: ' + cau[0]);
-  dung(cau[0].indexOf('Vẫn ghi, không chặn') >= 0, 'phải nói rõ là không chặn: ' + cau[0]);
+  bang(kq.ok, false, 'phải DỪNG: ' + JSON.stringify(kq).slice(0, 160));
+  bang(kq.loi, 'THIEU_CONG_THUC');
+  bang(kq.thongBao, 'SHEET Shopee mall CỘT M KHÔNG CÒN CÔNG THỨC NÀO — mở file tháng trước, chép công thức ' +
+    'cột đó vào dòng 4 rồi chạy lại. Tool chưa ghi gì.', 'nguyên văn câu YC-39');
+  bang(sim.nhatKyGhi.length, 0, '"Tool chưa ghi gì" phải là thật: không một lệnh ghi nào, kể cả kéo công thức hay Mapping');
+  bang(soChup(truoc, chupDongCu(sh, 3000)), [], 'sheet phải y nguyên');
+  bang(soChup(tongTruoc, chupDongTong(sh)), [], 'dòng tổng phải y nguyên');
 
-  // Cảnh báo LUÔN-BẬT là cảnh báo vô dụng: sheet lành lặn thì tuyệt đối không được kêu câu này.
-  const sLanh = dungSim({ gianTC0: { dong: 3 } });
-  const rLanh = goiGhi(sLanh, '2026-09', 'Shopee mall', [don()]);
-  bang((rLanh.canhBao || []).filter((c) => c.indexOf('KHÔNG CÒN CÔNG THỨC ĐỂ CHÉP') >= 0).length, 0,
-    'kêu oan khi cột M vẫn còn công thức');
-  bang(oThieuCongThuc(sLanh.sheet('2026-09', 'Shopee mall'), 7, 7), [], 'sheet lành lặn phải chép đủ');
-
-  // ĐỐI CHỨNG ÂM: dựng lại đúng cái sai (cột M trắng công thức) và chứng minh phép chấm
-  // "dòng mới đủ công thức" báo LỆCH — chứ không im lặng coi như xong.
+  // ĐỐI CHỨNG ÂM: gỡ cả hai lưới dừng khỏi mã → lượt ghi chạy trót lọt và dòng mới trống cột M.
   return phaiLech(() => {
-    const s2 = dungSim({ gianTC0: { dong: 3, ctToi: { 13: 0 } } });
+    const s2 = dungSim({
+      gianTC0: { dong: 3, ctToi: { 13: 0 } },
+      suaNguon: (src) => {
+        const a = '  if (thieu.length) {', b = "    if (!m.cuoi && !m.tran) throw loiThieuCongThuc_(sh.getName(), m.cot, k);";
+        if (src.split(a).length !== 2 || src.split(b).length !== 2) throw new Error('ĐỐI CHỨNG ÂM HỎNG: chuỗi mốc đã đổi');
+        return src.split(a).join('  if (false) {').split(b).join('');
+      }
+    });
     const r2 = goiGhi(s2, '2026-09', 'Shopee mall', [don()]);
-    if (!(r2.canhBao || []).some((c) => c.indexOf('KHÔNG CÒN CÔNG THỨC ĐỂ CHÉP') >= 0))
-      throw new Error('cột M trắng mà tool không kêu một câu nào');
-    return oThieuCongThuc(s2.sheet('2026-09', 'Shopee mall'), 7, 7, [13]);
-  }, 'cột M trắng công thức');
+    if (!r2.ok) return [];                              // bản gỡ lưới mà vẫn dừng → phép chấm KHÔNG có mắt
+    return s2.nhatKyGhi.length ? ['bản gỡ lưới đã ghi ' + s2.nhatKyGhi.length + ' lệnh'] : [];
+  }, 'gỡ lưới dừng THIEU_CONG_THUC');
 });
 
 test('T-CT-05', 'ARRAYFORMULA THẬT phủ cả cột thì KHÔNG đụng; ARRAY_CONSTRAIN thì vẫn phải chép', () => {
@@ -521,6 +555,151 @@ test('T-CT-05', 'ARRAYFORMULA THẬT phủ cả cột thì KHÔNG đụng; ARRAY
     delete sh2.congThuc['5:5'];
     return oThieuCongThuc(sh2, 5, 5, [5]);
   }, 'coi ARRAY_CONSTRAIN một ô là ARRAYFORMULA phủ cả cột');
+});
+
+// ==================================================================== 1b. D-57 / YC-39
+
+console.log('\n--- 1b. D-57: công thức luôn có sẵn, dòng dữ liệu cuối theo A/C/D/G ---');
+
+test('T-CT-13', 'đơn CUỐI CÙNG có nhiều mặt hàng (cột C gộp ô) → lượt ghi sau KHÔNG đè dòng con của nó', () => {
+  // Lỗi thật tìm thấy 13/9 khi làm YC-39: dòng cuối lấy theo riêng cột C, mà ô con của cụm gộp trả rỗng,
+  // nên đơn 3 mặt hàng ở dòng 6-8 bị lượt ghi sau đè lên dòng 7 và 8. Mất dữ liệu, trái INV-1.
+  const sim = dungSim({ gianTC0: { dong: 3, donCuoiNhieuDong: 3 } });   // đơn cuối ở dòng 6-8
+  const sh = sim.sheet('2026-09', 'Shopee mall');
+  bang([sh.o(6, 3).gt != null, sh.o(7, 3).gt, sh.o(8, 4).gt], [true, null, 'con2'], 'fixture: C7/C8 trống, D8 có hàng');
+  const truoc = chupDongCu(sh, 9);
+
+  const kq = goiGhi(sim, '2026-09', 'Shopee mall', [don({ maDon: 'DON_MOI_SAU_DON_GOP' })]);
+  dung(kq.ok, kq.thongBao);
+  bang(sh.o(9, 3).gt, 'DON_MOI_SAU_DON_GOP', 'đơn mới phải nằm ở dòng 9, ngay dưới dòng con cuối');
+  bang(soChup(truoc, chupDongCu(sh, 9)), [], 'dòng 4-8 (gồm hai dòng con của đơn gộp) không được đổi');
+
+  // ĐỐI CHỨNG ÂM: dựng lại đúng cách tính cũ — dòng cuối theo riêng cột C — thì đơn mới đè lên dòng 7.
+  return phaiLech(() => {
+    const s2 = dungSim({
+      gianTC0: { dong: 3, donCuoiNhieuDong: 3 },
+      suaNguon: (src) => {
+        const a = '[k.cot_ngay, k.cot_ma_don, k.cot_ten_viet_tat, k.cot_so_luong].forEach(';
+        if (src.split(a).length !== 2) throw new Error('ĐỐI CHỨNG ÂM HỎNG: chuỗi mốc đã đổi');
+        return src.split(a).join('[k.cot_ma_don].forEach(');
+      }
+    });
+    const sh2 = s2.sheet('2026-09', 'Shopee mall');
+    const t2 = chupDongCu(sh2, 9);
+    goiGhi(s2, '2026-09', 'Shopee mall', [don({ maDon: 'DON_MOI_SAU_DON_GOP' })]);
+    return soChup(t2, chupDongCu(sh2, 9));
+  }, 'dòng cuối tính theo riêng cột C');
+});
+
+test('T-CT-14', 'còn 199 dòng công thức dưới dòng dữ liệu cuối → kéo CẢ NĂM CỘT tới dòng dữ liệu cuối + 2.000', () => {
+  // dong: 2 → dữ liệu dòng 4-5; công thức tới dòng 204 = còn 199 dòng.
+  const toi = { 5: 204, 6: 204, 12: 204, 13: 204, 14: 204 };
+  const sim = dungSim({ gianTC0: { dong: 2, ctToi: toi } });
+  const sh = sim.sheet('2026-09', 'Shopee mall');
+  const kq = goiGhi(sim, '2026-09', 'Shopee mall', [don()]);
+  dung(kq.ok, kq.thongBao);
+  COT_CT.forEach((c) => {
+    bang(sh.o(2005, c).ct, CT[c], 'cột ' + c + ' dòng 2005 (dòng dữ liệu cuối TRƯỚC lượt ghi là 5, + 2.000) phải có công thức');
+    bang(sh.o(2006, c).ct, null, 'cột ' + c + ' không được kéo quá dòng 2005');
+  });
+  bang(oThieuCongThuc(sh, 4, 2005), [], 'từ dòng 4 tới 2005 không ô nào thiếu công thức');
+  dung((kq.thongBao || []).some((t) => /kéo sẵn công thức E\/F\/L\/M\/N tới dòng 2005/.test(t)),
+    'phải báo đã kéo: ' + JSON.stringify(kq.thongBao));
+  return 'kéo 5 cột tới dòng 2005 · 0 ô thiếu từ dòng 4 tới 2005';
+});
+
+test('T-CT-15', 'còn ĐÚNG 200 dòng → KHÔNG kéo (đối chứng âm của T-CT-14: ngưỡng đúng một dòng)', () => {
+  const toi = { 5: 205, 6: 205, 12: 205, 13: 205, 14: 205 };   // dữ liệu tới 5 → còn 200
+  const sim = dungSim({ gianTC0: { dong: 2, ctToi: toi } });
+  const sh = sim.sheet('2026-09', 'Shopee mall');
+  const kq = goiGhi(sim, '2026-09', 'Shopee mall', [don()]);
+  dung(kq.ok, kq.thongBao);
+  COT_CT.forEach((c) => bang(sh.o(206, c).ct, null, 'cột ' + c + ' không được kéo thêm'));
+  bang(sim.nhatKyGhi.filter((g) => g.kieu === 'congThuc' && g.r > 205).length, 0, 'không lệnh ghi công thức nào dưới dòng 205');
+  bang(sim.nhatKyGhi.filter((g) => g.kieu === 'chenDong').length, 0, 'không chèn dòng');
+
+  // ĐỐI CHỨNG ÂM: lệch đúng một dòng (còn 199) thì phải kéo — chứng minh ngưỡng không phải "không bao giờ kéo".
+  return phaiLech(() => {
+    const s2 = dungSim({ gianTC0: { dong: 2, ctToi: { 5: 204, 6: 204, 12: 204, 13: 204, 14: 204 } } });
+    goiGhi(s2, '2026-09', 'Shopee mall', [don()]);
+    return s2.sheet('2026-09', 'Shopee mall').o(2005, 13).ct ? ['đã kéo'] : [];
+  }, 'còn 199 dòng');
+});
+
+test('T-CT-16', 'công thức có IFERROR → bản chép vẫn có IFERROR, NGUYÊN VĂN từng chữ (không thêm, không bớt)', () => {
+  const CO_IFERROR = "IFERROR(ARRAY_CONSTRAIN(ARRAYFORMULA(INDEX('Tổng tồn kho'!R3C3:R741C7;MATCH(RC[-9];'Tổng tồn kho'!R3C4:R741C4;0);3));1;1);\"\")";
+  const sim = dungSim({ gianTC0: { dong: 2, ct: { 13: CO_IFERROR } } });
+  const sh = sim.sheet('2026-09', 'Shopee mall');
+  const kq = goiGhi(sim, '2026-09', 'Shopee mall', [don(), don()]);
+  dung(kq.ok, kq.thongBao);
+  [6, 7, 100, 2005].forEach((r) => bang(sh.o(r, 13).ct, CO_IFERROR, 'M' + r + ' phải là bản chép nguyên văn'));
+  // Chiều ngược: cột KHÔNG có IFERROR thì bản chép cũng không được tự thêm IFERROR.
+  bang(sh.o(7, 5).ct, CT[5], 'E7 không được tự thêm IFERROR');
+
+  return phaiLech(() => {
+    // Dựng cách chép "sửa lại cho gọn" — bỏ IFERROR — rồi chứng minh phép so từng chữ bắt được.
+    const boIferror = CO_IFERROR.replace(/^IFERROR\((.*);""\)$/, '$1');
+    return boIferror === sh.o(6, 13).ct ? [] : ['bản chép bị bỏ IFERROR'];
+  }, 'chép mất IFERROR');
+});
+
+test('T-CT-17', 'kéo công thức KHÔNG đổi số dòng dữ liệu (cột C) và không đổi dòng dữ liệu cuối', () => {
+  const sim = dungSim({ gianTC0: { dong: 5 } });
+  const sh = sim.sheet('2026-09', 'Shopee mall');
+  const demC = () => { let n = 0; for (let r = 4; r <= 3000; r++) if (sh.o(r, 3).gt != null && sh.o(r, 3).gt !== '') n++; return n; };
+  const truoc = demC();
+  const kq = goiGhi(sim, '2026-09', 'Shopee mall', [don({ maDon: 'DUY_NHAT_01' })]);
+  dung(kq.ok, kq.thongBao);
+  bang(demC(), truoc + 1, 'cột C chỉ được tăng đúng 1 đơn vừa ghi');
+  bang(sh.o(9, 3).gt, 'DUY_NHAT_01', 'đơn mới ở ngay dưới dòng dữ liệu cuối cũ (dòng 8)');
+  bang(sim.nhatKyGhi.filter((g) => g.kieu === 'giaTri' && g.r > 9).length, 0, 'không lệnh ghi GIÁ TRỊ nào dưới dòng đơn mới');
+
+  // ĐỐI CHỨNG ÂM: kéo công thức mà ghi lẫn giá trị xuống (ví dụ chép cả dòng) → cột C phình ra.
+  return phaiLech(() => {
+    for (let r = 10; r <= 20; r++) sh.dat(r, 3, { v: 'RAC' + r });
+    return demC() === truoc + 1 ? [] : ['cột C phình thêm ' + (demC() - truoc - 1) + ' dòng'];
+  }, 'kéo lẫn giá trị vào cột C');
+});
+
+test('T-CT-18', 'nghiệm thu YC-39: xóa tay cột M từ dòng 100 trở xuống → tool tự kéo lại, ghi đơn, không dòng nào thiếu', () => {
+  const toi = { 5: 2003, 6: 2003, 12: 2003, 13: 99, 14: 2003 };
+  const sim = dungSim({ gianTC0: { dong: 50, ctToi: toi } });           // dữ liệu tới dòng 53
+  const sh = sim.sheet('2026-09', 'Shopee mall');
+  const kq = goiGhi(sim, '2026-09', 'Shopee mall', [don(), don(), don()]);
+  dung(kq.ok, kq.thongBao);
+  bang(oThieuCongThuc(sh, 54, 56), [], 'ba dòng đơn mới đủ công thức ở cả năm cột');
+  bang(sh.o(2053, 13).ct, CT[13], 'cột M phải được kéo lại tới dòng dữ liệu cuối trước lượt ghi (53) + 2.000');
+  bang(oThieuCongThuc(sh, 4, 2053, [13]), [], 'cột M không còn lỗ nào');
+  return 'M kéo lại tới dòng 2053 · 3 dòng mới đủ công thức';
+});
+
+test('T-CT-19', 'LỖ GIỮA CỘT (M trống dòng 6-10 nhưng còn công thức từ 11) → các dòng sắp ghi vẫn nhận công thức', () => {
+  // Kéo sẵn KHÔNG kích hoạt (cột vẫn dài tới 2005), nhưng dòng sắp ghi 6-8 nằm đúng trong lỗ.
+  const sim = dungSim({ gianTC0: { dong: 2, ctToi: { 5: 2005, 6: 2005, 12: 2005, 13: 2005, 14: 2005 } } });
+  const sh = sim.sheet('2026-09', 'Shopee mall');
+  for (let r = 6; r <= 10; r++) delete sh.congThuc[r + ':13'];
+  const kq = goiGhi(sim, '2026-09', 'Shopee mall', [don(), don(), don()]);
+  dung(kq.ok, kq.thongBao);
+  bang(oThieuCongThuc(sh, 6, 8), [], 'ba dòng đơn mới phải đủ công thức, kể cả cột M nằm trong lỗ');
+  bang(sh.o(9, 13).ct, null, 'dòng 9-10 không phải dòng tool ghi → không được tự lấp');
+  bang(sim.nhatKyGhi.filter((g) => g.kieu === 'congThuc' && g.cot.indexOf(13) >= 0 && g.r >= 11).length, 0,
+    'công thức sẵn có từ dòng 11 không được ghi lại');
+
+  // ĐỐI CHỨNG ÂM: bỏ bước điền ô thiếu trong khối → cột M ở dòng 6-8 trống.
+  return phaiLech(() => {
+    const s2 = dungSim({
+      gianTC0: { dong: 2, ctToi: { 5: 2005, 6: 2005, 12: 2005, 13: 2005, 14: 2005 } },
+      suaNguon: (src) => {
+        const a = '  chepCongThucXuong_(sh, k, mauDS, r0Khoi, soDongTong);';
+        if (src.split(a).length !== 2) throw new Error('ĐỐI CHỨNG ÂM HỎNG: chuỗi mốc đã đổi');
+        return src.split(a).join('');
+      }
+    });
+    const sh2 = s2.sheet('2026-09', 'Shopee mall');
+    for (let r = 6; r <= 10; r++) delete sh2.congThuc[r + ':13'];
+    goiGhi(s2, '2026-09', 'Shopee mall', [don(), don(), don()]);
+    return oThieuCongThuc(sh2, 6, 8, [13]);
+  }, 'bỏ bước điền ô thiếu');
 });
 
 // ==================================================================== 2. TÔ VÀNG (BA câu b)

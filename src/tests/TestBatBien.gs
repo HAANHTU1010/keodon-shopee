@@ -316,6 +316,8 @@ var TestBatBien = (function () {
   SheetGiaLapGoogle.prototype.getName = function () { return this.ten; };
   SheetGiaLapGoogle.prototype.getLastRow = function () { return this._soDong; };
   SheetGiaLapGoogle.prototype.getLastColumn = function () { return this._soCot; };
+  SheetGiaLapGoogle.prototype.getMaxRows = function () { return Math.max(1000, this._soDong); };
+  SheetGiaLapGoogle.prototype.insertRowsAfter = function () { return this; };
   SheetGiaLapGoogle.prototype._o = function (r, c) {
     var k = r + ',' + c;
     if (!this.o[k]) this.o[k] = new OGiaLap();
@@ -343,6 +345,8 @@ var TestBatBien = (function () {
       getValue: function () { doc('giaTri'); return sh._o(r, c).gt; },
       getBackgrounds: function () { doc('nen'); return bang2(function (o) { return o.nen; }); },
       getFormulaR1C1: function () { doc('congThuc'); return sh._o(r, c).ctR1C1 || ''; },
+      // D-57: vỏ ghi đọc công thức CẢ KHỐI (đọc từng ô trên 2.000 dòng là chạm trần 6 phút).
+      getFormulasR1C1: function () { doc('congThuc'); return bang2(function (o) { return o.ctR1C1 || ''; }); },
       setValues: function (v) {
         ghi('giaTri');
         for (var i = 0; i < nr; i++) for (var j = 0; j < nc; j++) sh._o(r + i, c + j).gt = (v[i] || [])[j];
@@ -352,7 +356,12 @@ var TestBatBien = (function () {
       setValue: function (v) { ghi('giaTri'); sh._o(r, c).gt = v; if (r > sh._soDong) sh._soDong = r; return rg; },
       setFormulasR1C1: function (v) {
         ghi('congThuc');
-        for (var i = 0; i < nr; i++) for (var j = 0; j < nc; j++) sh._o(r + i, c + j).ctR1C1 = (v[i] || [])[j];
+        sh.congThucDaGhi = sh.congThucDaGhi || [];
+        for (var i = 0; i < nr; i++) for (var j = 0; j < nc; j++) {
+          sh._o(r + i, c + j).ctR1C1 = (v[i] || [])[j];
+          sh.congThucDaGhi.push({ r: r + i, c: c + j, text: (v[i] || [])[j] });
+        }
+        if (vung.r2 > sh._soDong) sh._soDong = vung.r2;   // Google đếm ô công thức vào getLastRow
         return rg;
       },
       setBackgrounds: function (v) {
@@ -400,8 +409,14 @@ var TestBatBien = (function () {
    * cột) thì ai cũng thấy ngay; hỏng im lặng một ô thì vài tuần sau đối chiếu mới lộ.
    *
    * CÁCH KIỂM: gọi THẲNG `ghiMotSheet_` (hàm ghi thật của Web App) trên một sheet giả ghi lại mọi vùng bị ghi,
-   * với 3 đơn (một đơn 2 mặt hàng → gộp ô; một dòng vàng → tô nền + ghi Note). Không một vùng ghi giá trị hay
-   * công thức nào được phủ cột 5, 6, 13, 14.
+   * với 3 đơn (một đơn 2 mặt hàng → gộp ô; một dòng vàng → tô nền + ghi Note). Không một vùng ghi GIÁ TRỊ nào
+   * được phủ cột 5, 6, 13, 14.
+   *
+   * Ghi CÔNG THỨC vào E, F, M, N thì ĐƯỢC — nhưng chỉ khi đó là BẢN CHÉP nguyên văn công thức của chủ shop
+   * (D-40 chép dòng trên xuống; D-57 không bao giờ để dòng đơn thiếu công thức). Bản 2.5.0 của bài này cấm
+   * cả ghi công thức, và nó ĐẠT chỉ vì sheet giả không có công thức nào ở E/F/M/N để chép — tức bài test
+   * đang kiểm một sheet không giống file thật. Nay sheet giả mang công thức từng dòng ở E4/F4/M4/N4 như file
+   * thật, và phép chấm đòi mọi lệnh ghi công thức vào bốn cột đó trùng TỪNG CHỮ với công thức mẫu.
    *
    * Ghi nền (`setBackgrounds`) CÓ phủ E, F, M, N khi tô vàng cả dòng, và đó là an toàn: Google lưu định dạng
    * tách khỏi giá trị, tô màu một ô không đụng gì tới công thức trong ô đó. Test cố ý chỉ chặn
@@ -422,6 +437,14 @@ var TestBatBien = (function () {
     sh._o(2, 3).gt = 'Thông tin ĐH';                       // dòng tiêu đề
     sh._o(4, 3).gt = 'TEST0731AAAA01';                     // một dòng cũ để dòng mới bắt đầu từ 5
     sh._o(4, 12).ctR1C1 = 'R[0]C[-4]-R[0]C[-3]-R[0]C[-2]-R[0]C[-1]';
+    // Công thức từng dòng của chủ shop ở E, F, M, N — hình dạng đo trên file thật (bọc ARRAY_CONSTRAIN).
+    var MAU_CT = {
+      5: "ARRAY_CONSTRAIN(ARRAYFORMULA(IFERROR(INDEX('Tổng tồn kho'!R3C3:R2000C7;MATCH(RC[-1];'Tổng tồn kho'!R3C4:R2000C4;0);1);\"\"));1;1)",
+      6: "ARRAY_CONSTRAIN(ARRAYFORMULA(IFERROR(INDEX('Tổng tồn kho'!R3C3:R2000C7;MATCH(RC[-2];'Tổng tồn kho'!R3C4:R2000C4;0);4);\"\"));1;1)",
+      13: "ARRAY_CONSTRAIN(ARRAYFORMULA(IFERROR(INDEX('Tổng tồn kho'!R3C3:R2000C7;MATCH(RC[-9];'Tổng tồn kho'!R3C4:R2000C4;0);3);\"\"));1;1)",
+      14: "ARRAY_CONSTRAIN(ARRAYFORMULA(IFERROR(INDEX('Tổng tồn kho'!R3C5:R2000C8;MATCH(RC[-1];'Tổng tồn kho'!R3C5:R2000C5;0);4);\"\"));1;1)"
+    };
+    Object.keys(MAU_CT).forEach(function (c) { sh._o(4, Number(c)).ctR1C1 = MAU_CT[c]; });
     var tk = { donGhi: 0, donDaCo: 0, dongGhi: 0, dongVang: 0, donGopO: 0, mappingThem: 0 };
     var canhBao = [], thongBao = [];
     ghiMotSheet_(sh, [
@@ -435,9 +458,18 @@ var TestBatBien = (function () {
     bang(tk.donGopO, 1, '1 đơn được gộp ô');
     bang(tk.dongVang, 1, '1 dòng vàng');
 
-    var cham = vungGhiChamCot(sh, COT_CAM_SHEET);
-    bang(cham.length, 0, 'có ' + cham.length + ' lệnh ghi giá trị/công thức chạm E,F,M,N: ' +
+    var cham = vungGhiChamCot(sh, COT_CAM_SHEET).filter(function (v) { return v.kieu === 'giaTri'; });
+    bang(cham.length, 0, 'có ' + cham.length + ' lệnh ghi GIÁ TRỊ chạm E,F,M,N: ' +
       cham.map(function (v) { return v.kieu + ' ' + Utils.chuCot(v.c1) + v.r1 + ':' + Utils.chuCot(v.c2) + v.r2; }).join(', '));
+    // Công thức ghi vào E/F/M/N phải là BẢN CHÉP nguyên văn của mẫu — không một chữ nào do tool tự dựng.
+    var lechCT = (sh.congThucDaGhi || []).filter(function (x) {
+      return COT_CAM_SHEET.indexOf(x.c) >= 0 && x.text !== MAU_CT[x.c];
+    });
+    bang(lechCT.length, 0, 'tool ghi công thức KHÁC mẫu vào E/F/M/N: ' +
+      lechCT.map(function (x) { return Utils.chuCot(x.c) + x.r + '=' + String(x.text).slice(0, 40); }).join(', '));
+    // Và đủ: 4 dòng mới × 4 cột đều nhận bản chép (D-57 — không dòng đơn nào thiếu công thức).
+    var daChep = (sh.congThucDaGhi || []).filter(function (x) { return COT_CAM_SHEET.indexOf(x.c) >= 0; }).length;
+    bang(daChep, 16, 'số ô E/F/M/N nhận bản chép công thức ở 4 dòng mới');
 
     // đối chứng dương: test phải THẤY được lệnh ghi, nếu không nó đạt một cách vô nghĩa
     var chamL = vungGhiChamCot(sh, [k.cot_doanh_thu]);
@@ -446,7 +478,7 @@ var TestBatBien = (function () {
     phai(chamD.length >= 1, 'phải có ghi giá trị vào cột D — nếu không, phép kiểm này rỗng');
 
     return { ghiChu: sh.daGhi.length + ' lệnh ghi (' + vungGhiChamCot(sh, [1, 2, 3, 4, 7, 8, 9, 10, 11, 12]).length +
-      ' chạm A–L) · 0 lệnh ghi giá trị/công thức chạm E,F,M,N' };
+      ' chạm A–L) · 0 lệnh ghi GIÁ TRỊ chạm E,F,M,N · ' + daChep + ' ô công thức chép NGUYÊN VĂN mẫu' };
   }
 
   /**
@@ -748,7 +780,7 @@ var TestBatBien = (function () {
   var DANH_SACH = [
     ['INV-1', 'Không bao giờ sửa hoặc xóa dòng đã có (băm A1:Z<dòng cuối cũ> mọi sheet, số dòng chỉ tăng)', INV1_khongSuaXoaDongDaCo],
     ['INV-2', 'Không thêm sheet nào ngoài Mapping_san_pham', INV2_khongThemSheetLa],
-    ['INV-3', 'Vỏ ghi Google Sheet không ghi giá trị/công thức vào E, F, M, N', INV3a_voGhiSheetKhongChamEFMN],
+    ['INV-3', 'Vỏ ghi Google Sheet không ghi GIÁ TRỊ vào E, F, M, N; công thức ghi vào đó chỉ được là bản chép nguyên văn', INV3a_voGhiSheetKhongChamEFMN],
     ['INV-3', 'Tầng ghi PHẢI NÉM LỖI khi lệnh ghi nhắm E/F/M/N ở chế độ SHEET (kể cả ô đầu cột)', INV3b_tangGhiPhaiNemLoi],
     ['INV-4', 'Không đọc/ghi/in 9 cột thông tin người mua (cfg.cotCamDocTuFileXuat, trừ cfg.tenCotQuaChung khi quét theo tên) + regex SĐT', INV4_khongDungCotThongTinNguoiMua],
     ['INV-6', 'Không tự sửa công thức của người (so từng chuỗi ngoài vùng dòng mới)', INV6_khongSuaCongThucCuaNguoi],

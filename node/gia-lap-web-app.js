@@ -112,9 +112,27 @@ class SheetGia {
 
   getLastRow() { return this._quet().dongCuoi; }
   getLastColumn() { return this._quet().cotCuoi; }
-  getMaxRows() { return Math.max(1000, this.getLastRow()); }
+  // Số dòng TỐI ĐA của lưới, như Google: bản sao file tháng thường có 1.000 dòng. Ghi hay đọc quá lưới thì
+  // Google NÉM LỖI chứ không tự nới — nên kéo công thức tới dòng 2.003 (D-57) bắt buộc phải chèn dòng trước.
+  // Giả lập ném đúng lỗi đó để quên `insertRowsAfter` là HỎNG ở test, không đợi tới lúc chạy thật.
+  getMaxRows() { return Math.max(this.soDongToiDa || 1000, this.getLastRow()); }
   getMaxColumns() { return Math.max(26, this.getLastColumn()); }
-  getRange(r, c, nr, nc) { return new VungGia(this, r, c, nr == null ? 1 : nr, nc == null ? 1 : nc); }
+  insertRowsAfter(sauDong, soDong) {
+    const max = this.getMaxRows();
+    if (sauDong !== max) throw new Error('Giả lập chỉ hỗ trợ chèn dòng ở CUỐI lưới (sau dòng ' + max + '), nhận ' + sauDong);
+    this.soDongToiDa = max + soDong;
+    const sim = this.ss && this.ss.sim;
+    if (sim) sim.nhatKyGhi.push({ stt: sim.nhatKyGhi.length + 1, sheet: this.ten, kieu: 'chenDong', dong1: sauDong + 1, cot1: 1, soDong: soDong, soCot: 0, cot: [] });
+    return this;
+  }
+  getRange(r, c, nr, nc) {
+    const soDong = nr == null ? 1 : nr;
+    const han = r + soDong - 1;
+    if (han > 1000 && han > this.getMaxRows()) {
+      throw new Error('The coordinates of the range are outside the dimensions of the sheet. (giả lập: dòng ' + han + ' > ' + this.getMaxRows() + ')');
+    }
+    return new VungGia(this, r, c, soDong, nc == null ? 1 : nc);
+  }
   getDataRange() { return new VungGia(this, 1, 1, Math.max(1, this.getLastRow()), Math.max(1, this.getLastColumn())); }
 
   /** Đặt thẳng giá trị/công thức khi DỰNG dữ liệu ban đầu — không tính là "tool ghi". */
@@ -741,6 +759,10 @@ function dungSheetGianHang(ss, ten, dongCu, tc) {
     14: 'ARRAYFORMULA(IF(RC[-1]="";"";INDEX(\'Tổng tồn kho\'!R3C5:R739C8;MATCH(RC[-1];\'Tổng tồn kho\'!R3C5:R739C5;0);4)))'
   };
   Object.keys(NEO).forEach((c) => { if (Number(c) <= soTieuDe) sh.datNen(4, Number(c), { ct: NEO[c] }); });
+  // Cột L (Doanh Thu) là công thức TỪNG DÒNG ở mọi file tháng thật, kể cả file vừa tạo chưa có đơn nào.
+  // D-57: sheet không còn ô công thức nào ở một cột thì tool DỪNG — nên sheet trống cũng phải có L4.
+  const CONG_THUC_L = 'IF(RC[-4]="";"";RC[-4]-RC[-3]-RC[-2]-RC[-1])';
+  if (soTieuDe >= 12) sh.datNen(4, 12, { ct: CONG_THUC_L });
 
   (dongCu || []).forEach((d, i) => {
     const r = 4 + i;
@@ -749,7 +771,7 @@ function dungSheetGianHang(ss, ten, dongCu, tc) {
     sh.datNen(r, 4, { v: d.tvt == null ? '' : d.tvt });
     if (d.sl != null) sh.datNen(r, 7, { v: d.sl });
     ['h', 'i', 'j', 'k'].forEach((x, j) => { if (d[x] != null) sh.datNen(r, 8 + j, { v: d[x], dd: '#,##0' }); });
-    sh.datNen(r, 12, { ct: 'IF(RC[-4]="";"";RC[-4]-RC[-3]-RC[-2]-RC[-1])' });
+    sh.datNen(r, 12, { ct: CONG_THUC_L }); 
     // Giá trị tràn từ biến thể ARRAYFORMULA: có giá trị hiển thị nhưng KHÔNG có công thức riêng.
     if (soTieuDe >= 14) {
       sh.datNen(r, 5, { v: d.tvt ? 'SP ' + d.tvt : '' });

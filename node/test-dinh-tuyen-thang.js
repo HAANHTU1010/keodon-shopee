@@ -74,12 +74,22 @@ function oMoi() { return { v: '', f: '', nf: '', bg: '#ffffff' }; }
 function sheetGia(ten, soDong, soCot, moiTruong) {
   const o = [];
   for (let r = 0; r <= soDong; r++) { o.push([]); for (let c = 0; c <= soCot; c++) o[r].push(oMoi()); }
+  // Lưới GIÃN theo nhu cầu: D-57 kéo công thức tới dòng dữ liệu cuối + 2.000, vượt xa 300 dòng dựng sẵn.
+  const lay = (r, c) => {
+    while (o.length <= r) o.push([]);
+    while (o[r].length <= c) o[r].push(oMoi());
+    return o[r][c];
+  };
+  // Google đếm cả ô công thức vào getLastRow — ghi xuống thấp hơn thì dòng cuối phải tụt theo.
+  const noiDong = (han) => { if (sh._lastRow != null && han > sh._lastRow) sh._lastRow = han; };
 
   const sh = {
     _o: o,
     getName: () => ten,
     getLastRow: () => (sh._lastRow != null ? sh._lastRow : soDong),
     getLastColumn: () => (sh._lastCol != null ? sh._lastCol : soCot),
+    getMaxRows: () => Math.max(1000, sh._lastRow != null ? sh._lastRow : soDong),
+    insertRowsAfter: () => sh,
     getDataRange() { throw new Error('VI PHẠM: gọi getDataRange() trên sheet "' + ten + '"'); },
     getRange(r, c, nr, nc) {
       nr = nr == null ? 1 : nr; nc = nc == null ? 1 : nc;
@@ -87,38 +97,41 @@ function sheetGia(ten, soDong, soCot, moiTruong) {
       const vung = { sheet: ten, r, c, nr, nc };
       const duyet = (fn) => {
         const ra = [];
-        for (let i = 0; i < nr; i++) { const d = []; for (let j = 0; j < nc; j++) d.push(fn(o[r + i][c + j])); ra.push(d); }
+        for (let i = 0; i < nr; i++) { const d = []; for (let j = 0; j < nc; j++) d.push(fn(lay(r + i, c + j))); ra.push(d); }
         return ra;
       };
       const ghiNhan = (viec) => moiTruong.thaoTac.push({ sheet: ten, r, c, nr, nc, viec });
       const rg = {
         getDisplayValues: () => duyet((x) => String(x.v == null ? '' : x.v)),
         getValues: () => duyet((x) => x.v),
-        getValue: () => o[r][c].v,
+        getValue: () => lay(r, c).v,
         getBackgrounds: () => duyet((x) => x.bg),
-        getFormulaR1C1: () => o[r][c].f,
+        getFormulaR1C1: () => lay(r, c).f,
+        getFormulasR1C1: () => duyet((x) => x.f || ''),
         setValues(bang2) {
           ghiNhan('setValues');
-          for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) o[r + i][c + j].v = bang2[i][j];
+          for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) lay(r + i, c + j).v = bang2[i][j];
+          noiDong(r + nr - 1);
           return rg;
         },
-        setValue(v) { ghiNhan('setValue'); o[r][c].v = v; return rg; },
+        setValue(v) { ghiNhan('setValue'); lay(r, c).v = v; return rg; },
         setNumberFormat(nf) {
           ghiNhan('setNumberFormat:' + nf);
-          for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) o[r + i][c + j].nf = nf;
+          for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) lay(r + i, c + j).nf = nf;
           return rg;
         },
         setFormulasR1C1(bang2) {
           ghiNhan('setFormulasR1C1');
-          for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) o[r + i][c + j].f = bang2[i][j];
+          for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) lay(r + i, c + j).f = bang2[i][j];
+          noiDong(r + nr - 1);
           return rg;
         },
         setBackgrounds(bang2) {
           ghiNhan('setBackgrounds');
-          for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) o[r + i][c + j].bg = bang2[i][j];
+          for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) lay(r + i, c + j).bg = bang2[i][j];
           return rg;
         },
-        setBackground(m) { ghiNhan('setBackground'); for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) o[r + i][c + j].bg = m; return rg; },
+        setBackground(m) { ghiNhan('setBackground'); for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) lay(r + i, c + j).bg = m; return rg; },
         setFontWeight() { return rg; },
         mergeVertically() { moiTruong.gopO.push(vung); return rg; }
       };
@@ -127,6 +140,14 @@ function sheetGia(ten, soDong, soCot, moiTruong) {
   };
   return sh;
 }
+
+/** Công thức mẫu từng dòng ở E, F, M, N (hình dạng file thật, bọc ARRAY_CONSTRAIN). */
+const CT_MAU_EFMN = {
+  5: "=ARRAY_CONSTRAIN(ARRAYFORMULA(IFERROR(INDEX('Tổng tồn kho'!R3C3:R2000C7;MATCH(RC[-1];'Tổng tồn kho'!R3C4:R2000C4;0);1);\"\"));1;1)",
+  6: "=ARRAY_CONSTRAIN(ARRAYFORMULA(IFERROR(INDEX('Tổng tồn kho'!R3C3:R2000C7;MATCH(RC[-2];'Tổng tồn kho'!R3C4:R2000C4;0);4);\"\"));1;1)",
+  13: "=ARRAY_CONSTRAIN(ARRAYFORMULA(IFERROR(INDEX('Tổng tồn kho'!R3C3:R2000C7;MATCH(RC[-9];'Tổng tồn kho'!R3C4:R2000C4;0);3);\"\"));1;1)",
+  14: "=ARRAY_CONSTRAIN(ARRAYFORMULA(IFERROR(INDEX('Tổng tồn kho'!R3C5:R2000C8;MATCH(RC[-1];'Tổng tồn kho'!R3C5:R2000C5;0);4);\"\"));1;1)"
+};
 
 /** Sheet gian hàng: dòng 2 tiêu đề, dòng 3 dòng tổng, dòng 4 một đơn cũ (để kiểm chống trùng). */
 function sheetGianHang(moiTruong) {
@@ -139,6 +160,8 @@ function sheetGianHang(moiTruong) {
   sh._o[3][8].v = 0;
   sh._o[4][3].v = 'TEST0802HHHH08';      // đơn đã có — gửi lại phải bị bỏ qua
   sh._o[4][12].f = '=R[0]C[-4]-R[0]C[-2]';
+  // D-57: E, F, M, N mang công thức TỪNG DÒNG như file thật. Không có thì tool dừng THIEU_CONG_THUC.
+  Object.keys(CT_MAU_EFMN).forEach((c) => { sh._o[4][Number(c)].f = CT_MAU_EFMN[c]; });
   sh._lastRow = 4;
   sh._lastCol = 14;
   return sh;
@@ -624,13 +647,26 @@ console.log('--- Ghi: định dạng trước, chống trùng hai tầng ---');
     dung(/^Tool cập nhật lúc \d{1,2}h\d{2} ngày \d{1,2}\/\d{1,2}\/20\d{2}$/.test(String(sh._o[1][16].v)),
       'nội dung dấu sai: ' + JSON.stringify(sh._o[1][16].v));
   });
-  test('T-DT-32 INV-3: không thao tác ghi nào chạm cột E, F, M, N', () => {
+  test('T-DT-32 INV-3: không ghi GIÁ TRỊ vào E, F, M, N; công thức ghi vào đó là bản chép NGUYÊN VĂN', () => {
+    // D-40/D-57: tool được chép công thức của chủ shop xuống (kể cả kéo sẵn 2.000 dòng), cấm ghi số/chữ.
     mt.thaoTac.filter((x) => x.sheet === 'Shopee mall').forEach((x) => {
       if (x.viec === 'setBackgrounds' || x.viec === 'setBackground') return;   // tô vàng cả dòng được phép
+      if (x.viec === 'setFormulasR1C1') return;                                 // soát riêng ngay dưới
       for (let c = x.c; c < x.c + x.nc; c++) {
-        dung([5, 6, 13, 14].indexOf(c) < 0, 'ghi vào cột ' + c + ' (E/F/M/N là công thức của chủ shop)');
+        dung([5, 6, 13, 14].indexOf(c) < 0, x.viec + ' vào cột ' + c + ' (E/F/M/N là công thức của chủ shop)');
       }
     });
+    const sh = mt.cacFile[ID_T9].sheets['Shopee mall'];
+    let soO = 0;
+    [5, 6, 13, 14].forEach((c) => {
+      for (let r = 5; r < sh._o.length; r++) {
+        const f = (sh._o[r] && sh._o[r][c]) ? sh._o[r][c].f : '';
+        if (!f) continue;
+        soO++;
+        bang(f, CT_MAU_EFMN[c], 'công thức ở ' + String.fromCharCode(64 + c) + r + ' phải là bản chép mẫu');
+      }
+    });
+    dung(soO > 0, 'phải thấy bản chép công thức ở E/F/M/N — nếu không, phép soát này rỗng');
   });
   test('T-DT-33 D-47: sau lượt ghi, tab Mapping được tô lại — dòng CÓ trắng, dòng chưa CÓ vàng', () => {
     const sh = mt.cacFile[ID_T9].sheets['Mapping_san_pham'];
