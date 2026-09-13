@@ -37,8 +37,12 @@ const SRC = path.join(__dirname, '..', 'src');
 
 // Các file .gs cần cho VỎ GOOGLE (tầng 3). Cố ý KHÔNG nạp tests/ để không phụ thuộc file đang sửa.
 // Tám file mà 'xuLy' và 'ghi' cần. Có cả ba file lớp 2 vì D-47 (`toLaiMapping_`) gọi `MapListing.laCo`.
+// `TaoThangMoi.gs` (2.6.0): hành động `taoThangMoi` gọi thẳng lõi chuyển sổ.
 const FILE_VO_GOOGLE = ['Utils.gs', 'Schema.gs', 'CaiDat.gs', 'Config.gs',
-  'DanhMuc.gs', 'MapListing.gs', 'Normalize.gs', 'ShellAppsScript.gs'];
+  'DanhMuc.gs', 'MapListing.gs', 'Normalize.gs', 'TaoThangMoi.gs', 'ShellAppsScript.gs'];
+
+// Công thức: kho ô giữ R1C1 (Web App đọc/chép R1C1); `getFormulas`/`setFormula`/`setValues('=…')` đi qua A1.
+const { a1SangR1C1, r1c1SangA1 } = require('./nap-xlsx-gia-lap');
 
 // Các file .gs cần cho LÕI phía máy tính (tầng 1 gọi tới).
 const FILE_LOI_MAY = ['Utils.gs', 'Schema.gs', 'CaiDat.gs', 'Config.gs', 'adapters/AdapterFileXuat.gs',
@@ -125,6 +129,49 @@ class SheetGia {
     if (sim) sim.nhatKyGhi.push({ stt: sim.nhatKyGhi.length + 1, sheet: this.ten, kieu: 'chenDong', dong1: sauDong + 1, cot1: 1, soDong: soDong, soCot: 0, cot: [] });
     return this;
   }
+  /** Dời mọi kho ô theo hàm đổi khóa (`null` = bỏ ô). */
+  _doiKho(doi) {
+    ['giaTri', 'congThuc', 'dinhDang', 'nen', 'dam'].forEach((ten) => {
+      const cu = this[ten], moi = {};
+      Object.keys(cu).forEach((k) => {
+        const [r, c] = k.split(':').map(Number);
+        const kk = doi(r, c);
+        if (kk) moi[kk[0] + ':' + kk[1]] = cu[k];
+      });
+      this[ten] = moi;
+    });
+  }
+  _ghiNhatSheet(kieu, dong1, cot1, soDong, soCot) {
+    const sim = this.ss && this.ss.sim;
+    if (sim) sim.nhatKyGhi.push({ stt: sim.nhatKyGhi.length + 1, sheet: this.ten, kieu, dong1, cot1, soDong, soCot, cot: [] });
+  }
+  /**
+   * Như Google: xóa hẳn `n` dòng từ `r`, dòng dưới dồn lên, lưới co lại. Công thức R1C1 dồn theo ô nên tham
+   * chiếu TƯƠNG ĐỐI giữ nguyên nghĩa. KHÁC Google (cố ý, như vỏ Excel): tham chiếu TUYỆT ĐỐI trỏ qua vùng bị
+   * xóa không được co lại — số đo ở đây là cận trên.
+   */
+  deleteRows(r, n) {
+    const max = this.getMaxRows();
+    if (r < 1 || n < 1 || r + n - 1 > max) throw new Error('deleteRows ngoài lưới: ' + r + '+' + n + ' > ' + max);
+    const het = r + n - 1;
+    this._doiKho((rr, cc) => (rr < r ? [rr, cc] : (rr > het ? [rr - n, cc] : null)));
+    this.gopO = this.gopO.map((g) => {
+      if (g.r1 >= r && g.r2 <= het) return null;
+      const a = g.r1 > het ? g.r1 - n : (g.r1 >= r ? r : g.r1);
+      const b = g.r2 > het ? g.r2 - n : (g.r2 >= r ? r - 1 : g.r2);
+      return b < a ? null : { r1: a, c1: g.c1, r2: b, c2: g.c2 };
+    }).filter((g) => g && !(g.r1 === g.r2 && g.c1 === g.c2));
+    this.soDongToiDa = max - n;
+    this._ghiNhatSheet('xoaDong', r, 1, n, 0);
+    return this;
+  }
+  /** Như Google: chèn một cột trống trước cột `c`, mọi cột từ `c` dịch phải; cụm gộp cắt qua `c` nở thêm một cột. */
+  insertColumnBefore(c) {
+    this._doiKho((rr, cc) => [rr, cc >= c ? cc + 1 : cc]);
+    this.gopO = this.gopO.map((g) => ({ r1: g.r1, r2: g.r2, c1: g.c1 >= c ? g.c1 + 1 : g.c1, c2: g.c2 >= c ? g.c2 + 1 : g.c2 }));
+    this._ghiNhatSheet('chenCot', 1, c, 0, 1);
+    return this;
+  }
   getRange(r, c, nr, nc) {
     const soDong = nr == null ? 1 : nr;
     const han = r + soDong - 1;
@@ -193,6 +240,75 @@ class VungGia {
   getValue() { return this.getValues()[0][0]; }
   getDisplayValue() { return this.getDisplayValues()[0][0]; }
 
+  getRow() { return this.r; }
+  getColumn() { return this.c; }
+  getNumRows() { return this.nr; }
+  getNumColumns() { return this.nc; }
+  getFormulas() {
+    const out = [];
+    this._duyet((r, c, i, j) => {
+      if (!out[i]) out[i] = [];
+      const f = this.sh.congThuc[khoaO(r, c)];
+      out[i][j] = f ? r1c1SangA1(f, r, c) : '';
+    });
+    return out;
+  }
+  getFormula() { return this.getFormulas()[0][0]; }
+  setFormulas(b) {
+    this._ghiNhat('congThuc');
+    this._duyet((r, c, i, j) => {
+      const f = b[i][j];
+      if (f) { this.sh.congThuc[khoaO(r, c)] = a1SangR1C1(String(f).replace(/^=/, ''), r, c); delete this.sh.giaTri[khoaO(r, c)]; }
+      else delete this.sh.congThuc[khoaO(r, c)];
+    });
+    return this;
+  }
+  setFormula(f) { return this.setFormulas([[f]]); }
+  /** Như Google: mọi cụm gộp CẮT QUA vùng này. */
+  getMergedRanges() {
+    const r2 = this.r + this.nr - 1, c2 = this.c + this.nc - 1;
+    return this.sh.gopO.filter((g) => !(g.r2 < this.r || g.r1 > r2 || g.c2 < this.c || g.c1 > c2))
+      .map((g) => new VungGia(this.sh, g.r1, g.c1, g.r2 - g.r1 + 1, g.c2 - g.c1 + 1));
+  }
+  breakApart() {
+    const r2 = this.r + this.nr - 1, c2 = this.c + this.nc - 1;
+    this._ghiNhat('boGop');
+    this.sh.gopO = this.sh.gopO.filter((g) => g.r2 < this.r || g.r1 > r2 || g.c2 < this.c || g.c1 > c2);
+    return this;
+  }
+  /** Như Google: gộp cả vùng, chỉ giữ giá trị ô trên-trái. */
+  merge() {
+    if (this.nr === 1 && this.nc === 1) return this;
+    this._ghiNhat('gopO');
+    this._duyet((r, c) => {
+      if (r === this.r && c === this.c) return;
+      delete this.sh.giaTri[khoaO(r, c)];
+      delete this.sh.congThuc[khoaO(r, c)];
+    });
+    this.sh.gopO.push({ r1: this.r, c1: this.c, r2: this.r + this.nr - 1, c2: this.c + this.nc - 1 });
+    return this;
+  }
+  clearContent() {
+    this._ghiNhat('xoaNoiDung');
+    this._duyet((r, c) => { delete this.sh.giaTri[khoaO(r, c)]; delete this.sh.congThuc[khoaO(r, c)]; });
+    return this;
+  }
+  /** Chỉ hỗ trợ `PASTE_FORMAT` (định dạng số + nền), đúng cỡ vùng đích — thứ `CHEN_COT` của Web App dùng. */
+  copyTo(dich, kieu) {
+    if (kieu !== 'PASTE_FORMAT') throw new Error('Giả lập copyTo chỉ hỗ trợ PASTE_FORMAT, nhận: ' + kieu);
+    dich._ghiNhat('dinhDang');
+    for (let i = 0; i < dich.nr; i++) {
+      for (let j = 0; j < dich.nc; j++) {
+        const kN = khoaO(this.r + i, this.c + j), kD = khoaO(dich.r + i, dich.c + j);
+        ['dinhDang', 'nen'].forEach((ten) => {
+          if (this.sh[ten][kN] !== undefined) dich.sh[ten][kD] = this.sh[ten][kN];
+          else delete dich.sh[ten][kD];
+        });
+      }
+    }
+    return this;
+  }
+
   getFormulaR1C1() { return this.sh.congThuc[khoaO(this.r, this.c)] || ''; }
   getFormulasR1C1() {
     const out = [];
@@ -205,8 +321,16 @@ class VungGia {
     this._ghiNhat('giaTri');
     this._duyet((r, c, i, j) => {
       const v = bang[i][j];
+      // Như Google: chuỗi bắt đầu bằng `=` là CÔNG THỨC (A1).
+      if (typeof v === 'string' && v.charAt(0) === '=' && v.length > 1) {
+        this.sh.congThuc[khoaO(r, c)] = a1SangR1C1(v.slice(1), r, c);
+        delete this.sh.giaTri[khoaO(r, c)];
+        return;
+      }
       this.sh.giaTri[khoaO(r, c)] = v === undefined ? '' : v;
-      if (v !== '' && v != null) delete this.sh.congThuc[khoaO(r, c)];
+      // Bản trước chỉ gỡ công thức khi giá trị KHÁC rỗng — Google gỡ cả khi ghi '' (ghi đè là ghi đè). Để lệch
+      // chỗ này là giả lập che mất đúng lỗi "ghi rỗng vào cột công thức".
+      if (v !== undefined) delete this.sh.congThuc[khoaO(r, c)];
     });
     return this;
   }
@@ -278,6 +402,11 @@ class BangTinhGia {
   getSheets() { return this.sheets.slice(); }
   getSheetByName(t) { return this.sheets.filter((s) => s.ten === t)[0] || null; }
   themSheet(t) { const s = new SheetGia(t, this); this.sheets.push(s); return s; }
+  insertSheet(t) {
+    if (this.getSheetByName(t)) throw new Error('A sheet with the name "' + t + '" already exists.');
+    if (this.sim) this.sim.nhatKyGhi.push({ stt: this.sim.nhatKyGhi.length + 1, sheet: t, kieu: 'taoSheet', dong1: 0, cot1: 0, soDong: 0, soCot: 0, cot: [] });
+    return this.themSheet(t);
+  }
 }
 
 // ============================================================ dịch vụ Google giả
@@ -285,8 +414,12 @@ class BangTinhGia {
 /** Date giả để chốt "hôm nay" trên máy chủ Google — cần cho T-53 và luật chống ghi lùi tháng. */
 function taoDateGia(hop) {
   return class DateGia extends Date {
-    constructor(...a) { if (a.length === 0) super(hop.moc); else super(...a); }
-    static now() { return hop.moc; }
+    // `hop.buocMs` (chỉ bài test canh giờ đặt): mỗi lần mã hỏi giờ, đồng hồ trôi thêm ngần ấy mili-giây — để dựng
+    // được ca "chạm ngưỡng 4 phút 30 giữa chừng" mà không phải chờ thật.
+    constructor(...a) {
+      if (a.length === 0) { super(hop.moc); if (hop.buocMs) hop.moc += hop.buocMs; } else super(...a);
+    }
+    static now() { const t = hop.moc; if (hop.buocMs) hop.moc += hop.buocMs; return t; }
   };
 }
 
@@ -467,6 +600,7 @@ function taoGiaLap(tc) {
 
   const hopThoiGian = { moc: (o.ngay ? new Date(o.ngay) : new Date('2026-09-08T03:00:00Z')).getTime() };
   sim.datNgay = (x) => { hopThoiGian.moc = new Date(x).getTime(); };
+  sim.datBuocDongHo = (ms) => { hopThoiGian.buocMs = ms || 0; };
   sim.ngayHienTai = () => new Date(hopThoiGian.moc);
 
   // ---------------------------------------------------------- dịch vụ Google giả
@@ -486,7 +620,8 @@ function taoGiaLap(tc) {
         if (!ss) throw new Error('Unexpected error while getting the method or property openById on object SpreadsheetApp.');
         return ss;
       },
-      flush() { sim.soLanFlush++; }
+      flush() { sim.soLanFlush++; if (typeof sim.khiFlush === 'function') sim.khiFlush(); },
+      CopyPasteType: { PASTE_FORMAT: 'PASTE_FORMAT', PASTE_VALUES: 'PASTE_VALUES', PASTE_NORMAL: 'PASTE_NORMAL' }
     },
     PropertiesService: {
       getScriptProperties() {
@@ -801,12 +936,35 @@ function dungSheetMapping(ss, bang) {
   return sh;
 }
 
+/**
+ * YC-38.1: THÊM NHỮNG SHEET KHUÔN còn thiếu để file tháng giả đúng "hợp đồng" như file thật — 4 sheet gian
+ * hàng, `Tổng tồn kho`, `Mapping_san_pham` 12 cột. Sheet nào bài test đã tự dựng thì GIỮ NGUYÊN, không đè.
+ *
+ * Vì sao cần: từ 2.6.0 Web App kiểm khuôn file tháng trước mỗi lượt ghi. File thật luôn có đủ; file giả
+ * của các bài test thường chỉ dựng đúng một sheet gian hàng mà bài đó cần. Không bù thì mọi bài ghi đều
+ * dừng ở SAI_HOP_DONG — đúng hành vi, nhưng không phải thứ các bài đó sinh ra để kiểm.
+ */
+const SCHEMA_MAPPING_12 = ['Gian hàng', 'Tên trên Shopee', 'Phân loại', 'Tên viết tắt', 'Hệ số', 'Cấu phần',
+  'Xác nhận', 'Mã hàng', 'Gợi ý 1', 'Gợi ý 2', 'Ngày thêm', 'Ghi chú'];
+function dungKhungThieu(ss) {
+  for (const ten of ['Shopee mall', 'Offood', 'Importmart', 'Babyiu']) {
+    if (!ss.getSheetByName(ten)) dungSheetGianHang(ss, ten, []);
+  }
+  if (!ss.getSheetByName('Tổng tồn kho')) {
+    dungSheetDanhMuc(ss, [[], ['', 'STT', 'Tên sản phẩm', 'Tên viết tắt', 'Mã hàng', 'Đơn vị', 'Giá vốn', 'Tổng tồn']]);
+  }
+  if (!ss.getSheetByName('Mapping_san_pham') && !ss.getSheetByName('Mapping sản phẩm')) {
+    dungSheetMapping(ss, [SCHEMA_MAPPING_12]);
+  }
+  return ss;
+}
+
 /** Nạp lõi phía MÁY TÍNH (không có dịch vụ Google) — dùng cho dungGoiGhi và dựng dữ liệu thử. */
 function napLoiMay() { return napGs(FILE_LOI_MAY, {}); }
 
 module.exports = {
   taoGiaLap, napGs, napLoiMay, catCauMang,
-  dungSheetGianHang, dungSheetDanhMuc, dungSheetMapping,
+  dungSheetGianHang, dungSheetDanhMuc, dungSheetMapping, dungKhungThieu,
   BangTinhGia, SheetGia,
   URL_GIA, TIEU_DE_GIAN_HANG, FILE_VO_GOOGLE, FILE_LOI_MAY,
   HTML_DANG_NHAP, HTML_QUA_GIO, HTML_500, HTML_403

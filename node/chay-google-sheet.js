@@ -223,7 +223,8 @@ async function duongXuLy(web, tuyChon, thang, ngayGhi, in_) {
     ngayGhi: ngayGhi,
     sheetCuaGian: (ma) => tuyChon.lop.Config.gianHang(cfg, ma).sheet,
     toiDaDonMotLo: tuyChon.toiDaDonMotLo,
-    nguongGiay: tuyChon.nguongGiay
+    nguongGiay: tuyChon.nguongGiay,
+    runId: tuyChon.runId
   });
 
   in_('File tháng: ' + (kq.tenFile || '(không rõ tên)') + ' · ' + kq.soLo + ' lô · ' + kq.soLanGoi + ' lượt gọi');
@@ -235,7 +236,8 @@ async function duongXuLy(web, tuyChon, thang, ngayGhi, in_) {
     canhBao: (canhBaoCauHinh ? [canhBaoCauHinh] : []).concat(canhBaoLo),
     thongBao: kq.thongBao,
     viTri: kq.viTri, tenFile: kq.tenFile, soLo: kq.soLo, soLanGoi: kq.soLanGoi,
-    mapTomTat: kq.mapTomTat, duong: 'xuLy', daGhi: kq.thongKe.donGhi > 0
+    mapTomTat: kq.mapTomTat, duong: 'xuLy', daGhi: kq.thongKe.donGhi > 0,
+    mappingCo: kq.mappingCo, mappingBam: kq.mappingBam, banDung: web.banDungWebApp
   };
 }
 
@@ -261,12 +263,13 @@ async function duongGhiCu(web, tuyChon, thang, ngayGhi, in_) {
     in_('Không có đơn mới (đã có sẵn ' + goi.thongKe.donDaCo + ' đơn) → không gửi lệnh ghi.');
     return {
       thongKe: goi.thongKe, canhBao: goi.canhBao, thongBao: [], viTri: {},
-      tenFile: tuXa.tenFile, duong: 'ghi', daGhi: false
+      tenFile: tuXa.tenFile, duong: 'ghi', daGhi: false,
+      mappingCo: null, mappingBam: null, banDung: web.banDungWebApp
     };
   }
 
   in_('Gửi lệnh ghi ' + goi.thongKe.donGhi + ' đơn (' + goi.thongKe.dongGhi + ' dòng) …');
-  const kq = await web.ghi(thang, goi.lenh, goi.mappingThem);
+  const kq = await web.ghi(thang, goi.lenh, goi.mappingThem, null, goi.mappingThemCot, tuyChon.runId);
   const canhBaoLo = gomCanhBaoVungCongThuc(lop, goi.canhBao.concat(kq.canhBao || []));
   inCanhBaoBanDung(web, in_);
   inCanhBaoVungCongThuc(lop, canhBaoLo, in_);
@@ -274,7 +277,8 @@ async function duongGhiCu(web, tuyChon, thang, ngayGhi, in_) {
     thongKe: Object.assign({}, goi.thongKe, { donDaCoTuXa: kq.thongKe.donDaCo, mappingThem: kq.thongKe.mappingThem }),
     canhBao: canhBaoLo,
     thongBao: kq.thongBao || [], viTri: kq.viTri || {}, tenFile: kq.tenFile, soLo: kq.soLo,
-    mapTomTat: lop.MapListing.tomTat(goi.map), duong: 'ghi', daGhi: true
+    mapTomTat: lop.MapListing.tomTat(goi.map), duong: 'ghi', daGhi: true,
+    mappingCo: kq.mappingCo, mappingBam: kq.mappingBam, banDung: web.banDungWebApp
   };
 }
 

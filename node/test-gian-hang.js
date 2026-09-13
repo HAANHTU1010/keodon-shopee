@@ -332,6 +332,7 @@ async function docBang(file, tenSheet) {
     gl.dungSheetGianHang(ss, 'Importmart', []);
     gl.dungSheetDanhMuc(ss, BANG_TON);
     gl.dungSheetMapping(ss, bangMap);
+    gl.dungKhungThieu(ss);                              // YC-38.1: đủ khuôn như file thật
 
     const tmart = doc.find((x) => x.maGianHang === 'SP_MALL' && /tháng 8/.test(x.tenFile));
     const bang8 = await docBang(path.join(DAU_VAO, tmart.tenFile), 'orders');
@@ -369,6 +370,7 @@ async function docBang(file, tenSheet) {
     gl.dungSheetGianHang(ss, 'Shopee mall', []);
     gl.dungSheetDanhMuc(ss, BANG_TON);
     gl.dungSheetMapping(ss, bangMap);
+    gl.dungKhungThieu(ss);                              // YC-38.1: đủ khuôn như file thật
 
     const tmart = doc.find((x) => x.maGianHang === 'SP_MALL' && /tháng 8/.test(x.tenFile));
     const bang8 = await docBang(path.join(DAU_VAO, tmart.tenFile), 'orders');

@@ -354,9 +354,17 @@ function dungSim(tc) {
     const ss = new BangTinhGia('THÁNG-' + Number(ky.slice(5)) + '-' + ky.slice(0, 4) + '-KINH-DOANH', id, sim);
     sim.file[id] = ss;
     (o.gian || ['Shopee mall']).forEach((g) => dungSheetGian(ss, g, (o.gianTC || {})[g] || o.gianTC0 || {}));
+    // YC-38.1: đủ khuôn file tháng — ba sheet gian hàng còn lại (không đơn), `Tổng tồn kho`, Mapping 12 cột.
+    ['Shopee mall', 'Offood', 'Importmart', 'Babyiu'].forEach((g) => {
+      if (!ss.getSheetByName(g)) dungSheetGian(ss, g, { dong: 0 });
+    });
+    const shTon = ss.themSheet('Tổng tồn kho');
+    ['', 'STT', 'Tên sản phẩm', 'Tên viết tắt', 'Mã hàng', 'Đơn vị', 'Giá vốn', 'Tổng tồn']
+      .forEach((t, i) => { if (t) shTon.dat(2, i + 1, { v: t }); });
     // Sheet Mapping phải có: sau mỗi lượt ghi, `toLaiMapping_` (D-47) tô lại tab này.
     const bangMap = o.mapping || [['Gian hàng', 'Tên trên Shopee', 'Phân loại', 'Tên viết tắt', 'Hệ số',
-      'Cấu phần', 'Xác nhận'], ['Shopee mall', 'Hàng mẫu của fixture', '', 'dt5', 1, '', 'CÓ']];
+      'Cấu phần', 'Xác nhận', 'Mã hàng', 'Gợi ý 1', 'Gợi ý 2', 'Ngày thêm', 'Ghi chú'],
+    ['Shopee mall', 'Hàng mẫu của fixture', '', 'dt5', 1, '', 'CÓ']];
     const shMap = ss.themSheet('Mapping_san_pham');
     bangMap.forEach((hang, r) => hang.forEach((v, c) => {
       if (v !== '' && v != null) shMap.dat(r + 1, c + 1, { v: v });
@@ -738,30 +746,39 @@ test('T-CT-06', 'setBackgrounds chỉ đổi NỀN, không đổi giá trị/cô
 
 console.log('\n--- 3. doCotNote_ rơi vào cột cấm: GIỮ NÉM LỖI, và lỗi phải chỉ được đường ra (BA chốt câu c) ---');
 
-test('T-CT-07', 'cột Note tự dò ra cột công thức → từ chối ghi, nêu đúng cột và câu lệnh sửa', () => {
-  // Sheet chỉ có tiêu đề tới cột L → doCotNote_ trả về M, đúng ca BA nêu.
+test('T-CT-07', 'sheet thiếu tiêu đề M/N/O (cột Note sẽ tự dò rơi vào cột công thức) → DỪNG SAI_HOP_DONG, không ghi ô nào', () => {
+  // Bản 2.5.0 bắt ca này ở hàng rào cột cấm: tiêu đề chỉ tới L thì `doCotNote_` trả về M, và `kiemCotDuocGhi_`
+  // từ chối. Từ 2.6.0 (YC-38.1) Web App kiểm khuôn file tháng TRƯỚC, nên cùng thế cờ đó dừng sớm hơn với câu
+  // chỉ thẳng ô tiêu đề nào thiếu — dễ sửa hơn "cột Note rơi vào M". Hàng rào cột cấm vẫn còn nguyên cho
+  // đường gọi thẳng `ghiMotSheet_` (INV-3b trong TestBatBien.gs).
   const sim = dungSim({ gianTC0: { dong: 2, soTieuDe: 12 } });
   const kq = goiGhi(sim, '2026-09', 'Shopee mall', [don()]);
-  dung(!kq.ok, 'phải TỪ CHỐI, không được ghi: ' + JSON.stringify(kq));
+  bang(kq.ok, false, 'phải DỪNG: ' + JSON.stringify(kq).slice(0, 160));
+  bang(kq.loi, 'SAI_HOP_DONG');
   const t = String(kq.thongBao || '');
-  dung(t.indexOf('TỪ CHỐI GHI') >= 0, 'phải là câu từ chối: ' + t);
-  dung(/cột M\b/.test(t), 'phải nêu ĐÚNG CỘT đã dò ra (M): ' + t);
-  dung(t.indexOf('cot_note') >= 0, 'phải nêu khóa cần sửa: ' + t);
-  dung(t.indexOf('Cấu hình') >= 0, 'phải chỉ ra chỗ sửa: ' + t);
-  dung(/chạy lại/.test(t), 'phải nói làm gì tiếp: ' + t);
-  bang(sim.nhatKyGhi.filter((g) => g.sheet === 'Shopee mall').length, 0, 'ném lỗi TRƯỚC mọi lệnh ghi');
+  dung(t.indexOf('SỔ THÁNG KHÔNG ĐÚNG KHUÔN') === 0, 'câu phải mở đầu đúng: ' + t);
+  ['ô M2', 'ô N2', 'ô O2'].forEach((o) => dung(t.indexOf(o) >= 0, 'phải nêu ' + o + ': ' + t));
+  dung(t.indexOf('Tool chưa ghi gì') >= 0, 'phải nói rõ chưa ghi gì: ' + t);
+  bang(sim.nhatKyGhi.length, 0, 'dừng TRƯỚC mọi lệnh ghi, kể cả kéo công thức');
 
-  // ĐỐI CHỨNG ÂM: bố cục bình thường (tiêu đề tới O) thì tuyệt đối KHÔNG được ném — hàng rào
-  // luôn-chặn là hàng rào vô dụng.
+  // Đủ 15 tiêu đề thì tuyệt đối KHÔNG được dừng — hàng rào luôn-chặn là hàng rào vô dụng. Dựng NGOÀI
+  // `phaiLech`: lỗi dựng ném bên trong sẽ bị đếm nhầm thành "đã lệch".
+  const s2 = dungSim({ gianTC0: { dong: 2 } });
+  const r2 = goiGhi(s2, '2026-09', 'Shopee mall', [don()]);
+  bang(r2.ok, true, 'chặn oan sheet đủ khuôn: ' + r2.thongBao);
+
+  // ĐỐI CHỨNG ÂM: gỡ lời gọi kiểm khuôn khỏi hành động `ghi` → cùng thế cờ đó KHÔNG còn ra SAI_HOP_DONG
+  // (rơi xuống hàng rào cột cấm), tức phép chấm trên thật sự phụ thuộc vào YC-38.1.
+  const MOC = 'kiemHopDongFileThang_(ss, cfg);                     // YC-38.1';
+  bang(fs.readFileSync(path.join(SRC, 'ShellAppsScript.gs'), 'utf8').split(MOC).length, 2, 'mốc gỡ phải có đúng 1 chỗ');
   return phaiLech(() => {
-    const s2 = dungSim({ gianTC0: { dong: 2 } });
-    const r2 = goiGhi(s2, '2026-09', 'Shopee mall', [don()]);
-    if (!r2.ok) throw new Error('chặn oan bố cục bình thường: ' + r2.thongBao);
-    // dựng lại đúng ca sai (tiêu đề tới L) và chứng minh phép chấm bắt được
-    const s3 = dungSim({ gianTC0: { dong: 2, soTieuDe: 12 } });
+    const s3 = dungSim({
+      gianTC0: { dong: 2, soTieuDe: 12 },
+      suaNguon: (src) => src.replace(MOC, '// (đã gỡ cho đối chứng âm)')
+    });
     const r3 = goiGhi(s3, '2026-09', 'Shopee mall', [don()]);
-    return r3.ok ? [] : ['đã chặn: ' + r3.thongBao];
-  }, 'bố cục thiếu tiêu đề mà vẫn cho ghi');
+    return r3.loi === 'SAI_HOP_DONG' ? [] : ['không còn SAI_HOP_DONG: ' + (r3.loi || r3.thongBao)];
+  }, 'gỡ kiểm khuôn khỏi hành động ghi');
 });
 
 // ==================================================================== 4. dấu thời gian dòng 1

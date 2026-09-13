@@ -81,6 +81,7 @@ function napFileThang(ss, dongCu) {
   gl.dungSheetGianHang(ss, SHEET, dongCu || []);
   gl.dungSheetDanhMuc(ss, lop.TestData.danhMucBang());
   gl.dungSheetMapping(ss, lop.TestData.mappingBang());
+  gl.dungKhungThieu(ss);                                // YC-38.1: đủ khuôn như file thật
   return ss;
 }
 

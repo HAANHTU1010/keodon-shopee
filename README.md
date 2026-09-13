@@ -100,7 +100,7 @@ quả khác nhau trên cùng một sổ. Nay máy chỉ gửi bảng dòng đã 
     dong-goi.js             dựng gói giao user, tự kiểm, nén ra .zip
     dau-van-tay.js          băm từng file src/ để biết Google đang chạy bản nào
     nghiem-thu.js           bộ nghiệm thu trên dữ liệu thật tháng 8
-    test-*.js               13 bộ test, xem bảng ở phần 4
+    test-*.js               16 bộ test, xem bảng ở phần 4
     fixtures/               dữ liệu test đã lọc sạch thông tin người mua
 
   bat/                      BỐN NÚT BẤM — bản gốc. Xem phần 7.
@@ -119,7 +119,7 @@ Không còn `out/`, `da-xu-ly/`, `du-lieu-vao/`: chế độ DEV cũ tự tạo 
 ```bash
 npm install
 
-npm run test-tat-ca      # 13 bộ, phải 0 hỏng — đây là cửa duy nhất trước khi push
+npm run test-tat-ca      # 16 bộ, phải 0 hỏng — đây là cửa duy nhất trước khi push
 npm run nghiem-thu       # đo lại trên dữ liệu thật tháng 8, in bảng số
 npm run dong-goi         # dựng gói giao user → 04_BAN_GIAO/Tool_nhap_lieu.zip
 npm run dau-van-tay -- --ghi   # tính lại dấu vân tay bản dựng sau khi sửa src/
@@ -133,7 +133,7 @@ Số bài lấy từ dòng tổng kết mỗi bộ tự in ra; chạy lại là 
 |---|---|---|
 | `npm test` | `T-xx`, `FR-21` | lõi lớp 1–2–3 trong bộ nhớ; lớp 2/3 không biết tên sàn |
 | `npm run test-node` | `N-xx` | vỏ Excel trên file thật: đọc, ghi, đổi tên file, khóa chống chạy chồng |
-| `npm run test-bat-bien` | `INV-1…INV-10` | mười bất biến ở phần 5 — vi phạm một cái là hỏng cả đợt |
+| `npm run test-bat-bien` | `INV-1…INV-11` | các bất biến ở phần 5 (INV-11: trước/sau một lượt ghi trên file DEMO tháng 9 thật) — vi phạm một cái là hỏng cả đợt |
 | `npm run test-dinh-tuyen` | `T-DT-xx` | tra `link_thang`, mở file theo ID, kiểm chéo tên file, chống ghi lùi |
 | `npm run test-xu-ly` | `T-XL-xx` | hai đường `ghi`/`xuLy` cho ra file giống nhau TỪNG Ô; tô lại tab Mapping |
 | `npm run test-web-app` | `T-WA-xx` | lỗi mạng, lệch phiên bản, quyền truy cập, cửa chuỗi bí mật, khóa hai máy |
@@ -145,6 +145,9 @@ Số bài lấy từ dòng tổng kết mỗi bộ tự in ra; chạy lại là 
 | `npm run test-dau-van-tay` | `DV-xx` | dấu vân tay bản dựng; hằng và hàm mà máy trông đợi ở vỏ Google |
 | `npm run test-tao-thang-moi` | `TM-01…TM-12` | chuyển sổ sang tháng mới, đo trên cặp tháng 8→9 thật |
 | `npm run test-gian-hang` | `T-GH-xx` | file thả nhầm thư mục gian hàng: luật D-04 trên 12 file xuất thật, và vỏ Google chặn trước khi ghi |
+| `npm run test-hop-dong` | `T-HD-xx` | YC-38.1 hợp đồng file tháng: lệch khuôn → `SAI_HOP_DONG` trước lệnh ghi đầu tiên; không chặn oan khuôn thật; Mapping ghi THEO TÊN CỘT |
+| `npm run test-dong-run` | `T-RUN-xx` | YC-38.3 dòng tổng kết RUN: RUN id giờ Việt Nam, Web App ghi nhật ký + trả số dòng CÓ và băm Mapping, thả lại cùng file ra cùng dòng |
+| `npm run test-tao-thang-moi-web` | `TM-W-xx` | YC-35 hành động `taoThangMoi` trên Web App giả, chạy trên file tháng 9 khuôn mới (bản sao → tháng 10) và tháng 8 thật (TM-01…TM-12) |
 
 **Luật số một của bộ test: mọi tiêu chí phải có đối chứng âm.** Dựng lại đúng khuyết tật nó phải bắt, rồi
 chứng minh phép chấm báo TRƯỢT. Một phép kiểm chỉ có bài ĐẠT là một phép kiểm chưa được kiểm — bệnh này

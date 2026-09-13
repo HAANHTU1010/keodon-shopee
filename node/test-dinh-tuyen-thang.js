@@ -150,14 +150,24 @@ const CT_MAU_EFMN = {
 };
 
 /** Sheet gian hàng: dòng 2 tiêu đề, dòng 3 dòng tổng, dòng 4 một đơn cũ (để kiểm chống trùng). */
-function sheetGianHang(moiTruong) {
+function sheetGianHang(moiTruong, tenSheet, coDonCu) {
   // Lưới rộng tới cột 30 nhưng getLastColumn vẫn báo 14: dòng 1 từ cột P sang phải là chỗ tool đóng dấu
   // thời gian; lưới hẹp hơn thì lời gọi đó ném và bị try/catch nuốt im — bài T-DT-40b sẽ xanh giả vì
   // "không ghi gì" chứ không phải vì ghi đúng.
-  const sh = sheetGia('Shopee mall', 300, 30, moiTruong);
-  ['Ngày', 'Nguồn', 'Mã đơn', 'Tên VT', 'TT', 'Nhập', 'SL', 'Tổng tiền SP', 'MGG', 'Chi phí', 'Thuế',
-    'Doanh Thu', 'Đã TT', 'Còn Nợ'].forEach((t, i) => { sh._o[2][i + 1].v = t; });
+  const sh = sheetGia(tenSheet || 'Shopee mall', 300, 30, moiTruong);
+  // Tiêu đề THẬT (YC-38.1 kiểm đúng 15 tên này trước mỗi lượt ghi).
+  ['Ngày ', 'Nguồn đơn', 'Thông tin ĐH', 'Tên viết tắt', 'Tên sản phẩm', 'Đơn vị ', 'SL', 'Tổng Tiền SP', 'MGG Shop',
+    'Chi phí', 'Thuế', 'Doanh Thu', 'Mã hàng', 'Check tồn', 'Còn Nợ'].forEach((t, i) => { sh._o[2][i + 1].v = t; });
+  // Dòng tổng: công thức ở H..L như file thật; H3 giữ giá trị 0 để T-DT-30 soát "không bị đụng".
+  [8, 9, 10, 11, 12].forEach((c) => { sh._o[3][c].f = '=SUM(R[1]C:R[1997]C)'; });
   sh._o[3][8].v = 0;
+  if (coDonCu === false) {
+    sh._o[4][12].f = '=R[0]C[-4]-R[0]C[-2]';
+    Object.keys(CT_MAU_EFMN).forEach((c) => { sh._o[4][Number(c)].f = CT_MAU_EFMN[c]; });
+    sh._lastRow = 4;
+    sh._lastCol = 15;
+    return sh;
+  }
   sh._o[4][3].v = 'TEST0802HHHH08';      // đơn đã có — gửi lại phải bị bỏ qua
   sh._o[4][12].f = '=R[0]C[-4]-R[0]C[-2]';
   // D-57: E, F, M, N mang công thức TỪNG DÒNG như file thật. Không có thì tool dừng THIEU_CONG_THUC.
@@ -167,11 +177,22 @@ function sheetGianHang(moiTruong) {
   return sh;
 }
 
+/** `Tổng tồn kho` tối thiểu: tiêu đề dòng 2 đúng ở C/D/E/H như file thật. */
+function sheetTonKho(moiTruong) {
+  const sh = sheetGia('Tổng tồn kho', 10, 12, moiTruong);
+  ['', 'STT', 'Tên sản phẩm', 'Tên viết tắt', 'Mã hàng', 'Đơn vị', 'Giá vốn', 'Tổng tồn']
+    .forEach((t, i) => { if (t) sh._o[2][i + 1].v = t; });
+  sh._o[3][2].v = 1; sh._o[3][3].v = 'Hàng mẫu'; sh._o[3][4].v = 'dt5'; sh._o[3][5].v = 1548; sh._o[3][8].v = 10;
+  sh._lastRow = 3;
+  sh._lastCol = 8;
+  return sh;
+}
+
 /** Sheet Mapping tối thiểu — `toLaiMapping_` (D-47) tô lại tab này sau mỗi lượt ghi. */
 function sheetMapping(moiTruong) {
   const sh = sheetGia('Mapping_san_pham', 10, 12, moiTruong);
-  ['Gian hàng', 'Tên trên Shopee', 'Phân loại', 'Tên viết tắt', 'Hệ số', 'Cấu phần', 'Xác nhận']
-    .forEach((t, i) => { sh._o[1][i + 1].v = t; });
+  ['Gian hàng', 'Tên trên Shopee', 'Phân loại', 'Tên viết tắt', 'Hệ số', 'Cấu phần', 'Xác nhận',
+    'Mã hàng', 'Gợi ý 1', 'Gợi ý 2', 'Ngày thêm', 'Ghi chú'].forEach((t, i) => { sh._o[1][i + 1].v = t; });
   sh._o[2][1].v = 'Shopee mall'; sh._o[2][2].v = 'Hàng mẫu'; sh._o[2][4].v = 'dt5'; sh._o[2][7].v = 'CÓ';
   sh._o[3][1].v = 'Shopee mall'; sh._o[3][2].v = 'Hàng chưa soát';
   sh._lastRow = 3;
@@ -211,14 +232,17 @@ function nap(tuyChon) {
   // Như thể chủ dự án đã chạy `caiDat(<chuỗi>)` một lần (YC-28). `khongCaiDat` dựng ca ngược lại.
   if (!t.khongCaiDat) moiTruong.thuocTinh['KEODON_BI_MAT'] = BI_MAT;
   const cacFile = {};
-  cacFile[ID_T9] = {
-    ten: t.tenFileT9 || TEN_T9,
-    sheets: { 'Shopee mall': sheetGianHang(moiTruong), 'Mapping_san_pham': sheetMapping(moiTruong) }
-  };
-  cacFile[ID_T10] = {
-    ten: TEN_T10,
-    sheets: { 'Shopee mall': sheetGianHang(moiTruong), 'Mapping_san_pham': sheetMapping(moiTruong) }
-  };
+  // Đủ khuôn file tháng (YC-38.1): 4 sheet gian hàng, `Tổng tồn kho`, `Mapping_san_pham` 12 cột.
+  const dungFile = () => ({
+    'Shopee mall': sheetGianHang(moiTruong),
+    'Offood': sheetGianHang(moiTruong, 'Offood', false),
+    'Importmart': sheetGianHang(moiTruong, 'Importmart', false),
+    'Babyiu': sheetGianHang(moiTruong, 'Babyiu', false),
+    'Tổng tồn kho': sheetTonKho(moiTruong),
+    'Mapping_san_pham': sheetMapping(moiTruong)
+  });
+  cacFile[ID_T9] = { ten: t.tenFileT9 || TEN_T9, sheets: dungFile() };
+  cacFile[ID_T10] = { ten: TEN_T10, sheets: dungFile() };
   moiTruong.cacFile = cacFile;
 
   const SpreadsheetApp = {

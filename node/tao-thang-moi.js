@@ -215,6 +215,7 @@ class VoThangMoi {
           break;
         }
         case 'CHEN_COT': chenCot(this.ws(t.sheet), t.truocCot); break;
+        case 'KEO_CT': keoCongThuc(this.ws(t.sheet), t.c, t.r1, t.r2); break;
         default: throw new Error('Thao tác lạ: ' + t.loai);
       }
     }
@@ -374,9 +375,114 @@ function chenCot(ws, truoc) {
   }
 }
 
+/**
+ * `KEO_CT` (D-57): mọi ô CHƯA có công thức trong `r1..r2` của cột `c` nhận công thức của ô có công thức gần nhất
+ * phía trên, dịch dòng như kéo chuột. Ô có GIÁ TRỊ gõ tay thì để yên (không đè dữ liệu của người).
+ */
+function keoCongThuc(ws, c, r1, r2) {
+  let mau = null, dem = 0;
+  for (let r = r1; r <= r2; r++) {
+    const cell = ws.getCell(r, c);
+    const f = congThucCua(cell);
+    if (f) { mau = { text: f.text, r, mang: f.mang }; continue; }
+    if (cell.value != null && cell.value !== '') continue;
+    if (!mau) continue;
+    const text = dichCT(mau.text, mau.r, r);
+    cell.value = mau.mang ? { formula: text, ref: cell.address, shareType: 'array' } : { formula: text };
+    dem++;
+  }
+  return dem;
+}
+
 // ---------------------------------------------------------------- TÍNH LẠI (BẪY 2)
 
 const S_TON = 'Tổng tồn kho', S_NHAP = 'Tổng nhập', S_LN = 'Lợi nhuận', S_DN = 'Đơn ngoài', S_TIK = 'Tiktok';
+const S_TIKS = 'TikTok Shop', S_CP = 'Chi Phí Hàng Ngày';
+
+/**
+ * Tính một công thức A1 đơn giản của `Lợi nhuận`: số, + − × ÷, ngoặc, ô cùng sheet (`D7`), ô sheet khác
+ * (`'Shopee mall'!L3`, `Tiktok!K3`), vùng và `SUM(...)`. Đủ cho mọi công thức cột D của khuôn tháng 8 và 9;
+ * gặp thứ khác thì trả null (người đọc số thấy ngay chỗ không tính được, không đoán).
+ */
+function tinhCongThucDon(text, sheetNay, layO) {
+  const src = String(text || '').replace(/^=/, '');
+  let i = 0;
+  const hong = () => { throw new Error('không tính được: ' + src); };
+  const boTrang = () => { while (i < src.length && /\s/.test(src[i])) i++; };
+  function tenSheet() {
+    boTrang();
+    if (src[i] === "'") { const j = src.indexOf("'", i + 1); const t = src.slice(i + 1, j); i = j + 1; return t; }
+    const m = /^([A-Za-zÀ-ỹ_][\wÀ-ỹ]*)!/.exec(src.slice(i));
+    if (m) { i += m[1].length; return m[1]; }
+    return null;
+  }
+  function oDon() {
+    const m = /^\$?([A-Z]{1,3})\$?(\d+)/.exec(src.slice(i));
+    if (!m) return null;
+    i += m[0].length;
+    return { c: chiSoCot(m[1]), r: +m[2] };
+  }
+  function thamChieu() {
+    const luu = i;
+    let sh = tenSheet();
+    if (sh != null) { if (src[i] !== '!') { i = luu; sh = null; } else i++; }
+    const a = oDon();
+    if (!a) { i = luu; return null; }
+    let b = a;
+    if (src[i] === ':') { i++; b = oDon() || hong(); }
+    const ten = sh || sheetNay;
+    let tong = 0;
+    for (let r = Math.min(a.r, b.r); r <= Math.max(a.r, b.r); r++) {
+      for (let c = Math.min(a.c, b.c); c <= Math.max(a.c, b.c); c++) tong += soCua(layO(ten, r, c));
+    }
+    return tong;
+  }
+  function nhanTu() {
+    boTrang();
+    if (src[i] === '(') { i++; const v = bieuThuc(); boTrang(); if (src[i] !== ')') hong(); i++; return v; }
+    if (src[i] === '-') { i++; return -nhanTu(); }
+    if (src[i] === '+') { i++; return nhanTu(); }
+    const so = /^\d+(\.\d+)?/.exec(src.slice(i));
+    if (so && !/^[A-Z]/.test(src.slice(i))) { i += so[0].length; return +so[0]; }
+    const ham = /^(SUM)\(/i.exec(src.slice(i));
+    if (ham) {
+      i += ham[0].length;
+      let tong = 0;
+      for (;;) {
+        boTrang();
+        if (src[i] === ')') { i++; break; }
+        tong += bieuThuc();
+        boTrang();
+        if (src[i] === ',' || src[i] === ';') { i++; continue; }
+        if (src[i] === ')') { i++; break; }
+        hong();
+      }
+      return tong;
+    }
+    const v = thamChieu();
+    if (v == null) hong();
+    return v;
+  }
+  function tich() {
+    let v = nhanTu();
+    for (;;) {
+      boTrang();
+      if (src[i] === '*') { i++; v *= nhanTu(); } else if (src[i] === '/') { i++; v /= nhanTu(); } else return v;
+    }
+  }
+  function bieuThuc() {
+    let v = tich();
+    for (;;) {
+      boTrang();
+      if (src[i] === '+') { i++; v += tich(); } else if (src[i] === '-') { i++; v -= tich(); } else return v;
+    }
+  }
+  try {
+    const v = bieuThuc();
+    boTrang();
+    return i === src.length ? v : null;
+  } catch (e) { return null; }
+}
 const GIAN_HANG = ['Shopee mall', 'Offood', 'Importmart', 'Babyiu'];
 
 function soCua(v) {
@@ -422,11 +528,11 @@ function tinhLai(anh, lop) {
   // 2) sheet gian hàng: dòng tổng H3..L3 và cột "Còn Nợ"; đồng thời gom số lượng xuất theo mã.
   const xuat = {};
   const tongGH = {};
-  for (const ten of GIAN_HANG.concat([S_TIK])) {
+  for (const ten of GIAN_HANG.concat([S_TIK, S_TIKS])) {
     const s = ss(ten);
     if (!s) continue;
     const laTik = ten === S_TIK;
-    const bc = laTik ? T.BO_CUC.TIKTOK : T.BO_CUC.CHUAN;
+    const bc = laTik ? T.BO_CUC.TIKTOK : (ten === S_TIKS ? T.BO_CUC.TIKTOK_SHOP : T.BO_CUC.CHUAN);
     const cSL = chiSoCot('G'), cTen = chiSoCot(bc.cotTenVietTat);
     const tong = {};
     bc.cotTong.forEach(ch => { tong[ch] = 0; });
@@ -435,6 +541,7 @@ function tinhLai(anh, lop) {
       const ten2 = val(s, r, cTen);
       if (U.laRong(ten2)) continue;
       const m = theoTen[U.chuanHoaChuoi(ten2)];
+      // `Tổng xuất` khuôn tháng 9 cột L cộng `TikTok Shop` (không cộng `Tiktok` ẩn nữa) — ở đây gộp chung.
       if (m) xuat[U.chuanHoaChuoi(m.maHang)] = (xuat[U.chuanHoaChuoi(m.maHang)] || 0) + soCua(val(s, r, cSL));
       const H = soCua(val(s, r, chiSoCot('H'))), I = soCua(val(s, r, chiSoCot('I'))),
         J = soCua(val(s, r, chiSoCot('J'))), K = soCua(val(s, r, chiSoCot('K')));
@@ -500,18 +607,44 @@ function tinhLai(anh, lop) {
   });
   dat(S_TON, 1, chiSoCot('K'), K1);
 
-  // 6) `Lợi nhuận` cột D.
+  // 6) `Chi Phí Hàng Ngày` (khuôn tháng 9): E2.. = SUMIF(B3:B…, tiêu đề dòng 1, D3:D…).
+  const sCP = ss(S_CP);
+  if (sCP) {
+    const n = Math.max(sCP.soDong || 0, sCP.giaTri.length);
+    for (let c = 5; c <= 26; c++) {
+      const row2 = sCP.congThuc[1] || [];
+      if (row2[c - 1] == null) continue;
+      const nhan = U.chuanHoaChuoi(val(sCP, 1, c));
+      let tong = 0;
+      for (let r = 3; r <= n; r++) if (U.chuanHoaChuoi(val(sCP, r, 2)) === nhan) tong += soCua(val(sCP, r, 4));
+      dat(S_CP, 2, c, tong);
+    }
+  }
+
+  // 7) `Lợi nhuận` cột D — TÍNH ĐÚNG CÔNG THỨC ĐANG NẰM TRONG FILE (khuôn tháng 8 hay tháng 9 đều được),
+  //    không viết cứng phép cộng nào. Lặp vài vòng vì D6 phụ thuộc D7…D11, D11 phụ thuộc D12…D18.
   const sLN = ss(S_LN);
   if (sLN) {
     const cD = chiSoCot('D');
-    const lay = (ten, ch) => (tongGH[ten] && tongGH[ten][ch] != null) ? tongGH[ten][ch] : 0;
-    const D7 = lay(S_TIK, 'K') + lay('Shopee mall', 'L') + lay('Offood', 'L') + lay('Importmart', 'L') + dnL + dnM + lay('Babyiu', 'L');
-    const D8 = K1, D12 = I2;
-    let D11 = D12;
-    for (let r = 13; r <= 16; r++) D11 += soCua(val(sLN, r, cD));
-    const D9 = soCua(val(sLN, 9, cD)), D10 = soCua(val(sLN, 10, cD));
-    dat(S_LN, 7, cD, D7); dat(S_LN, 8, cD, D8); dat(S_LN, 11, cD, D11); dat(S_LN, 12, cD, D12);
-    dat(S_LN, 6, cD, D7 + D8 + D9 + D10 - D11);
+    const layO = (ten, r, c) => {
+      const g = ghiDe[ten] && ghiDe[ten][r + ',' + c];
+      if (g != null) return g;
+      const s2 = ss(ten);
+      if (!s2) return 0;
+      const v = val(s2, r, c);
+      return v != null ? v : gt(s2, r, c);
+    };
+    // `Tiktok` bỏ qua: giữ kết quả đã lưu của K3 để công thức D7 đọc được.
+    if (tongGH[S_TIK] && !ghiDe[S_TIK]) dat(S_TIK, 3, chiSoCot('K'), tongGH[S_TIK].K || 0);
+    const n = Math.max(sLN.soDong || 0, sLN.congThuc.length);
+    for (let vong = 0; vong < 4; vong++) {
+      for (let r = 6; r <= Math.min(n, 60); r++) {
+        const t = (sLN.congThuc[r - 1] || [])[cD - 1];
+        if (!t) continue;
+        const v = tinhCongThucDon(t, S_LN, layO);
+        if (v != null) dat(S_LN, r, cD, v);
+      }
+    }
   }
 
   return { ghiDe, so: { I2, K1, D7: (ghiDe[S_LN] || {})[7 + ',' + chiSoCot('D')] } };
@@ -642,7 +775,7 @@ async function main() {
 
 module.exports = {
   napLoiTaoThangMoi, khoiTaoThangMoi, VoThangMoi, anhChupFile, anhChupSheet, docFile,
-  tinhLai, apGhiDe, goCongThucChiaSe, chenCot, boGop, xoaVung, xoaDong, dichCT,
+  tinhLai, apGhiDe, goCongThucChiaSe, chenCot, boGop, xoaVung, xoaDong, dichCT, keoCongThuc, tinhCongThucDon,
   inBangKiem, chuCot, chiSoCot, congThucCua, giaTriThuan, ketQuaDaTinh
 };
 

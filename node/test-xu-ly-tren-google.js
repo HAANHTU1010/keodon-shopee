@@ -149,6 +149,7 @@ function dungSim(tonKho, mapping, maDaCoSan) {
   gl.dungSheetGianHang(ss, TEN_SHEET, cu);
   gl.dungSheetDanhMuc(ss, tonKho);
   gl.dungSheetMapping(ss, mapping);
+  gl.dungKhungThieu(ss);                                // YC-38.1: đủ khuôn như file thật
   return sim;
 }
 
@@ -672,7 +673,9 @@ function inBang(cot, hang) {
   // "3 dòng CÓ + 2 dòng chưa" — bảng Mapping thật có 317 dòng và trạng thái của nó do chủ shop sửa hằng
   // ngày, bám vào đó thì bài test đo trạng thái file chứ không đo mã.
   {
-    const HEADER = ['Gian hàng', 'Tên trên Shopee', 'Phân loại', 'Tên viết tắt', 'Hệ số', 'Cấu phần', 'Xác nhận'];
+    // Đủ 12 cột theo `SCHEMA.MAPPING` như file thật (YC-38.1 kiểm khuôn này trước mỗi lượt ghi).
+    const HEADER = ['Gian hàng', 'Tên trên Shopee', 'Phân loại', 'Tên viết tắt', 'Hệ số', 'Cấu phần', 'Xác nhận',
+      'Mã hàng', 'Gợi ý 1', 'Gợi ý 2', 'Ngày thêm', 'Ghi chú'];
     const BANG_MAP = [
       HEADER,
       ['Shopee mall', 'Gấu bông size 1', '', 'gvs km 1', 1, '', 'CÓ'],
@@ -683,7 +686,7 @@ function inBang(cot, hang) {
     ];
     const DONG_CO = [2, 3, 5];        // ba dòng đã ghi CÓ
     const DONG_VANG = [4, 6];         // hai dòng chưa CÓ
-    const RONG = 7;
+    const RONG = 12;
 
     /** Dựng một file tháng chỉ có sheet gian hàng + sheet Mapping, rồi gọi thẳng doPost. */
     function simMapping(tuyChon) {
@@ -691,6 +694,7 @@ function inBang(cot, hang) {
       const ss = sim.khaiThang(THANG, 'KINH DOANH T9-2026');
       gl.dungSheetGianHang(ss, TEN_SHEET, DONG_CU_CO_SAN);
       gl.dungSheetMapping(ss, JSON.parse(JSON.stringify(BANG_MAP)));
+      gl.dungKhungThieu(ss);
       sim.shMap = ss.getSheetByName('Mapping_san_pham');
       sim.ghiMotDon = (ma) => JSON.parse(sim.vo.doPost({
         postData: {

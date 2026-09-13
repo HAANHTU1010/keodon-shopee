@@ -227,6 +227,150 @@ test('INV-10', 'Web App KHÔNG đụng sheet `Thông tin shop ` — sheet đó c
     'có moFileTheoId_ + kiemTenFileKhopThang_ · 1 lời gọi openById';
 });
 
+// ---------------------------------------------------------------- INV-11
+
+/**
+ * YC-38.2 — BẤT BIẾN TRƯỚC/SAU TRÊN FILE THẬT. Nạp nguyên bản DEMO tháng 9 (khuôn mới, 19 sheet, ~19.000 ô
+ * công thức, ~370 cụm gộp) vào Google Sheet giả, cho Web App THẬT ghi một lượt, rồi so từng ô.
+ * Hàm trả danh sách chỗ lệch; rỗng = giữ đúng bất biến.
+ */
+const DEMO_T9 = path.join(DAU_VAO, 'DEMO THÁNG-9-2026-KINH-DOANH-POB.xlsx');
+const COT_INV11 = { E: 5, F: 6, L: 12, M: 13, N: 14 };
+
+function chupInv11(ss) {
+  const anh = {};
+  const giaTriSo = (v) => (v instanceof Date ? 'D:' + v.getTime() : v);
+  ss.getSheets().forEach((sh) => {
+    const gt = {};
+    Object.keys(sh.giaTri).forEach((k) => { if (sh.giaTri[k] !== '' && sh.giaTri[k] != null) gt[k] = giaTriSo(sh.giaTri[k]); });
+    const ct = {};
+    Object.keys(sh.congThuc).forEach((k) => { if (sh.congThuc[k]) ct[k] = sh.congThuc[k]; });
+    // Dòng dữ liệu = dòng ≥ 4 có A/C/D/G (đúng luật `dongDuLieuCuoi_`: ô gộp dọc chỉ ô đầu mang giá trị).
+    const dongDL = new Set();
+    Object.keys(gt).forEach((k) => {
+      const [r, c] = k.split(':').map(Number);
+      if (r >= 4 && (c === 1 || c === 3 || c === 4 || c === 7)) dongDL.add(r);
+    });
+    const soCT = {};
+    Object.keys(COT_INV11).forEach((ch) => {
+      soCT[ch] = Object.keys(ct).filter((k) => Number(k.split(':')[1]) === COT_INV11[ch]).length;
+    });
+    const dd2 = {};
+    Object.keys(sh.dinhDang).forEach((k) => { if (k.split(':')[0] === '2') dd2[k] = sh.dinhDang[k]; });
+    anh[sh.getName()] = {
+      gt, ct, dd2, soCT,
+      gop: sh.gopO.map((g) => g.r1 + ':' + g.c1 + ':' + g.r2 + ':' + g.c2),
+      dongCuoi: dongDL.size ? Math.max(...dongDL) : 3,
+      soDongDL: dongDL.size
+    };
+  });
+  return anh;
+}
+
+function soInv11(truoc, sau, tkTheoSheet) {
+  const lech = [];
+  const them = (s) => { if (lech.length < 40) lech.push(s); };
+  Object.keys(truoc).forEach((ten) => {
+    const a = truoc[ten], b = sau[ten];
+    if (!b) { them('mất sheet "' + ten + '"'); return; }
+    const ghi = tkTheoSheet[ten] || 0;                  // số dòng tool báo đã ghi vào sheet này
+    const han = a.dongCuoi;                             // mọi dòng ≤ dòng dữ liệu cuối cũ là vùng cấm đổi
+
+    // 1. Cụm gộp: không mất cụm nào; cụm mới chỉ được nằm hẳn dưới dòng dữ liệu cuối cũ.
+    const gopSau = new Set(b.gop);
+    a.gop.forEach((g) => { if (!gopSau.has(g)) them(ten + ': mất cụm gộp ' + g); });
+    const gopTruoc = new Set(a.gop);
+    b.gop.forEach((g) => { if (!gopTruoc.has(g) && Number(g.split(':')[0]) <= han) them(ten + ': cụm gộp mới đè vùng cũ ' + g); });
+
+    // 2. Công thức: mọi ô công thức cũ còn nguyên văn; không ô công thức mới nào ở dòng ≤ vùng cũ.
+    Object.keys(a.ct).forEach((k) => { if (b.ct[k] !== a.ct[k]) them(ten + ': ô ' + k + ' công thức đổi/mất'); });
+    Object.keys(b.ct).forEach((k) => { if (!(k in a.ct) && Number(k.split(':')[0]) <= han) them(ten + ': ô ' + k + ' thêm công thức vào vùng cũ'); });
+    Object.keys(COT_INV11).forEach((ch) => { if (b.soCT[ch] < a.soCT[ch]) them(ten + ': cột ' + ch + ' giảm ô công thức ' + a.soCT[ch] + '→' + b.soCT[ch]); });
+
+    // 3. Giá trị dòng 1..dòng dữ liệu cuối cũ: y nguyên — trừ ô dấu thời gian dòng 1 (từ cột P, D-50).
+    const laDauTG = (k, v) => k.split(':')[0] === '1' && Number(k.split(':')[1]) >= 16 &&
+      String(v || '').indexOf('Tool cập nhật lúc ') === 0;
+    const khoa = new Set(Object.keys(a.gt).concat(Object.keys(b.gt)));
+    khoa.forEach((k) => {
+      if (Number(k.split(':')[0]) > han) return;
+      if (a.gt[k] === b.gt[k]) return;
+      if (laDauTG(k, b.gt[k]) && (a.gt[k] === undefined || laDauTG(k, a.gt[k]))) return;
+      them(ten + ': ô ' + k + ' đổi giá trị ' + JSON.stringify(a.gt[k]) + '→' + JSON.stringify(b.gt[k]));
+    });
+
+    // 4. Định dạng số dòng 2 (tiêu đề) y nguyên.
+    if (JSON.stringify(a.dd2) !== JSON.stringify(b.dd2)) them(ten + ': định dạng dòng 2 đổi');
+
+    // 5. Số dòng dữ liệu tăng ĐÚNG số dòng tool báo đã ghi.
+    if (b.soDongDL !== a.soDongDL + ghi) them(ten + ': dòng dữ liệu ' + a.soDongDL + '→' + b.soDongDL + ', tool báo ghi ' + ghi);
+  });
+  return lech;
+}
+
+test('INV-11', 'Bất biến trước/sau trên file THẬT (DEMO tháng 9 khuôn mới): không mất cụm gộp, không mất/đổi ô công thức nào, dòng 1–3 và định dạng dòng 2 y nguyên, số dòng dữ liệu tăng đúng số dòng tool ghi', async () => {
+  if (!fs.existsSync(DEMO_T9)) return { boQua: true, lyDo: 'thiếu file thật ' + path.basename(DEMO_T9) + ' trong 00_DAU_VAO' };
+  const gl = require('./gia-lap-web-app');
+  const { napXlsxVaoGiaLap } = require('./nap-xlsx-gia-lap');
+
+  // Gói ghi: hai gian, có đơn gộp nhiều dòng (sinh cụm gộp mới) và đơn một dòng.
+  const LENH = [
+    { tenSheet: 'Shopee mall', don: [
+      { maDon: 'INV11A00000001', ngay: '2026-09-13', tien: { H: 300000, I: 0, J: 12000, K: 3000 },
+        dong: [{ tenVietTat: 'dt5', soLuong: 1 }, { tenVietTat: 'DTAK', soLuong: 2 }] },
+      { maDon: 'INV11A00000002', ngay: '2026-09-13', tien: { H: 150000, I: 5000, J: 6000, K: 1500 },
+        dong: [{ tenVietTat: 'dt5', soLuong: 1 }] }
+    ] },
+    { tenSheet: 'Babyiu', don: [
+      { maDon: 'INV11B00000001', ngay: '2026-09-13', tien: { H: 99000, I: 0, J: 4000, K: 990 },
+        dong: [{ tenVietTat: 'gvs km 1', soLuong: 3 }] }
+    ] }
+  ];
+
+  async function chay(suaNguon) {
+    const sim = gl.taoGiaLap({ ngay: '2026-09-13T03:00:00Z', suaNguon: suaNguon });
+    const ss = sim.khaiThang('2026-09', 'DEMO THÁNG-9-2026-KINH-DOANH-POB');
+    const nap = await napXlsxVaoGiaLap(ss, DEMO_T9);
+    const truoc = chupInv11(ss);
+    const kq = JSON.parse(sim.vo.doPost({ postData: { contents: JSON.stringify({
+      token: sim.biMat, phienBanMongDoi: sim.vo.PHIEN_BAN, thang: '2026-09', spreadsheetId: sim.idCua('2026-09'),
+      hanhDong: 'ghi', lenh: LENH
+    }) } }).getContent());
+    const sau = chupInv11(ss);
+    // Số dòng tool báo đã ghi, tách theo sheet từ `viTri` ("Sheet!r1-r2", đơn một dòng là "Sheet!r").
+    const tk = {};
+    Object.keys(kq.viTri || {}).forEach((ma) => {
+      const m = /^(.*)!(\d+)(?:-(\d+))?$/.exec(kq.viTri[ma]);
+      if (m) tk[m[1]] = (tk[m[1]] || 0) + (Number(m[3] || m[2]) - Number(m[2]) + 1);
+    });
+    return { kq, nap, truoc, sau, tk, lech: soInv11(truoc, sau, tk) };
+  }
+
+  const that = await chay();
+  phai(that.kq.ok, 'lượt ghi trên file thật phải chạy: ' + JSON.stringify(that.kq).slice(0, 300));
+  phai(that.kq.thongKe.donGhi === 3 && that.kq.thongKe.dongGhi === 4,
+    'phải ghi 3 đơn / 4 dòng, được ' + JSON.stringify(that.kq.thongKe));
+  const tongTk = Object.keys(that.tk).reduce((t, k) => t + that.tk[k], 0);
+  phai(tongTk === that.kq.thongKe.dongGhi, 'viTri cộng lại ' + tongTk + ' dòng ≠ thongKe.dongGhi ' + that.kq.thongKe.dongGhi);
+  phai(that.lech.length === 0, 'VI PHẠM INV-11: ' + that.lech.slice(0, 8).join(' | '));
+  const gopMoi = that.sau['Shopee mall'].gop.length - that.truoc['Shopee mall'].gop.length;
+  phai(gopMoi > 0, 'đơn gộp 2 dòng phải sinh cụm gộp mới — không sinh là phép đếm gộp chưa được thử');
+
+  // ĐỐI CHỨNG ÂM: khối đơn ghi từ dòng 3 (đè dòng tổng) → phép so PHẢI kêu.
+  const MOC = 'var r0Khoi = dongCuoi + 1;';
+  const src = fs.readFileSync(path.join(SRC, 'ShellAppsScript.gs'), 'utf8');
+  phai(src.split(MOC).length === 2, 'mốc đối chứng âm "' + MOC + '" phải có đúng 1 chỗ — mã đã đổi, sửa mốc, ĐỪNG bỏ bài');
+  const hong = await chay((s) => s.replace(MOC, 'var r0Khoi = 3;'));
+  phai(hong.lech.length > 0, 'ĐỐI CHỨNG ÂM KHÔNG BÁO LỆCH: ghi đè dòng 3 mà INV-11 vẫn xanh — phép so mù. kq=' +
+    JSON.stringify(hong.kq).slice(0, 200));
+
+  const a = that.truoc['Shopee mall'], b = that.sau['Shopee mall'];
+  return 'file thật ' + that.nap.soSheet + ' sheet · ' + that.nap.soCongThuc + ' ô công thức · ' + that.nap.soOGop +
+    ' cụm gộp · ghi 3 đơn/4 dòng (Shopee mall ' + (that.tk['Shopee mall'] || 0) + ', Babyiu ' + (that.tk.Babyiu || 0) +
+    ') · 0 chỗ lệch · Shopee mall cụm gộp ' + a.gop.length + '→' + b.gop.length + ', ô công thức E ' + a.soCT.E + '→' +
+    b.soCT.E + ', L ' + a.soCT.L + '→' + b.soCT.L + ' (D-57 kéo sẵn) · đối chứng âm ghi đè dòng 3 → LỆCH ' +
+    hong.lech.length + ' chỗ (vd: ' + hong.lech[0] + ')';
+});
+
 // ---------------------------------------------------------------- INV-9
 
 /**

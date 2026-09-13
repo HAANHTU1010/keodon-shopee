@@ -60,7 +60,7 @@
  * Đổi số này MỖI KHI sửa hợp đồng gói JSON (thêm/bớt trường, đổi ý nghĩa hành động) rồi Deploy
  * New version. Không đổi thì Google im lặng chạy bản cũ và tool tưởng đã ghi đúng.
  */
-var PHIEN_BAN = '2.5.0';
+var PHIEN_BAN = '2.6.0';
 
 /**
  * Khóa Script Property giữ chuỗi bí mật. GIỮ NGUYÊN từ bản 09/9 — chuỗi đã cài trên dự án Apps Script
@@ -526,7 +526,7 @@ function doPost(e) {
   // `phienBan` trong phản hồi trước khi gửi lệnh ghi — bản cũ không trả trường đó là đủ để dừng. Với
   // 'xuLy' còn một chiều nữa: bản cũ không biết hành động này nên trả HANH_DONG_LA, và phía máy dịch mã
   // đó thành đúng câu "hãy Deploy lại" chứ không im lặng coi như đã ghi.
-  if ((hd === 'ghi' || hd === 'xuly') && mongDoi && mongDoi !== PHIEN_BAN) {
+  if ((hd === 'ghi' || hd === 'xuly' || hd === 'taothangmoi') && mongDoi && mongDoi !== PHIEN_BAN) {
     return traLoi_({ ok: false, loi: 'LECH_PHIEN_BAN', thongBao: thongBaoLechPhienBan_(PHIEN_BAN, mongDoi) });
   }
 
@@ -548,7 +548,8 @@ function doPost(e) {
     if (hd === 'doc') return traLoi_(hanhDongDoc_(body, batDau));
     if (hd === 'ghi') return traLoi_(hanhDongGhi_(body, batDau));
     if (hd === 'xuly') return traLoi_(hanhDongXuLy_(body, batDau));
-    return traLoi_({ ok: false, loi: 'HANH_DONG_LA', thongBao: 'hanhDong = "' + hd + '"; chỉ nhận: ping, doc, ghi, xuLy' });
+    if (hd === 'taothangmoi') return traLoi_(hanhDongTaoThangMoi_(body, batDau));   // YC-35, nút 3 chế độ 1
+    return traLoi_({ ok: false, loi: 'HANH_DONG_LA', thongBao: 'hanhDong = "' + hd + '"; chỉ nhận: ping, doc, ghi, xuLy, taoThangMoi' });
   } catch (err) {
     // Giữ nguyên mã lỗi nghiệp vụ nếu nơi ném có gắn; chỉ rơi về NGOAI_LE khi thật sự không rõ.
     return traLoi_({ ok: false, loi: (err && err.maKeodon) ? err.maKeodon : 'NGOAI_LE',
@@ -701,6 +702,7 @@ function hanhDongGhi_(body, batDau) {
     var viTri = {}, canhBao = [], thongBao = [], daDoVung = {};
     var f = moFileTheoId_(body, thang, canhBao);
     var ss = f.ss;
+    kiemHopDongFileThang_(ss, cfg);                     // YC-38.1: lệch khuôn là dừng khi chưa ghi gì
 
     // D-57 / YC-39: kiểm + kéo sẵn công thức cho MỌI sheet sắp ghi, TRƯỚC lệnh ghi đầu tiên. Cột nào không
     // còn công thức nào thì dừng ở đây — "Tool chưa ghi gì" phải là câu nói thật.
@@ -721,13 +723,17 @@ function hanhDongGhi_(body, batDau) {
     dongDauDauThoiGian_(ss, daGhiSheet, canhBao);
 
     if (body.mappingThem && body.mappingThem.length)
-      tk.mappingThem = themDongMapping_(ss, body.mappingThem, canhBao);
+      tk.mappingThem = themDongMapping_(ss, body.mappingThem, canhBao, body.mappingThemCot);
     tk.mappingToLai = toLaiMapping_(ss, canhBao);        // D-47: dòng CÓ trắng lại, dòng chưa CÓ vàng
 
     SpreadsheetApp.flush();
+    var ttMapG = tomTatMapping_(ss);                      // YC-38.3: số dòng CÓ + băm Mapping cho dòng RUN
+    ghiDongRun_(body, 'ghi', ss.getName(), tk, ttMapG);
     return {
       ok: true, hanhDong: 'ghi', thang: thang, tenFile: ss.getName(),
       lo: body.lo || null, thongKe: tk, viTri: viTri, canhBao: canhBao, thongBao: thongBao,
+      runId: runIdHopLe_(body.runId) || null,
+      mappingCo: ttMapG ? ttMapG.soCo : null, mappingBam: ttMapG ? ttMapG.bam : null,
       giay: (new Date().getTime() - batDau) / 1000
     };
   } finally {
@@ -1247,20 +1253,52 @@ function chepCongThucXuong_(sh, k, mauDS, r0Khoi, soDong) {
   });
 }
 
-/** Nối tên hàng mới vào cuối sheet Mapping và tô vàng để người ta thấy mà điền. */
-function themDongMapping_(ss, dong, canhBao) {
+/**
+ * Nối tên hàng mới vào cuối sheet Mapping và tô vàng để người ta thấy mà điền.
+ *
+ * GHI THEO TÊN CỘT, KHÔNG THEO VỊ TRÍ (YC-38.1, lỗi thật tìm thấy 13/9). `MapListing` đọc Mapping theo tên
+ * cột, và chấp nhận thêm cột phụ như `Mã dùng lần lượt khi hết lô` — bảng Mapping nghiệm thu NT1 có cột đó
+ * ở vị trí E. Nhưng bản trước ghi 12 giá trị vào A:L theo thứ tự `SCHEMA.MAPPING`, nên trên khuôn đó giá trị
+ * `Hệ số` rơi vào cột lô phụ, `Cấu phần` rơi vào `Hệ số`… lệch cả dòng mà không báo gì.
+ *
+ * @param {Array} dong        các dòng cần nối, mỗi dòng là mảng theo thứ tự `tenCotDong`
+ * @param {Array} [tenCotDong] tên cột của từng vị trí trong `dong` (đầu ra `MapListing.sangBang(map)[0]`);
+ *                            thiếu thì coi là `SCHEMA.MAPPING` (máy bản cũ chưa gửi trường này)
+ */
+function themDongMapping_(ss, dong, canhBao, tenCotDong) {
   var sh = sheetMapping_(ss);
   if (!sh) {
     canhBao.push('Chưa có sheet "' + TEN_TAB_MAPPING_SHEET + '" → không ghi được ' + dong.length + ' tên hàng mới');
     return 0;
   }
-  var r0 = Math.max(sh.getLastRow() + 1, 2);
-  var rong = SCHEMA.MAPPING.length;
+  var cotNguon = (tenCotDong && tenCotDong.length) ? tenCotDong : SCHEMA.MAPPING;
+  var rong = Math.max(sh.getLastColumn(), SCHEMA.MAPPING.length);
+  var head = sh.getRange(1, 1, 1, rong).getDisplayValues()[0];
+  var chuan = (typeof MapListing !== 'undefined' && MapListing.tenCotChuan) ? MapListing.tenCotChuan :
+    function (x) { return String(x == null ? '' : x).trim(); };
+  var viTri = {};
+  for (var i = 0; i < head.length; i++) {
+    var ten = chuan(head[i]);
+    if (ten && viTri[ten] == null) viTri[ten] = i;
+  }
+  var boQua = {};
   var bang = dong.map(function (d) {
     var h = [];
-    for (var i = 0; i < rong; i++) h.push(d[i] == null ? '' : d[i]);
+    for (var j = 0; j < rong; j++) h.push('');
+    cotNguon.forEach(function (tenCot, k) {
+      var v = d[k];
+      if (v == null || v === '') return;
+      var cot = viTri[tenCot];
+      if (cot == null) { boQua[tenCot] = 1; return; }
+      h[cot] = v;
+    });
     return h;
   });
+  if (Object.keys(boQua).length) {
+    canhBao.push('Sheet Mapping không có cột ' + Object.keys(boQua).map(function (x) { return '"' + x + '"'; }).join(', ') +
+      ' → phần đó của tên hàng mới không ghi được; các cột khác vẫn ghi đúng chỗ.');
+  }
+  var r0 = Math.max(sh.getLastRow() + 1, 2);
   sh.getRange(r0, 1, bang.length, rong).setValues(bang).setBackground(MAU_VANG);
   return bang.length;
 }
@@ -1441,10 +1479,12 @@ function dungKeHoachGhi_(cfg, cacFile, tuXa, tuyChon) {
   });
 
   var lenh = thuTuSheet.map(function (ten) { return lenhTuDon_(ten, theoSheet[ten], tc.ngayGhi || null); });
-  var mappingThem = map.soThem > 0 ? MapListing.sangBang(map).slice(-map.soThem) : [];
+  var bangMapMoi = map.soThem > 0 ? MapListing.sangBang(map) : null;
+  var mappingThem = bangMapMoi ? bangMapMoi.slice(-map.soThem) : [];
+  var mappingThemCot = bangMapMoi ? bangMapMoi[0] : null;      // tên cột của từng vị trí — ghi theo tên
   var khoaTenMoi = (map.tenMoi || []).map(function (d) { return d.__khoa; });
   return {
-    lenh: lenh, mappingThem: mappingThem, thongKe: thongKe, canhBao: canhBao, map: map,
+    lenh: lenh, mappingThem: mappingThem, mappingThemCot: mappingThemCot, thongKe: thongKe, canhBao: canhBao, map: map,
     khoaTenMoi: khoaTenMoi
   };
 }
@@ -1519,6 +1559,100 @@ function kiemGianHangCuaFile_(cacFile, tuXa, cfg, canhBao) {
   throw e;
 }
 
+/**
+ * YC-38.1 — "HỢP ĐỒNG" FILE THÁNG: những thứ tool dựa vào để ghi đúng chỗ. Kiểm TRƯỚC MỖI LƯỢT GHI, chỉ đọc.
+ *
+ * Vì sao phải có: tool ghi theo VỊ TRÍ (cột C là mã đơn, cột H là tiền, Mapping ghi 12 cột theo thứ tự).
+ * Chủ shop đổi tên hay chèn một cột là tool ghi lệch cột toàn bộ mà không có gì báo — tiền rơi vào cột thuế,
+ * mã đơn rơi vào cột tên hàng, khóa chống trùng chết và lần chạy sau nhân đôi đơn. Phát hiện sau khi ghi là
+ * đã phải đi dọn tay trong sổ tiền. Nên kiểm trước, lệch là DỪNG.
+ *
+ * Kiểm đúng những gì tool dựa vào, KHÔNG kiểm thứ tool không dùng (thêm sheet `TikTok Shop`, `Chi Phí Hàng
+ * Ngày`, đổi thứ tự sheet… đều không làm tool sai, và chặn vì những thứ đó là chặn oan):
+ *   · đủ 4 sheet gian hàng, `Tổng tồn kho`, `Mapping_san_pham`
+ *   · dòng tiêu đề (dòng 2) của mỗi sheet gian hàng đúng 15 tên cột theo thứ tự; cột O là `Còn Nợ` hoặc
+ *     `Ghi chú` (Offood dùng `Ghi chú` từ trước, đo trên cả ba file tháng 8, DEMO tháng 9 và bản POB)
+ *   · dòng tổng (dòng 3) có công thức ở H, I, J, K, L
+ *   · `Tổng tồn kho` dòng tiêu đề đúng ở cột D, E, H (tên viết tắt, mã hàng, tổng tồn)
+ *   · `Mapping_san_pham` dòng 1 có ĐỦ 12 tiêu đề của `SCHEMA.MAPPING` (không ép thứ tự: tool đọc và GHI
+ *     Mapping theo tên cột — xem `themDongMapping_`; cột phụ như lô phụ hay khối điều khiển N1:O5 được phép)
+ * Ô công thức E/F/L/M/N phía trên vùng ghi thì `chuanBiCongThuc_` (D-57) đã canh, không kiểm lặp ở đây.
+ *
+ * So tên cột: chuẩn NFC, bỏ khoảng trắng thừa, không phân biệt hoa thường — file thật có `Ngày ` với dấu
+ * cách cuối, và viết hoa khác không phải là đổi khuôn.
+ */
+var COT_GIAN_HANG_HOP_DONG = ['Ngày', 'Nguồn đơn', 'Thông tin ĐH', 'Tên viết tắt', 'Tên sản phẩm', 'Đơn vị',
+  'SL', 'Tổng Tiền SP', 'MGG Shop', 'Chi phí', 'Thuế', 'Doanh Thu', 'Mã hàng', 'Check tồn', ['Còn Nợ', 'Ghi chú']];
+
+function chuanTenCot_(x) {
+  var t = String(x == null ? '' : x);
+  if (typeof t.normalize === 'function') t = t.normalize('NFC');
+  return t.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function kiemHopDongFileThang_(ss, cfg) {
+  var lech = [];
+  var k = cfg.keyin;
+  var soCot = COT_GIAN_HANG_HOP_DONG.length;
+
+  Object.keys(cfg.gianHang).forEach(function (ma) {
+    var ten = cfg.gianHang[ma].sheet;
+    var sh = ss.getSheetByName(ten);
+    if (!sh) { lech.push('thiếu sheet "' + ten + '"'); return; }
+    var h = sh.getRange(k.dong_header, 1, 1, soCot).getDisplayValues()[0];
+    for (var i = 0; i < soCot; i++) {
+      var mong = [].concat(COT_GIAN_HANG_HOP_DONG[i]);
+      var ok = mong.some(function (m) { return chuanTenCot_(m) === chuanTenCot_(h[i]); });
+      if (!ok) {
+        lech.push('sheet "' + ten + '" ô ' + Utils.chuCot(i + 1) + k.dong_header + ' là "' + String(h[i] || '').trim() +
+          '", cần "' + mong.join('" hoặc "') + '"');
+      }
+    }
+    // Cột dòng tổng CỐ ĐỊNH H..L theo khuôn file, KHÔNG theo `cauHinh.keyin`: khuôn là thứ của file, còn cấu
+    // hình ghi đè chính là thứ có thể sai — lấy theo cấu hình thì một khóa trỏ nhầm sẽ biến thành câu "sổ sai
+    // khuôn" và che mất đúng hàng rào cột cấm lẽ ra phải nói (bắt được ở T-DT-35).
+    var tu = 8, den = 12;
+    var ct = sh.getRange(k.dong_tong, tu, 1, den - tu + 1).getFormulasR1C1()[0];
+    for (var j = 0; j < ct.length; j++) {
+      if (!ct[j]) lech.push('sheet "' + ten + '" ô ' + Utils.chuCot(tu + j) + k.dong_tong + ' (dòng tổng) không có công thức');
+    }
+  });
+
+  var dm = cfg.danhMuc;
+  var shTk = ss.getSheetByName(dm.ten_sheet);
+  if (!shTk) lech.push('thiếu sheet "' + dm.ten_sheet + '"');
+  else {
+    [[dm.cot_ten_viet_tat, 'Tên viết tắt'], [dm.cot_ma_hang, 'Mã hàng'], [dm.cot_ton, 'Tổng tồn']].forEach(function (x) {
+      var c = typeof x[0] === 'number' ? x[0] : Utils.chiSoCot(x[0]);
+      var v = shTk.getRange(dm.dong_header, c, 1, 1).getDisplayValues()[0][0];
+      if (chuanTenCot_(v) !== chuanTenCot_(x[1])) {
+        lech.push('sheet "' + dm.ten_sheet + '" ô ' + Utils.chuCot(c) + dm.dong_header + ' là "' + String(v || '').trim() +
+          '", cần "' + x[1] + '"');
+      }
+    });
+  }
+
+  var shMap = sheetMapping_(ss);
+  if (!shMap) lech.push('thiếu sheet "' + TEN_TAB_MAPPING_SHEET + '"');
+  else {
+    var rongMap = Math.max(shMap.getLastColumn(), SCHEMA.MAPPING.length);
+    var coTen = {};
+    shMap.getRange(1, 1, 1, rongMap).getDisplayValues()[0].forEach(function (h) { coTen[MapListing.tenCotChuan(h)] = 1; });
+    var thieuMap = SCHEMA.MAPPING.filter(function (t) { return !coTen[t]; });
+    if (thieuMap.length) {
+      lech.push('sheet "' + shMap.getName() + '" dòng 1 thiếu cột ' + thieuMap.map(function (t) { return '"' + t + '"'; }).join(', '));
+    }
+  }
+
+  if (!lech.length) return;
+  var e = new Error('SỔ THÁNG KHÔNG ĐÚNG KHUÔN — ' + lech.slice(0, 5).join('; ') +
+    (lech.length > 5 ? ' (và ' + (lech.length - 5) + ' chỗ lệch nữa)' : '') +
+    '. Tool chưa ghi gì. Báo người phụ trách kiểm lại file tháng, đừng tự sửa tên cột.');
+  e.maKeodon = 'SAI_HOP_DONG';
+  e.chiTiet = lech;
+  throw e;
+}
+
 function hanhDongXuLy_(body, batDau) {
   var cfg = Config.tao(body.cauHinh || {});
   var thang = chotThang_(body.thang, body.choPhepThangKhac);   // T-53: không ghi lùi, không ghi trước
@@ -1536,6 +1670,9 @@ function hanhDongXuLy_(body, batDau) {
   var canhBao = [], thongBao = [];
   var f = moFileTheoId_(body, thang, canhBao);
   var ss = f.ss;
+
+  // ---- (0) YC-38.1: file tháng còn đúng khuôn không. Chỉ đọc; lệch là dừng khi chưa ghi gì. ----
+  kiemHopDongFileThang_(ss, cfg);
 
   // ---- (1) ĐỌC — y hệt hành động 'doc', chỉ lấy sheet của các gian hàng có mặt trong gói ----
   var tenSheets = [];
@@ -1579,7 +1716,7 @@ function hanhDongXuLy_(body, batDau) {
     // Nối tên hàng mới vào Mapping TRƯỚC khi ghi đơn. Nếu hết giờ giữa chừng, các tên đó đã nằm sẵn
     // trong sheet, lần gọi sau đọc lại Mapping sẽ thấy có rồi và KHÔNG nối trùng (khóa chống trùng
     // của MapListing là (Gian hàng, Tên trên Shopee, Phân loại), không phải số lần chạy).
-    if (goi.mappingThem.length) tk.mappingThem = themDongMapping_(ss, goi.mappingThem, canhBao);
+    if (goi.mappingThem.length) tk.mappingThem = themDongMapping_(ss, goi.mappingThem, canhBao, goi.mappingThemCot);
 
     var sheetDaXong = [], sheetConLai = [], daLamViecGi = false, daGhiSheet = {};
     for (var i = 0; i < goi.lenh.length; i++) {
@@ -1608,6 +1745,10 @@ function hanhDongXuLy_(body, batDau) {
     dongDauDauThoiGian_(ss, daGhiSheet, canhBao);
     tk.mappingToLai = toLaiMapping_(ss, canhBao);        // D-47: dòng CÓ trắng lại, dòng chưa CÓ vàng
     SpreadsheetApp.flush();
+    var ttMapX = tomTatMapping_(ss);                      // YC-38.3: số dòng CÓ + băm Mapping cho dòng RUN
+    ghiDongRun_(body, 'xuLy', ss.getName(), {
+      donGhi: tk.donGhi, dongGhi: tk.dongGhi, dongVang: tk.dongVang, donDaCo: goi.thongKe.donDaCo + tk.donDaCo
+    }, ttMapX);
 
     var xong = sheetConLai.length === 0;
     if (!xong) {
@@ -1638,11 +1779,403 @@ function hanhDongXuLy_(body, batDau) {
       khoaTenMoi: (body.tenMoiTruocDo || []).concat(goi.khoaTenMoi),
       xong: xong, sheetDaXong: sheetDaXong, sheetConLai: sheetConLai,
       viTri: viTri, canhBao: canhBao, thongBao: thongBao,
+      runId: runIdHopLe_(body.runId) || null,
+      mappingCo: ttMapX ? ttMapX.soCo : null, mappingBam: ttMapX ? ttMapX.bam : null,
       giay: (new Date().getTime() - batDau) / 1000
     };
   } finally {
     khoa.releaseLock();
   }
+}
+
+// ==================================================================== hành động TẠO THÁNG MỚI (YC-35, D-45)
+//
+// Nút 3 chế độ 1 gọi hành động này với hai file do MÁY chỉ định (ID trong thân POST, không đọc bảng link nào):
+// file tháng CŨ (chỉ đọc) và file tháng MỚI (chủ dự án tự "Tạo bản sao", đổi tên — D-45). Mọi nghiệp vụ nằm ở
+// lõi `TaoThangMoi.gs` (`lapKeHoach` → danh sách thao tác, `tuKiem` → K-1…K-8); phần dưới đây chỉ là VỎ GOOGLE:
+// chụp ảnh hai file, chạy thao tác trên file mới, canh giờ, ghi cờ tiến độ, tô lại Mapping, tự kiểm.
+//
+// Ràng buộc (Phụ lục A.10) được giữ ở ĐÂY, không trông vào lõi:
+//   · vỏ không nhận file cũ để ghi — hàm thực thi chỉ cầm `ssMoi`
+//   · `TAO_SHEET` chỉ nhận `Mapping_san_pham`; tên khác là ném lỗi (INV-2)
+//   · hai ID trùng nhau → dừng trước khi mở
+//   · chỉ khi đủ 8 phép K mới ghi `DA_KHOI_TAO_`
+
+/** Ngưỡng dừng gọn (Phụ lục A.7.3): 4 phút 30, quota Google 6 phút. */
+var TM_NGUONG_GIAY = 270;
+/** Lô ghi tối đa mỗi lần `setValues` (A.7.3). */
+var TM_LO_DONG = 200;
+/** Sheet cần chụp ảnh — không chụp `Thông tin shop ` (INV-10), không chụp sổ chạy liên tục. */
+var TM_SHEET_CHUP = ['Tổng tồn kho', 'Tổng nhập', 'Shopee mall', 'Offood', 'Importmart', 'Babyiu', 'TikTok Shop',
+  'Tiktok', 'Đơn ngoài', 'Chi Phí Hàng Ngày', 'Lợi nhuận', 'Mapping_san_pham', 'Mapping sản phẩm'];
+
+function loiTM_(ma, cau) {
+  var e = new Error(cau);
+  e.maKeodon = ma;
+  return e;
+}
+
+/** `{thangCu, namCu, thangMoi, namMoi}` → 'yyyy-MM'; sai kiểu thì ném THAM_SO_SAI nêu đúng trường. */
+function kyThangMoi_(thang, nam, nhan) {
+  var t = String(thang == null ? '' : thang).trim(), n = String(nam == null ? '' : nam).trim();
+  if (!/^\d{1,2}$/.test(t) || +t < 1 || +t > 12) throw loiTM_('THAM_SO_SAI', nhan + ': tháng phải là số 1–12, nhận "' + t + '".');
+  if (!/^\d{4}$/.test(n)) throw loiTM_('THAM_SO_SAI', nhan + ': năm phải đủ 4 chữ số, nhận "' + n + '".');
+  return n + '-' + hai_(+t);
+}
+
+/**
+ * Ảnh chụp một file theo hợp đồng dữ liệu của `TaoThangMoi.gs`: mỗi sheet một lượt đọc giá trị + một lượt đọc
+ * công thức + một lượt đọc ô gộp (quota). `giaTri` = ô gõ tay (ô công thức → null); `giaTriTinh` = giá trị Google
+ * đã tính. Công thức A1 bỏ dấu `=` đầu.
+ */
+function chupFileThangMoi_(ss) {
+  var anh = { ten: ss.getName(), tenSheet: [], sheets: {} };
+  ss.getSheets().forEach(function (sh) {
+    var ten = sh.getName();
+    anh.tenSheet.push(ten);
+    if (TM_SHEET_CHUP.indexOf(ten) >= 0) anh.sheets[ten] = chupSheetThangMoi_(sh);
+  });
+  return anh;
+}
+
+function chupSheetThangMoi_(sh) {
+  var nr = Math.max(sh.getLastRow(), 1), nc = Math.max(sh.getLastColumn(), 1);
+  var vung = sh.getRange(1, 1, nr, nc);
+  var gt = vung.getValues(), cta = vung.getFormulas();
+  var giaTri = [], congThuc = [], mang = [], giaTriTinh = [];
+  for (var r = 0; r < nr; r++) {
+    var a = [], b = [], m = [], d = [];
+    for (var c = 0; c < nc; c++) {
+      var f = cta[r][c], v = gt[r][c];
+      var rong = v === '' || v == null;
+      if (f) { a.push(null); b.push(String(f).replace(/^=/, '')); d.push(rong ? null : v); }
+      else { a.push(rong ? null : v); b.push(null); d.push(rong ? null : v); }
+      m.push(false);
+    }
+    giaTri.push(a); congThuc.push(b); mang.push(m); giaTriTinh.push(d);
+  }
+  var gop = vung.getMergedRanges().map(function (x) {
+    return { r1: x.getRow(), c1: x.getColumn(), r2: x.getRow() + x.getNumRows() - 1, c2: x.getColumn() + x.getNumColumns() - 1 };
+  });
+  return { ten: sh.getName(), soDong: nr, giaTri: giaTri, congThuc: congThuc, mang: mang, giaTriTinh: giaTriTinh, gopO: gop };
+}
+
+/** Vùng đã kẹp vào lưới thật (Google ném lỗi khi vùng vượt số dòng/cột của sheet). null = nằm ngoài lưới. */
+function vungKep_(sh, r1, c1, r2, c2) {
+  var mr = sh.getMaxRows(), mc = sh.getMaxColumns();
+  if (r1 > mr || c1 > mc) return null;
+  var rr = Math.min(r2, mr), cc = Math.min(c2, mc);
+  return sh.getRange(r1, c1, rr - r1 + 1, cc - c1 + 1);
+}
+
+/**
+ * Gom một dãy GHI_O / GHI_CT liền nhau của CÙNG một sheet thành các hình chữ nhật đủ ô rồi ghi bằng `setValues`
+ * (công thức ghi dưới dạng chuỗi `=`…), mỗi khối ≤ `TM_LO_DONG` dòng. Ghi từng ô là nguyên nhân số một gây hết giờ
+ * (A.7.3) — B4 tháng 8 là 76 dòng × 7 ô = 532 lệnh, gom lại còn MỘT.
+ */
+function ghiKhoiO_(sh, dsOp) {
+  var o = {}, dinhDang = [];
+  dsOp.forEach(function (t) {
+    var v = t.loai === 'GHI_CT' ? '=' + t.text : (t.gt == null ? '' : t.gt);
+    o[t.r + ':' + t.c] = v;
+    if (t.dinhDang) dinhDang.push(t);
+  });
+  var theoDong = {};
+  Object.keys(o).forEach(function (k) {
+    var p = k.split(':');
+    (theoDong[p[0]] = theoDong[p[0]] || []).push(+p[1]);
+  });
+  var doan = [];
+  Object.keys(theoDong).map(Number).sort(function (a, b) { return a - b; }).forEach(function (r) {
+    var cs = theoDong[r].sort(function (a, b) { return a - b; });
+    var c1 = cs[0], truoc = cs[0];
+    for (var i = 1; i <= cs.length; i++) {
+      if (i < cs.length && cs[i] === truoc + 1) { truoc = cs[i]; continue; }
+      doan.push({ r: r, c1: c1, c2: truoc });
+      if (i < cs.length) { c1 = cs[i]; truoc = cs[i]; }
+    }
+  });
+  var khoi = [];
+  doan.forEach(function (d) {
+    var k = khoi[khoi.length - 1];
+    if (k && k.c1 === d.c1 && k.c2 === d.c2 && k.r2 === d.r - 1 && k.r2 - k.r1 + 1 < TM_LO_DONG) k.r2 = d.r;
+    else khoi.push({ r1: d.r, r2: d.r, c1: d.c1, c2: d.c2 });
+  });
+  khoi.forEach(function (k) {
+    var bang = [];
+    for (var r = k.r1; r <= k.r2; r++) {
+      var h = [];
+      for (var c = k.c1; c <= k.c2; c++) h.push(o[r + ':' + c]);
+      bang.push(h);
+    }
+    sh.getRange(k.r1, k.c1, bang.length, k.c2 - k.c1 + 1).setValues(bang);
+  });
+  dinhDang.forEach(function (t) { sh.getRange(t.r, t.c).setNumberFormat(t.dinhDang); });
+  return khoi.length;
+}
+
+/**
+ * `KEO_CT` trên Google: đọc MỘT lượt công thức R1C1 + giá trị của cả đoạn `r1..r2`, lấp ô trống bằng công thức
+ * của ô có công thức gần nhất phía trên (chưa có ô nào phía trên thì lấy ô gần nhất phía dưới). Công thức R1C1
+ * chép NGUYÊN VĂN chính là "kéo chuột": tham chiếu tương đối giữ nguyên độ lệch. Ô có GIÁ TRỊ gõ tay để yên.
+ * Ghi theo từng đoạn ô trống liền nhau. Lưới thiếu dòng thì nới trước (Google không tự nới).
+ */
+function keoCongThucTM_(sh, c, r1, r2) {
+  var mr = sh.getMaxRows();
+  if (mr < r2) sh.insertRowsAfter(mr, r2 - mr);
+  var n = r2 - r1 + 1;
+  var vung = sh.getRange(r1, c, n, 1);
+  var ct = vung.getFormulasR1C1(), gt = vung.getValues();
+  var dau = -1;
+  for (var i = 0; i < n; i++) if (ct[i][0]) { dau = i; break; }
+  if (dau < 0) return 0;
+  var mau = ct[dau][0], dem = 0, doan = null;
+  var xa = function () {
+    if (!doan) return;
+    sh.getRange(r1 + doan.i, c, doan.ds.length, 1).setFormulasR1C1(doan.ds);
+    doan = null;
+  };
+  for (var j = 0; j < n; j++) {
+    if (ct[j][0]) { xa(); mau = ct[j][0]; continue; }
+    if (gt[j][0] !== '' && gt[j][0] != null) { xa(); continue; }
+    if (!doan) doan = { i: j, ds: [] };
+    doan.ds.push([j < dau ? ct[dau][0] : mau]);
+    dem++;
+  }
+  xa();
+  return dem;
+}
+
+/** Chạy một danh sách thao tác của lõi trên file MỚI. Dừng gọn giữa hai thao tác khi hết giờ. */
+function thucThiThaoTacTM_(ssMoi, dsThaoTac, hetGio) {
+  var i = 0;
+  while (i < dsThaoTac.length) {
+    if (hetGio()) return { xong: false, daLam: i };
+    var t = dsThaoTac[i];
+    if (t.loai === 'GHI_O' || t.loai === 'GHI_CT') {
+      var j = i;
+      while (j < dsThaoTac.length && (dsThaoTac[j].loai === 'GHI_O' || dsThaoTac[j].loai === 'GHI_CT') && dsThaoTac[j].sheet === t.sheet) j++;
+      ghiKhoiO_(sheetTM_(ssMoi, t.sheet), dsThaoTac.slice(i, j));
+      i = j;
+      continue;
+    }
+    if (t.loai === 'TAO_SHEET') {
+      if (t.ten !== TaoThangMoi.TEN_SHEET_MAPPING) throw loiTM_('VI_PHAM_INV2', 'Lõi xin tạo sheet "' + t.ten + '" — chỉ được thêm `' + TaoThangMoi.TEN_SHEET_MAPPING + '` (INV-2). Dừng.');
+      if (!ssMoi.getSheetByName(t.ten)) ssMoi.insertSheet(t.ten);
+    } else {
+      var sh = sheetTM_(ssMoi, t.sheet);
+      if (t.loai === 'BO_GOP') {
+        var vg = vungKep_(sh, t.r1, t.c1, t.r2, t.c2);
+        if (vg) vg.getMergedRanges().forEach(function (m) { m.breakApart(); });
+      } else if (t.loai === 'XOA_VUNG') {
+        var vx = vungKep_(sh, t.r1, t.c1, t.r2, t.c2);
+        if (vx) vx.clearContent();
+      } else if (t.loai === 'XOA_DONG') {
+        var n = Math.min(t.soDong, sh.getMaxRows() - t.r1 + 1);
+        if (n > 0) sh.deleteRows(t.r1, n);
+      } else if (t.loai === 'GOP_O') {
+        sh.getRange(t.r1, t.c1, t.r2 - t.r1 + 1, t.c2 - t.c1 + 1).merge();
+      } else if (t.loai === 'GHI_BANG') {
+        var rong = t.bang.reduce(function (m, h) { return Math.max(m, (h || []).length); }, 0);
+        for (var k = 0; k < t.bang.length; k += TM_LO_DONG) {
+          var lo = t.bang.slice(k, k + TM_LO_DONG).map(function (h) {
+            var x = [];
+            for (var q = 0; q < rong; q++) x.push(h && h[q] != null ? h[q] : '');
+            return x;
+          });
+          sh.getRange(t.r1 + k, t.c1, lo.length, rong).setValues(lo);
+        }
+      } else if (t.loai === 'CHEN_COT') {
+        sh.insertColumnBefore(t.truocCot);
+        // Cột mới nhận ĐỊNH DẠNG của cột tháng vừa bị đẩy sang phải (tiền, viền) — không phụ thuộc Google kế
+        // thừa định dạng từ bên nào khi chèn.
+        var mr = sh.getMaxRows();
+        sh.getRange(1, t.truocCot + 1, mr, 1).copyTo(sh.getRange(1, t.truocCot, mr, 1), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+      } else if (t.loai === 'KEO_CT') {
+        keoCongThucTM_(sh, t.c, t.r1, t.r2);
+      } else {
+        throw loiTM_('THAO_TAC_LA', 'Thao tác lạ từ lõi: ' + t.loai);
+      }
+    }
+    i++;
+  }
+  return { xong: true, daLam: i };
+}
+
+function sheetTM_(ss, ten) {
+  var sh = ss.getSheetByName(ten);
+  if (!sh) throw loiTM_('THIEU_SHEET', 'File tháng mới không có sheet "' + ten + '" — không đổi tên/xóa sheet của file (A.2).');
+  return sh;
+}
+
+function ghiCoTM_(ssMoi, r, gt) {
+  var sh = ssMoi.getSheetByName(TaoThangMoi.TEN_SHEET_MAPPING);
+  if (sh) sh.getRange(r, 15).setValue(gt);
+}
+
+/**
+ * doPost `taoThangMoi`. Thân POST: `{thangCu, namCu, idCu, thangMoi, namMoi, idMoi}` (ID hoặc link).
+ * Trả `xong:false` khi dừng gọn vì giờ — máy gọi lại, tool chạy tiếp từ cờ `BUOC_DA_XONG`.
+ */
+function hanhDongTaoThangMoi_(body, batDau) {
+  var kyCu = kyThangMoi_(body.thangCu, body.namCu, 'Tháng trước');
+  var kyMoi = kyThangMoi_(body.thangMoi, body.namMoi, 'Tháng mới');
+  if (kyCu === kyMoi) throw loiTM_('THAM_SO_SAI', 'Tháng trước và tháng mới cùng là ' + kyMoi + '.');
+  var idCu = bocIdTuLink_(body.idCu), idMoi = bocIdTuLink_(body.idMoi);
+  if (!idCu || !idMoi) throw loiTM_('THIEU_ID_FILE', 'Thiếu link/ID hợp lệ của file tháng ' + (!idCu ? 'trước' : 'mới') + '. Tool chưa ghi gì.');
+  if (idCu === idMoi) {
+    throw loiTM_('TRUNG_FILE', 'Link tháng trước và link tháng mới là CÙNG MỘT file. Tháng mới phải là bản sao riêng ' +
+      '(trên Google Sheet: Tệp → Tạo bản sao, đổi tên, lấy link bản sao). Tool chưa ghi gì.');
+  }
+
+  var nguong = body.nguongGiay != null && isFinite(+body.nguongGiay) ? Math.max(0, +body.nguongGiay) : TM_NGUONG_GIAY;
+  var hetGio = function () { return (new Date().getTime() - batDau) / 1000 >= nguong; };
+
+  var khoa = LockService.getScriptLock();
+  if (!khoa.tryLock(30000)) throw loiTM_('DANG_BAN', 'Một lệnh khác (kéo đơn hoặc tạo tháng) đang chạy trên Web App, thử lại sau vài phút. Tool chưa ghi gì.');
+  try {
+    var canhBao = [], thongBao = [];
+    var ssCu = moBangTinh_(idCu, 'tháng ' + kyCu, 'Link đó là trường [3/7] của nút 3.');
+    var ssMoi = moBangTinh_(idMoi, 'tháng ' + kyMoi, 'Link đó là trường [6/7] của nút 3.');
+    kiemTenFileKhopThang_(ssCu, kyCu, canhBao);
+    kiemTenFileKhopThang_(ssMoi, kyMoi, canhBao);
+
+    var anhCu = chupFileThangMoi_(ssCu);
+    var anhMoi = chupFileThangMoi_(ssMoi);
+    var ke = TaoThangMoi.lapKeHoach(anhCu, anhMoi, {
+      thangMoi: kyMoi, nguonClone: ssCu.getName(), thoiDiem: new Date(), dauPhanCach: ','
+    });
+    if (!ke.chay) {
+      var maDung = ke.maDung || 'FILE_CO_DU_LIEU';      // lõi nói lý do dừng: DA_KHOI_TAO · FILE_CO_DU_LIEU · B5_DANG_LAM
+      return {
+        ok: false, loi: maDung, hanhDong: 'taoThangMoi', thang: kyMoi,
+        thongBao: 'KHÔNG KHỞI TẠO — ' + ke.lyDoDung.join(' | ') + ' Tool chưa ghi ô nào.',
+        lop2: (ke.kiem && ke.kiem.lop2) || []
+      };
+    }
+    ke.thongBao.forEach(function (x) { thongBao.push(x); });
+    ke.canhBao.forEach(function (x) { canhBao.push(x); });
+
+    // B1: cờ DANG_KHOI_TAO (và tạo `Mapping_san_pham` nếu chưa có) TRƯỚC khi ghi ô nào khác.
+    thucThiThaoTacTM_(ssMoi, ke.batDau, function () { return false; });
+    SpreadsheetApp.flush();
+
+    var viTri = ke.tuBuoc ? ke.buoc.map(function (b) { return b.ma; }).indexOf(ke.tuBuoc) : ke.buoc.length;
+    var daXong = ke.kiem.lop1.buocDaXong || '';
+    for (var i = Math.max(0, viTri); i < ke.buoc.length; i++) {
+      var b = ke.buoc[i];
+      // Lượt trước đã dừng giữa CHÍNH bước này → lượt này chạy bước đó TỚI CÙNG, không canh giờ. Không có luật này
+      // thì một bước dài hơn ngưỡng (B3 trên file nhiều sheet, nhiều ô gộp) cứ dọn dở rồi dừng mãi, máy gọi lại mãi
+      // mà cờ tiến độ không bao giờ nhích. Mỗi bước đều dọn/ghi idempotent, nên chạy tiếp phần dở là an toàn.
+      var epXong = body.buocDungTruoc != null && String(body.buocDungTruoc) === b.ma;
+      if (!epXong && hetGio()) return traDoTM_(kyMoi, daXong, batDau, nguong, b.ma, canhBao, thongBao);
+      if (b.mocTruoc) { ghiCoTM_(ssMoi, 5, b.mocTruoc); SpreadsheetApp.flush(); }
+      var kq = thucThiThaoTacTM_(ssMoi, b.thaoTac, (b.khongLapLai || epXong) ? function () { return false; } : hetGio);
+      if (!kq.xong) return traDoTM_(kyMoi, daXong, batDau, nguong, b.ma, canhBao, thongBao);
+      if (b.ma === 'B6') toLaiMapping_(ssMoi, canhBao);        // D-47: chép xong thì tô lại CÓ/chưa CÓ
+      ghiCoTM_(ssMoi, 5, b.mocSau);
+      daXong = b.mocSau;
+      SpreadsheetApp.flush();
+      thongBao.push(b.ma + ' · ' + b.ten + ' — xong');
+    }
+
+    // B8: đọc lại file MỚI sau khi Google tính lại, tám phép tự kiểm.
+    SpreadsheetApp.flush();
+    var kiem = TaoThangMoi.tuKiem(anhCu, chupFileThangMoi_(ssMoi), ke);
+    if (kiem.dat) {
+      ghiCoTM_(ssMoi, 1, 'DA_KHOI_TAO_' + ke.nhanThoiDiem);
+      SpreadsheetApp.flush();
+    }
+    // `thongBao` là MỘT câu (máy in thẳng, kể cả khi lỗi); từng bước đã làm nằm ở `nhatKy`.
+    return {
+      ok: kiem.dat, loi: kiem.dat ? undefined : 'TU_KIEM_LECH', hanhDong: 'taoThangMoi', thang: kyMoi, xong: true,
+      buocDaXong: daXong, tenFileMoi: ssMoi.getName(), tenFileCu: ssCu.getName(),
+      kiem: kiem.phep, canhBao: canhBao, nhatKy: thongBao,
+      thongBao: kiem.dat
+        ? 'ĐÃ KHỞI TẠO file tháng ' + kyMoi + ' — đủ 8/8 phép tự kiểm.'
+        : 'TỰ KIỂM LỆCH ' + kiem.soLech + '/8 phép — GIỮ cờ DANG_KHOI_TAO, KHÔNG đánh dấu hoàn tất: ' +
+          kiem.phep.filter(function (p) { return !p.dat; }).map(function (p) { return p.ma + ' (' + p.chiTiet + ')'; }).join(' · ') +
+          '. Báo người phụ trách kiểm file tháng mới trước khi dùng.',
+      giay: (new Date().getTime() - batDau) / 1000
+    };
+  } finally {
+    khoa.releaseLock();
+  }
+}
+
+function traDoTM_(kyMoi, daXong, batDau, nguong, buocKe, canhBao, thongBao) {
+  var giay = Math.round((new Date().getTime() - batDau) / 1000);
+  var cau = 'Dừng gọn ở ' + giay + ' giây (ngưỡng ' + nguong + ') trước bước ' + buocKe +
+    ' — phần đã làm giữ nguyên, gọi lại để làm tiếp.';
+  thongBao.push(cau);
+  return { ok: true, hanhDong: 'taoThangMoi', thang: kyMoi, xong: false, buocDaXong: daXong, buocKe: buocKe,
+    canhBao: canhBao, nhatKy: thongBao, thongBao: cau, giay: giay };
+}
+
+// ==================================================================== dòng tổng kết RUN (YC-38.3)
+
+/**
+ * RUN id do MÁY sinh (`node/dong-run.js`): `yyyyMMdd_HHmmss_<tên máy>`. Web App chỉ nhận đúng mẫu đó —
+ * chuỗi lạ (dài, có dấu `/`, có link) thì coi như không gửi: nhật ký Apps Script ai có quyền dự án cũng
+ * đọc được, không để máy nào nhét được một câu tùy ý (hay một link file tháng) vào đó.
+ */
+var RE_RUN_ID = /^\d{8}_\d{6}_[A-Za-z0-9-]{1,40}$/;
+
+function runIdHopLe_(x) {
+  var s = String(x == null ? '' : x);
+  return RE_RUN_ID.test(s) ? s : '';
+}
+
+/**
+ * Tóm tắt Mapping để truy vết "lượt này chạy với Mapping nào": số dòng CÓ + 8 ký tự đầu SHA-256 của nội
+ * dung. Không bắt user quản lý phiên bản Mapping (Phụ lục E mục 12) — hai lượt cùng băm là cùng một bảng.
+ *
+ * Băm CHỈ các cột Mapping theo TÊN (12 cột `SCHEMA.MAPPING` + cột lô phụ nếu có), bỏ dòng trống ở cuối.
+ * Không băm màu nền (tool tự tô lại mỗi lượt), không băm khối điều khiển N1:O5 của bước tạo tháng mới,
+ * không băm cột ghi chú lạ người dùng tự thêm — những thứ đó đổi không làm đổi cách tool ghép mã.
+ * Đọc MỘT lần cả khối (quota 6 phút).
+ * @returns {{soCo: number, bam: string}|null} null khi không có sheet Mapping
+ */
+function tomTatMapping_(ss) {
+  var sh = sheetMapping_(ss);
+  if (!sh) return null;
+  var het = sh.getLastRow();
+  var rong = Math.max(sh.getLastColumn(), SCHEMA.MAPPING.length);
+  var bang = het >= 1 ? sh.getRange(1, 1, het, rong).getDisplayValues() : [[]];
+  var cot = {};
+  (bang[0] || []).forEach(function (h, i) {
+    var t = MapListing.tenCotChuan(h);
+    if (cot[t] == null) cot[t] = i;
+  });
+  var ten = SCHEMA.MAPPING.concat([SCHEMA.MAPPING_COT_LO_PHU]).filter(function (t) { return cot[t] != null; });
+  var cXN = cot['Xác nhận'];
+  var soCo = 0, dong = [];
+  for (var r = 1; r < bang.length; r++) {
+    if (cXN != null && MapListing.laCo(bang[r][cXN])) soCo++;
+    dong.push(ten.map(function (t) { return String(bang[r][cot[t]] == null ? '' : bang[r][cot[t]]); }).join('\u001f'));
+  }
+  while (dong.length && dong[dong.length - 1].replace(/\u001f/g, '') === '') dong.pop();
+  return { soCo: soCo, bam: bam256_(ten.join('\u001f') + '\n' + dong.join('\n')).slice(0, 8) };
+}
+
+/**
+ * Ghi MỘT dòng RUN vào nhật ký Apps Script (Executions). Chỉ khi máy gửi RUN id hợp lệ — máy bản cũ không
+ * gửi thì thôi, không sinh dòng mồ côi. Dòng không mang ID/link file tháng: chỉ TÊN file (như mọi câu in).
+ * @returns {string} dòng đã ghi ('' = không ghi)
+ */
+function ghiDongRun_(body, hanhDong, tenFile, tk, tt) {
+  var id = runIdHopLe_(body && body.runId);
+  if (!id) return '';
+  var lo = body.lo ? ' | lô ' + body.lo.so + '/' + body.lo.tong : '';
+  var dong = 'RUN ' + id + ' | ' + hanhDong + lo +
+    ' | bản dựng ' + (typeof BAN_DUNG !== 'undefined' ? BAN_DUNG : '?') +
+    ' | file ' + tenFile +
+    ' | ghi ' + (tk.donGhi || 0) + ' đơn / ' + (tk.dongGhi || 0) + ' dòng' +
+    ' | bỏ qua ' + (tk.donDaCo || 0) +
+    ' | vàng ' + (tk.dongVang || 0) +
+    ' | Mapping: ' + (tt ? tt.soCo + ' dòng CÓ, băm ' + tt.bam : 'không có sheet');
+  console.log(dong);
+  return dong;
 }
 
 // ==================================================================== chạy tay để kiểm tra
@@ -1724,6 +2257,10 @@ function hamLoiCoMat_() {
   xet('moFileTheoId_', typeof moFileTheoId_);
   xet('kiemTenFileKhopThang_', typeof kiemTenFileKhopThang_);
   xet('toLaiMapping_', typeof toLaiMapping_);
+  xet('tomTatMapping_', typeof tomTatMapping_);
+  xet('hanhDongTaoThangMoi_', typeof hanhDongTaoThangMoi_);
+  xet('TaoThangMoi', typeof TaoThangMoi === 'undefined' ? 'undefined' : 'function');
+  xet('ghiDongRun_', typeof ghiDongRun_);
   xet('kiemCotDuocGhi_', typeof kiemCotDuocGhi_);
   xet('doCotNote_', typeof doCotNote_);
   xet('hanhDongXuLy_', typeof hanhDongXuLy_);
@@ -1736,6 +2273,7 @@ function hamLoiCoMat_() {
   // D-57 / YC-39 (2.6.0): Google thiếu hai hàm này nghĩa là còn cách tính dòng cuối theo riêng cột C — lỗi đè đơn gộp.
   xet('chuanBiCongThuc_', typeof chuanBiCongThuc_);
   xet('dongDuLieuCuoi_', typeof dongDuLieuCuoi_);
+  xet('kiemHopDongFileThang_', typeof kiemHopDongFileThang_);
   // Hàm của bản CŨ (mỏ neo · bảng link trên Google). Còn trên Google nghĩa là bản dán lên cũ hơn bản trên
   // máy — và cái bẫy mỏ neo vẫn đang giăng ở đó.
   //
@@ -1789,6 +2327,6 @@ function chayBoTest() {
   return 'Tổng ' + kq.length + ' · hỏng ' + hong.length;
 }
 
-var VAN_TAY_SHELL = 'a7c81408';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_SHELL = 'ddb055d8';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
 
-var BAN_DUNG = 'faa62d86f1e1';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay
+var BAN_DUNG = 'a64b28ec0e6f';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay

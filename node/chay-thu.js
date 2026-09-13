@@ -21,6 +21,7 @@ const { NguonThuMuc } = require('./nguon-thu-muc');
 const { chayLenGoogleSheet, thangCua } = require('./chay-google-sheet');
 const { WebAppGoogleSheet, idFileThang, canhBaoThangSau } = require('./gsheet-web-app');
 const { KhoTracking, duongDanOut, docBangXlsx, TEN_SHEET_MAPPING } = require('./kho-tracking');
+const { taoRunId, dongRun, dongRunTuKetQua, tenMay } = require('./dong-run');
 
 const ROOT = path.join(__dirname, '..');
 const DAU_VAO_MAC_DINH = path.join(ROOT, '..', '..', '00_DAU_VAO');
@@ -517,6 +518,9 @@ async function chayVanHanhGoogle(cv, cfg, thoiDiem, ngayGhi) {
   const thang = thangTay || thangCua(thoiDiem);
   const fileLog = path.join(cv.__ketQua, 'LOG_' + lop.Utils.nhanThoiDiem(thoiDiem) + '.txt');
   const tieuDeLog = 'KÉO ĐƠN LÊN GOOGLE SHEET — ' + lop.Utils.dinhDangNgayGio(thoiDiem) + '\nTháng: ' + thang;
+  // YC-38.3: một RUN id cho cả lượt bấm — gửi kèm mọi POST, in ở dòng tổng kết, ghi vào LOG.
+  const runId = taoRunId(thoiDiem, tenMay());
+  const run = { runId: runId, file: [], gian: [], donVao: null, loi: null };
   // `link_thang` đi kèm cấu hình Google; cờ `choPhepThangKhac` CHỈ bật ở lượt chạy tay có `--thang`.
   const cauHinhGoogle = Object.assign({}, cv.google_sheet || {},
     { link_thang: cv.link_thang || {}, choPhepThangKhac: !!thangTay });
@@ -546,6 +550,8 @@ async function chayVanHanhGoogle(cv, cfg, thoiDiem, ngayGhi) {
       console.log('  Thả file xuất Shopee (.xlsx) vào ' + cv.__thaFile + ' rồi bấm lại.');
       return 2;
     }
+    run.file = files.map((f) => f.tenFile);
+    run.gian = files.map((f) => lop.Config.gianHang(cfg, f.maGianHang).sheet);
 
     // lớp 1: đọc từng file; một file hỏng không làm hỏng file khác
     const cacFile = [], loi = [], fileOk = [], fileLoi = [];
@@ -576,8 +582,10 @@ async function chayVanHanhGoogle(cv, cfg, thoiDiem, ngayGhi) {
     // trong cấu hình thì đối chiếu tạm bằng file mẫu; không có thì thôi, không đoán bừa.
     kiemTraGianQuaMapping(daDoc, await mappingKhoiTao(cv.file_mapping_mau ? path.resolve(cv.__thuMuc, cv.file_mapping_mau) : null), cfg);
 
+    run.donVao = soDonDoc;
+    run.loi = loi.length;
     const kq = await chayLenGoogleSheet({
-      lop, cfg, cacFile, thang, ngayGhi, thoiDiem,
+      lop, cfg, cacFile, thang, ngayGhi, thoiDiem, runId,
       cauHinhGoogle: cauHinhGoogle,
       in: (t) => console.log(t)
     });
@@ -602,11 +610,17 @@ async function chayVanHanhGoogle(cv, cfg, thoiDiem, ngayGhi) {
     canhBao.slice(0, 30).forEach((c) => console.log('  ! ' + c));
     loi.forEach((c) => console.log('  LỖI FILE: ' + c));
 
-    ghiLogGoogle(fileLog, tieuDeLog + ' · file: ' + (kq.tenFile || ''), d, canhBao, loi, null);
+    const dongRunXong = dongRunTuKetQua(run, kq);
+    console.log('\n' + dongRunXong);
+    ghiLogGoogle(fileLog, tieuDeLog + ' · file: ' + (kq.tenFile || ''), [dongRunXong, ''].concat(d), canhBao, loi, null);
     return loi.length ? 1 : 0;
   } catch (e) {
     // D-46: câu lỗi (kể cả mã HTTP thật) phải vào nhật ký, không chỉ trôi qua màn hình rồi mất.
-    ghiLogGoogle(fileLog, tieuDeLog, [], [], [], e && e.message ? e.message : String(e));
+    // YC-38.3: lượt hỏng vẫn có dòng RUN — số nào không chắc thì in "?" chứ không in 0 (Google có thể đã
+    // ghi xong rồi mới rớt phản hồi, xem T-WA-05).
+    const dongRunLoi = run.file.length ? dongRun(run) : '';
+    if (dongRunLoi) console.log('\n' + dongRunLoi);
+    ghiLogGoogle(fileLog, tieuDeLog, dongRunLoi ? [dongRunLoi] : [], [], [], e && e.message ? e.message : String(e));
     throw e;
   }
 }

@@ -38,7 +38,7 @@ const https = require('https');
 const { URL } = require('url');
 
 /** Phải khớp `var PHIEN_BAN` trong `src/ShellAppsScript.gs`. Đổi hợp đồng gói JSON thì đổi cả hai. */
-const PHIEN_BAN = '2.5.0';
+const PHIEN_BAN = '2.6.0';
 
 const TOI_DA_DON_MOT_LO = 200;      // Apps Script chỉ có 6 phút một lần chạy; chia lô cho chắc
 
@@ -352,6 +352,7 @@ class WebAppGoogleSheet {
     this.spreadsheetId = String(c.spreadsheetId || '').trim() || null;
     this.choPhepThangKhac = c.choPhepThangKhac === true;
     this.phienBanWebApp = null;      // điền từ phản hồi đầu tiên; null = chưa nói chuyện lần nào
+    this.banDungWebApp = null;       // dấu vân tay bản dựng Google trả về (YC-38.3: in vào dòng RUN)
     this.canhBaoBanDung = [];        // câu cảnh báo lệch dấu vân tay bản dựng, điền sau lượt ping
     if (this.bat) {
       if (!this.url) throw new Error('Bật ghi Google Sheet nhưng thiếu web_app_url trong CAU_HINH_VAN_HANH.json');
@@ -474,6 +475,7 @@ class WebAppGoogleSheet {
           // Nhớ lại bản THẬT của Web App ngay cả khi phản hồi là lỗi — nhờ vậy `ghi()` chặn được
           // trước khi gửi lô đầu tiên, không phải chờ tới lúc Google trả lời.
           if (kq.phienBan != null) this.phienBanWebApp = String(kq.phienBan);
+          if (kq.banDung != null) this.banDungWebApp = String(kq.banDung);
           // So dấu vân tay trên MỌI phản hồi, không riêng `ping`: `banDung` đi kèm mọi phản hồi đã
           // qua cửa bí mật, nên không tốn thêm lượt gọi nào. Gộp câu, không lặp lại câu đã có.
           soDauVanTay(kq).forEach((c) => { if (this.canhBaoBanDung.indexOf(c) < 0) this.canhBaoBanDung.push(c); });
@@ -535,7 +537,7 @@ class WebAppGoogleSheet {
    * @param {Array}  lenh   [{ tenSheet, don: [{maDon, ngay, tien:{H,I,J,K}, dong:[{tenVietTat, soLuong, vang, note}]}] }]
    * @param {Array}  mappingThem  các dòng tên hàng mới cần nối vào sheet Mapping
    */
-  async ghi(thang, lenh, mappingThem, cauHinhGhiDe) {
+  async ghi(thang, lenh, mappingThem, cauHinhGhiDe, mappingThemCot, runId) {
     // D-42 TRƯỚC TIÊN, trước cả `ping` chốt phiên bản: thiếu link tháng thì chắc chắn không ghi được ô
     // nào, nên đừng tốn một lượt gọi mạng để biết điều đó. Máy mất mạng mà chưa khai link vẫn phải nhận
     // đúng câu "chưa có link tháng", không phải câu "không gọi được Web App".
@@ -544,14 +546,17 @@ class WebAppGoogleSheet {
     const cacLo = chiaLo(lenh, TOI_DA_DON_MOT_LO);
     const gop = {
       thongKe: { donGhi: 0, donDaCo: 0, dongGhi: 0, dongVang: 0, donGopO: 0, mappingThem: 0, mappingToLai: 0 },
-      viTri: {}, canhBao: [], thongBao: [], soLo: cacLo.length, tenFile: '', thang: thang
+      viTri: {}, canhBao: [], thongBao: [], soLo: cacLo.length, tenFile: '', thang: thang,
+      mappingCo: null, mappingBam: null
     };
     for (let i = 0; i < cacLo.length; i++) {
       const kq = await this._goi({
         hanhDong: 'ghi', thang: thang, lo: { so: i + 1, tong: cacLo.length },
+        runId: runId || undefined,                       // YC-38.3: Web App ghi dòng RUN vào nhật ký Apps Script
         lenh: cacLo[i],
         // tên hàng mới chỉ gửi kèm lô đầu, tránh nối trùng khi có nhiều lô
         mappingThem: i === 0 ? (mappingThem || []) : [],
+        mappingThemCot: mappingThemCot || null,          // tên cột từng vị trí: Web App ghi Mapping THEO TÊN
         cauHinh: cauHinhGhiDe || null
       });
       Object.keys(gop.thongKe).forEach((k) => { gop.thongKe[k] += (kq.thongKe && kq.thongKe[k]) || 0; });
@@ -559,6 +564,8 @@ class WebAppGoogleSheet {
       gop.canhBao = gop.canhBao.concat(kq.canhBao || []);
       gop.thongBao = gop.thongBao.concat(kq.thongBao || []);
       gop.tenFile = kq.tenFile || gop.tenFile;
+      // Mapping sau lượt CUỐI là Mapping lượt chạy này để lại — lấy của lô sau cùng.
+      if (kq.mappingBam != null) { gop.mappingCo = kq.mappingCo; gop.mappingBam = kq.mappingBam; }
     }
     return gop;
   }
@@ -581,7 +588,7 @@ class WebAppGoogleSheet {
         tenMoi: 0, mappingThem: 0, mappingToLai: 0, donTrungTrongGoi: 0
       },
       viTri: {}, canhBao: [], thongBao: [], soLo: cacLo.length, soLanGoi: 0,
-      tenFile: '', thang: thang, mapTomTat: null
+      tenFile: '', thang: thang, mapTomTat: null, mappingCo: null, mappingBam: null
     };
 
     // Tên hàng mới đã nối vào Mapping ở các lượt trước, mang theo suốt cả lần chạy (qua mọi lô và mọi
@@ -596,6 +603,7 @@ class WebAppGoogleSheet {
       for (let vong = 0; vong < SO_LAN_GOI_TIEP_TOI_DA; vong++) {
         const kq = await this._goi({
           hanhDong: 'xuLy', thang: thang, lo: { so: i + 1, tong: cacLo.length },
+          runId: tc.runId || undefined,                    // YC-38.3
           ngayGhi: tc.ngayGhi || null, cacFile: con,
           tenMoiTruocDo: tenMoiTruocDo,
           nguongGiay: tc.nguongGiay == null ? undefined : tc.nguongGiay,
@@ -609,6 +617,7 @@ class WebAppGoogleSheet {
         gop.thongBao = gop.thongBao.concat(kq.thongBao || []);
         gop.tenFile = kq.tenFile || gop.tenFile;
         gop.mapTomTat = kq.mapTomTat || gop.mapTomTat;
+        if (kq.mappingBam != null) { gop.mappingCo = kq.mappingCo; gop.mappingBam = kq.mappingBam; }
         if (kq.xong !== false) break;
 
         // Gian hàng nào đã ghi xong thì bỏ khỏi lượt sau. Gian hàng đang dở thì GỬI LẠI NGUYÊN VẸN:
