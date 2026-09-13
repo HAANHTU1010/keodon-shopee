@@ -8,7 +8,7 @@
  *   1. Nhân bản file tháng 8 THẬT thành một vỏ tháng 9 rỗng — "dọn tay như chủ dự án vẫn làm":
  *      bỏ ô gộp và xóa GIÁ TRỊ GÕ TAY ở vùng đơn, GIỮ NGUYÊN công thức từng dòng.
  *   2. Chạy tool với `id_file_cu` = tháng 8 thật, `id_file_moi` = vỏ vừa dựng.
- *   3. So kết quả với `THANG-9-2026-KINH-DOANH_DA_SUA_CONG_THUC.xlsx` (bản nhân viên làm tay).
+ *   3. So kết quả với `THANG-9-2026-KINH-DOANH_DA_SUA_CONG_THUC.xlsx` (bản user làm tay).
  * KHÔNG file nào trong `00_DAU_VAO` bị ghi — vỏ và kết quả đều nằm trong thư mục tạm.
  *
  * === VÌ SAO N-10 ĐƯỢC VIẾT LẠI ===

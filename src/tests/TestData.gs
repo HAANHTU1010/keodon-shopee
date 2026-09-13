@@ -129,7 +129,7 @@ var TestData = (function () {
    * Sheet gian hàng giả theo bố cục thật: tiêu đề dòng 2, dòng 3 tổng, dữ liệu từ dòng 4;
    * công thức E/F/M/N (ArrayFormula) và L kéo sẵn tới `congThucToi`, dòng tổng phủ tới `dongTongToi`.
    * cacDong: [{ma, tvt, sl, h, i, j, k, l}] — dòng sau của đơn nhiều dòng để ma='' và h..k trống (giống ô gộp).
-   * `l` khác null → ô L chứa GIÁ TRỊ tay thay vì công thức (mô phỏng nhân viên gõ số vào Doanh Thu ở đơn hoàn).
+   * `l` khác null → ô L chứa GIÁ TRỊ tay thay vì công thức (mô phỏng user gõ số vào Doanh Thu ở đơn hoàn).
    */
   function sheetGianHang(ten, cacDong, congThucToi, dongTongToi) {
     var head = ['Ngày ', 'Nguồn đơn', 'Thông tin ĐH', 'Tên viết tắt', 'Tên sản phẩm', 'Đơn vị ', 'SL',

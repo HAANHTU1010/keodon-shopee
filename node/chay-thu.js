@@ -311,9 +311,9 @@ function chonFileTracking(cv, thoiDiem) {
 // ------------------------------------------------- bố cục thư mục của vỏ vận hành (GV-v2.6 mục 1)
 
 /**
- * Bố cục MỚI của thư mục giao cho nhân viên (`Tool_nhập_liệu`). Chỉ khác bố cục cũ ở ĐƯỜNG DẪN:
+ * Bố cục MỚI của thư mục giao cho user (`Tool_nhập_liệu`). Chỉ khác bố cục cũ ở ĐƯỜNG DẪN:
  *
- *   1. Thư mục gian hàng mang TÊN SHEET (`Shopee mall`) thay cho mã (`SP_MALL`) — nhân viên khỏi
+ *   1. Thư mục gian hàng mang TÊN SHEET (`Shopee mall`) thay cho mã (`SP_MALL`) — user khỏi
  *      phải nhớ ánh xạ mã ↔ sheet. Ánh xạ nằm ở khóa `thu_muc_gian_hang` của CAU_HINH_VAN_HANH.json.
  *   2. File chạy xong nằm ngay trong `<thư mục gian hàng>/đã xử lý/`, không còn `4_DA_XU_LY` riêng.
  *      File hỏng vào `<thư mục gian hàng>/đã xử lý/LOI/`.
@@ -337,7 +337,7 @@ class NguonThuMucTheoShop extends NguonThuMuc {
   thuMucCua(ma) { return path.join(this.vao, this.tenCua(ma)); }
   tenHopLe(cfg) { return Object.keys(cfg.gianHang).map(m => this.tenCua(m)); }
 
-  /** Dựng sẵn thư mục thả + thư mục `đã xử lý` cho từng gian hàng, để nhân viên thấy chỗ mà thả. */
+  /** Dựng sẵn thư mục thả + thư mục `đã xử lý` cho từng gian hàng, để user thấy chỗ mà thả. */
   taoThuMuc(cfg) {
     Object.keys(cfg.gianHang).forEach(m => fs.mkdirSync(path.join(this.thuMucCua(m), this.tenDaXuLy), { recursive: true }));
   }

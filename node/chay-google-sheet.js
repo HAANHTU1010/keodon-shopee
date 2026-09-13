@@ -7,7 +7,7 @@
  *       Máy chỉ chạy LỚP 1 (đọc file .xlsx — việc này phải ở lại máy vì file nằm trên máy) rồi gửi
  *       bảng dòng thô lên. Web App tự đọc Mapping + tồn kho, chạy lớp 2 (tiền, thuế, mapping, chọn lô),
  *       lớp 3 (gộp ô, lập kế hoạch) và ghi — tất cả trong MỘT lần gọi.
- *       Vì sao đổi: trước đây sửa cách tính thuế là phải đi cập nhật từng máy nhân viên; giờ chỉ cần
+ *       Vì sao đổi: trước đây sửa cách tính thuế là phải đi cập nhật từng máy user; giờ chỉ cần
  *       một lần Deploy. Đây là cách dự án chứng quyền của cùng chủ dự án đang chạy và là lý do bên đó
  *       cập nhật nhẹ hơn hẳn (HOC_TU_DU_AN_CO_PHIEU mục 1: "một lõi tính toán duy nhất").
  *
@@ -28,7 +28,7 @@
  * hình ngay tại chỗ chạy (`inCanhBaoVungCongThuc`).
  *
  * File tháng nào là đích thì do chính Web App quyết, tra bảng link trong sheet `Thông tin shop `
- * của file mỏ neo (GV-v2.3 mục 1). Máy này KHÔNG giữ id file tháng nào cả — 2-3 máy nhân viên mà
+ * của file mỏ neo (GV-v2.3 mục 1). Máy này KHÔNG giữ id file tháng nào cả — 2-3 máy user mà
  * mỗi máy giữ một id là sớm muộn có máy ghi vào file tháng cũ.
  *
  * CHƯA CHẠY THẬT (08/9/2026): chưa có link Web App và chuỗi bí mật của chủ dự án. Toàn bộ đường đi
@@ -66,7 +66,7 @@ let _voCache = null;
  * File .gs không có require/import, chỉ khai `var`/`function` ở cấp cao nhất, nên chạy được bằng
  * `new Function` sau khi bơm các đối tượng lõi vào phạm vi. Các dịch vụ Google (SpreadsheetApp,
  * LockService…) cố ý KHÔNG bơm: hàm dùng ở đây (`dungKeHoachGhi_`) là hàm thuần, không đụng tới chúng;
- * lỡ có ai sửa nó thành đụng Google thì hỏng ngay tại đây chứ không hỏng lặng lẽ trên máy nhân viên.
+ * lỡ có ai sửa nó thành đụng Google thì hỏng ngay tại đây chứ không hỏng lặng lẽ trên máy user.
  */
 function napVoGoogle(lop) {
   if (_voCache && _voCache.lop === lop) return _voCache.vo;
@@ -153,7 +153,7 @@ function inCanhBaoVungCongThuc(lop, ds, in_) {
  *
  * TRIỆU CHỨNG THẬT ĐANG CHỐNG: bảng link thiếu dòng cho tháng sau thì đến ngày 1 của tháng sau tool
  * TẮC HẲN — "Chưa có file cho tháng N". Câu này báo trước cả tháng, nhưng nó chỉ có tác dụng nếu
- * nhân viên NHÌN THẤY; nằm im trong mảng canhBao của phản hồi thì không ai đọc.
+ * user NHÌN THẤY; nằm im trong mảng canhBao của phản hồi thì không ai đọc.
  */
 /**
  * In cảnh báo LỆCH BẢN DỰNG. Chỉ nói, không chặn — theo chốt của BA, để không tắc buổi chạy thử.

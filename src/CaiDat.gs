@@ -41,7 +41,7 @@ var CaiDat = (function () {
         thue_gtgt_pct: 1,                       // Nghị định 117/2025 — sàn khấu trừ 1% GTGT
         thue_tncn_pct: 0.5,                     // + 0,5% TNCN
         thue_cach_tinh: 'TACH_ROI_CONG',        // làm tròn từng sắc thuế rồi cộng (khớp 713/719 dòng tháng 8)
-        thue_theo_dong: true,                   // đơn nhiều dòng: làm tròn theo TỪNG DÒNG rồi cộng (khớp 392/393 đơn nhân viên gõ);
+        thue_theo_dong: true,                   // đơn nhiều dòng: làm tròn theo TỪNG DÒNG rồi cộng (khớp 392/393 đơn user gõ);
                                                 // false = làm tròn một lần trên cả đơn theo câu chữ Context 5.2 (khớp 391/393)
         bo_don_huy_hoan: true,                  // file tab "Tất cả" → bỏ đơn hủy/hoàn trước khi xử lý (GV-v2.2 mục 1.1)
         canh_bao_gian_hang_la: true             // file thả nhầm thư mục gian hàng → dừng và báo (Context 9.3)

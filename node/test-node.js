@@ -6,7 +6,7 @@
  * cần chạm vào định dạng file thật — chính là chỗ v1 từng hỏng mà test trong bộ nhớ không thấy.
  *
  * Bộ dữ liệu: 00_DAU_VAO/ (file tracking tháng 8 thật, hai file xuất Shopee thật, Mapping mẫu)
- *             01_TAI_LIEU/NGHIEM_THU_NT1/MAP_LISTING_SP_MALL_NT1.xlsx (Mapping đã điền của NT-1).
+ *             node/fixtures/MAP_LISTING_SP_MALL_NT1.xlsx (Mapping đã điền của NT-1, fixture của bộ test).
  */
 const fs = require('fs');
 const os = require('os');
@@ -27,7 +27,7 @@ const FILE_ALL = path.join(DAU_VAO, 'Order.all.20260807_20260906.xlsx');
 const FILE_ALL_T7 = path.join(DAU_VAO, 'Order.all.20260715_20260813.xlsx');
 const TRACKING = path.join(DAU_VAO, 'THÁNG-8-2026-KINH-DOANH (1).xlsx');
 const DEMO_MAP = path.join(DAU_VAO, 'DEMO_Mapping_san_pham.xlsx');
-const MAP_NT1 = path.join(ROOT, '..', '..', '01_TAI_LIEU', 'NGHIEM_THU_NT1', 'MAP_LISTING_SP_MALL_NT1.xlsx');
+const MAP_NT1 = path.join(__dirname, 'fixtures', 'MAP_LISTING_SP_MALL_NT1.xlsx');
 
 function phai(dk, msg) { if (!dk) throw new Error(msg); }
 function bang(a, b, msg) { if (a !== b) throw new Error(msg + ' (mong ' + JSON.stringify(b) + ', nhận ' + JSON.stringify(a) + ')'); }
@@ -98,7 +98,7 @@ test('N-01', 'Round-trip ExcelJS file tracking thật: không đổi gì → t�
   bang(kho.chuKyTruoc['Babyiu'].dongCuoi, 70, 'Babyiu');
   await kho.luu();
   phai(fs.existsSync(out), 'file kết quả tồn tại');
-  return '436 ô gộp sẵn có — bằng chứng nhân viên vẫn gộp ô (GV-v2.2 mục 1.2)';
+  return '436 ô gộp sẵn có — bằng chứng user vẫn gộp ô (GV-v2.2 mục 1.2)';
 });
 
 test('N-02', 'File xuất có <dimension ref="A1"> sai (và khi bỏ hẳn): SheetJS và ExcelJS vẫn đọc đủ dòng', async () => {
@@ -176,7 +176,7 @@ test('N-05', 'Chạy hai lần trên file tracking thật: nối dòng dưới c
   bang(kq.donDaCo, 0, 'chưa có đơn nào trùng');
 
   const ws = (await moWb(out)).getWorksheet('Shopee mall');
-  bang(ws.getCell('C516').value, '260831S6B6WA9V', 'C516 của nhân viên giữ nguyên');
+  bang(ws.getCell('C516').value, '260831S6B6WA9V', 'C516 của user giữ nguyên');
   bang(ws.getCell('C517').value, '26090461NYUNB8', 'đơn đầu tiên ghi ở dòng 517');
   bang(ws.getCell('C517').numFmt, '@', 'mã đơn là ô văn bản');
   bang(ws.getCell('B517').value, null, 'B để trống (Context 4.1: cột B trống 747/747 dòng)');
@@ -215,7 +215,7 @@ test('N-06', 'Chỉ được thêm sheet "Mapping sản phẩm": file kết qu�
 
 test('N-07', 'GỘP Ô trên file thật: đơn nhiều mặt hàng gộp đúng 6 cột C,H,I,J,K,L; số ô gộp tăng đúng 6 × số đơn gộp', async () => {
   const mt = moiTruong('n07');
-  // Dùng file "Tất cả" kỳ 15/7–13/8: 24 đơn nhiều mặt hàng của file kỳ 7/8–6/9 đã được nhân viên gõ hết
+  // Dùng file "Tất cả" kỳ 15/7–13/8: 24 đơn nhiều mặt hàng của file kỳ 7/8–6/9 đã được user gõ hết
   // vào sổ tháng 8 rồi (chính là nguồn của 436 ô gộp sẵn có), nên tool bỏ qua chống trùng và không gộp ô nào.
   const { kq, out, kho } = await chayThat(mt, mt.tracking, { fileXuat: FILE_ALL_T7 });
   const dongCuoiCu = kho.chuKyTruoc['Shopee mall'].dongCuoi;
@@ -261,8 +261,14 @@ test('N-08', 'Chế độ SHEET (Google Sheet): CHỈ kéo cột L, tuyệt đ�
 
 test('N-09', 'Cột Note = cột trống đầu tiên sau "Còn Nợ", và dòng chưa nhận ra mã được tô vàng CẢ DÒNG', async () => {
   const mt = moiTruong('n09');
-  // Mapping mẫu DEMO: hầu hết dòng chưa ghi CÓ → tool phải tô vàng và ghi lý do
-  const { kq, out } = await chayThat(mt, mt.tracking, { mapping: await docBangXlsx(DEMO_MAP, TEN_SHEET_MAPPING) });
+  // Mapping mẫu DEMO nhưng XÓA TRẮNG cột Xác nhận trong bộ nhớ: bài này đo cột Note và tô vàng, nên
+  // phải chắc chắn có dòng chưa nhận ra. File DEMO trong 00_DAU_VAO do BA/chủ dự án sửa (bản 13/9
+  // đã ghi CÓ cho nhiều dòng) — bài test không được phụ thuộc vào việc họ tick tới đâu.
+  const mapDemo = await docBangXlsx(DEMO_MAP, TEN_SHEET_MAPPING);
+  const iXacNhan = (mapDemo[0] || []).findIndex((h) => lop.MapListing.tenCotChuan(h) === 'Xác nhận');
+  phai(iXacNhan >= 0, 'file DEMO phải có cột Xác nhận');
+  for (let r = 1; r < mapDemo.length; r++) if (mapDemo[r]) mapDemo[r][iXacNhan] = '';
+  const { kq, out } = await chayThat(mt, mt.tracking, { mapping: mapDemo });
   phai(kq.dongVang > 0, 'phải có dòng vàng, thực tế ' + kq.dongVang);
   const ws = (await moWb(out)).getWorksheet('Shopee mall');
   const k = lop.Config.tao().keyin;
@@ -277,7 +283,7 @@ test('N-09', 'Cột Note = cột trống đầu tiên sau "Còn Nợ", và dòng
   bang(ws.getCell(517, cuoi).value != null, true, 'dòng 517 có lý do trong cột Note');
   phai(toVang(ws.getCell('A517')) && toVang(ws.getCell('C517')) && toVang(ws.getCell(517, cuoi)),
     'tô vàng CẢ DÒNG chứ không riêng một ô');
-  phai(!toVang(ws.getCell('A516')), 'dòng của nhân viên không bị tô');
+  phai(!toVang(ws.getCell('A516')), 'dòng của user không bị tô');
   return kq.dongVang + ' dòng vàng, cột Note = cột ' + lop.Utils.chuCot(cuoi);
 });
 
@@ -350,11 +356,11 @@ test('N-12', 'Không ghi đè file gốc; luôn ra file _AUTO_ mới; từ chố
   phai(loi && loi.indexOf('ghi đè') >= 0, 'từ chối ghi đè gốc');
 });
 
-test('N-13', 'Ô cột L bị gõ số tay ở dòng tool sắp ghi → trả lại công thức + ghi vào cảnh báo; ô L của nhân viên giữ nguyên', async () => {
+test('N-13', 'Ô cột L bị gõ số tay ở dòng tool sắp ghi → trả lại công thức + ghi vào cảnh báo; ô L của user giữ nguyên', async () => {
   const mt = moiTruong('n13');
   const wb0 = await moWb(mt.tracking);
   const ws0 = wb0.getWorksheet('Shopee mall');
-  bang(ws0.getCell('L102').value, -40000, 'file tháng 8 thật: L102 nhân viên gõ tay -40.000');
+  bang(ws0.getCell('L102').value, -40000, 'file tháng 8 thật: L102 user gõ tay -40.000');
   ws0.getCell('L517').value = -40000;                       // dòng trống, tool sẽ ghi đơn đầu tiên vào đây
   const dauVao = path.join(mt.d, 'THANG-8_co_L_tay.xlsx');
   await wb0.xlsx.writeFile(dauVao);
@@ -362,7 +368,7 @@ test('N-13', 'Ô cột L bị gõ số tay ở dòng tool sắp ghi → trả l�
   bang(kq.giaTriTayThay, 1, 'đúng một ô được thay');
   const ws = (await moWb(out)).getWorksheet('Shopee mall');
   bang(ct(ws.getCell('L517')), 'H517-I517-J517-K517', 'L517 trở lại là công thức');
-  bang(ws.getCell('L102').value, -40000, 'L102 của nhân viên giữ nguyên số tay');
+  bang(ws.getCell('L102').value, -40000, 'L102 của user giữ nguyên số tay');
   const bao = kq.nhatKy.map(r => String(r[lop.LOG_COT.indexOf('thong_bao')])).join('\n');
   phai(/L517/.test(bao) && /-40000/.test(bao), 'phải có dòng nhật ký nêu rõ ô nào bị thay: ' + bao.slice(0, 300));
 });
@@ -671,7 +677,7 @@ test('N-18', 'D-17: file tab "Tất cả" toàn đơn hủy/hoàn → báo "0 đ
   const trongSau = new Set([].concat(...SHEET_GIAN.map(t => sau[t].maDon)));
   const themVao = huy.maDon.filter(m => trongSau.has(m) && !trongTruoc.has(m));
   bangMang(themVao, [], 'không mã đơn hủy/hoàn nào được THÊM vào sheet gian hàng');
-  // 18 đơn trong danh sách hủy vốn đã nằm sẵn trong sổ: nhân viên gõ lúc đơn còn sống, khách hủy sau đó.
+  // 18 đơn trong danh sách hủy vốn đã nằm sẵn trong sổ: user gõ lúc đơn còn sống, khách hủy sau đó.
   // Tool không được xóa, không được sửa, không được tô lại chúng (bảng D dòng D-17, và T-51).
   bang(huy.maDon.filter(m => trongTruoc.has(m)).length, 18, '18 đơn hủy vốn đã có sẵn trong sổ vẫn y nguyên');
   return '82 dòng / 73 đơn hủy-hoàn vào, 0 mã được thêm; 18 đơn hủy có sẵn trong sổ không bị đụng';

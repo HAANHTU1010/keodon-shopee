@@ -7,7 +7,7 @@ title Cap nhat tool - lay ban ma moi tu GitHub
 rem ============================================================
 rem  2_CAP_NHAT.bat - bam mot cai la tai ban ma moi nhat ve may.
 rem
-rem  File nay nam NGOAI cung, canh ba nut kia, de nhan vien nhin thay ngay.
+rem  File nay nam NGOAI cung, canh ba nut kia, de user nhin thay ngay.
 rem  Nhung moi thu no doc va ghi van nam trong thu muc  Cau hinh  (cau hinh,
 rem  ban lui  _ban_cu_... , node-portable). Ten thu muc do co dau tieng Viet
 rem  ma file .bat phai la ASCII thuan, nen KHONG go thang duoc: phai DO bang
@@ -26,7 +26,7 @@ rem ============================================================
 
 set "CN_TEP=%~f0"
 rem Cat duong dan thu muc TRUOC vong doc tham so: sau lenh `shift` thi %~dp0 KHONG con tro
-rem toi chinh file .bat nay nua. Bay nay da ghi trong DONG_GOI_GIAO_NHAN_VIEN.md muc 5.
+rem toi chinh file .bat nay nua. Bay nay da ghi trong DONG_GOI_GIAO_USER.md muc 5.
 set "CN_GOC=%~dp0"
 set "CN_NGUON="
 set "CN_TU_DONG="
@@ -50,7 +50,7 @@ goto doc_tham_so
 
 rem ---- Do thu muc  Cau hinh  (khong go thang duoc vi ten co dau) ----------
 rem PHAI DAT SAU vong doc tham so. Truoc day khoi nay nam TREN :doc_tham_so, nen luc no chay
-rem thi CN_TU_DONG chua duoc dat va lenh `pause` khong the nao tat duoc: may nhan vien TREO CHO
+rem thi CN_TU_DONG chua duoc dat va lenh `pause` khong the nao tat duoc: may user TREO CHO
 rem BAM PHIM, ma nut 1 goi file nay bang `call ... /tu-dong` nen no dung im khong bao gi. Doc ma
 rem khong thay duoc, chay that bang cmd.exe moi lo ra.
 rem
@@ -110,14 +110,14 @@ function Gach()   { Write-Host '------------------------------------------------
 $base   = $env:CN_BASE
 $nguon  = $env:CN_NGUON
 # Bo ma nam o mot trong hai cho: trong chinh thu muc `Cau hinh` (ban giao cho may
-# nhan vien), hoac o 02_CODE cua thu muc du an. Lay cho nao co that.
+# user), hoac o 02_CODE cua thu muc du an. Lay cho nao co that.
 $toolTrong = [IO.Path]::GetFullPath((Join-Path $base 'keodon-apps-script'))
 $toolNgoai = [IO.Path]::GetFullPath((Join-Path $base '..\..\02_CODE\keodon-apps-script'))
 # Ba ca, xet theo dung thu tu nay:
-#   1. Da co ma trong `Cau hinh`          -> may nhan vien, da cai roi
+#   1. Da co ma trong `Cau hinh`          -> may user, da cai roi
 #   2. Da co ma o 02_CODE                 -> dang chay trong thu muc du an
 #   3. Chua co ma o dau ca (CAI LAN DAU)  -> co thu muc cha cua 02_CODE thi la may
-#      du an, khong co thi la may nhan vien va ma se ve nam trong `Cau hinh`.
+#      du an, khong co thi la may user va ma se ve nam trong `Cau hinh`.
 $tool = $null
 if (Test-Path -LiteralPath (Join-Path $toolTrong 'package.json')) { $tool = $toolTrong }
 if (-not $tool -and (Test-Path -LiteralPath (Join-Path $toolNgoai 'package.json'))) { $tool = $toolNgoai }
@@ -263,13 +263,13 @@ try {
     Bao '   4. Luu file, dong Notepad, bam dup lai 2_CAP_NHAT.bat.'
     Bao ''
     Bao '  Hai ten nay do nguoi phu trach ky thuat cho biet.'
-    Bao '  Cach lay hai ten do: xem file  HUONG_DAN_DUA_LEN_GITHUB.md.'
+    Bao '  Cach lay hai ten do: hoi nguoi phu trach ky thuat.'
     Bao '  Chua co gi tren may bi thay doi.'
     $global:CN_MA = 1; return
   }
 
   # ---- 2. Ban ma dang chay tren may ----------------------------------
-  #  Goi dong goi giao nhan vien KHONG chua src/ va node/: ma ve may qua dung mot
+  #  Goi dong goi giao user KHONG chua src/ va node/: ma ve may qua dung mot
   #  duong la nut nay. Nen "tren may chua co ma" la chuyen BINH THUONG cua lan cai
   #  dau, khong phai loi. Truoc day cho la loi, nen 1_CAI_DAT_LAN_DAU.bat goi sang
   #  day thi nga ngay tai cho nay.
@@ -324,7 +324,7 @@ try {
         Bao '  Kiem tra ba viec:'
         Bao ('   1. Hai ten trong CAU_HINH_VAN_HANH.json co go dung khong:  ' + $chu + ' / ' + $repo)
         Bao '      GitHub phan biet chu hoa chu thuong.'
-        Bao '   2. Kho ma da de che do Public chua. De Private thi may nhan vien khong tai duoc.'
+        Bao '   2. Kho ma da de che do Public chua. De Private thi may user khong tai duoc.'
         Bao ('   3. Nhanh dang tim la  ' + $nhanh + '. Vai kho cu dat ten nhanh la  master.')
         Bao '      Sua dong  "nhanh"  trong muc  "cap_nhat"  neu can.'
         Bao ''
@@ -375,7 +375,7 @@ try {
   }
   $duCauTruc = $false
   if ($goc) {
-    # Bon thu, khong phai ba. Thieu `bat` thi ba nut bam tren may nhan vien khong bao gio
+    # Bon thu, khong phai ba. Thieu `bat` thi ba nut bam tren may user khong bao gio
     # duoc cap nhat, ma lai KHONG AI BIET - dung kieu hong am tham ma du an nay cam.
     $duCauTruc = (Test-Path -LiteralPath (Join-Path $goc 'src')) -and (Test-Path -LiteralPath (Join-Path $goc 'node')) -and (Test-Path -LiteralPath (Join-Path $goc 'bat'))
   }
@@ -386,7 +386,7 @@ try {
     Bao '  Trong kho ma tren GitHub, ngay o muc goc phai co du BON thu:'
     Bao '     thu muc  src     thu muc  node     thu muc  bat     file  package.json'
     Bao '  Nguoi day ma len co the da bo nham chung vao mot thu muc con.'
-    Bao '  Dua file HUONG_DAN_DUA_LEN_GITHUB.md cho nguoi phu trach ky thuat xem.'
+    Bao '  Goi cho nguoi phu trach ky thuat de duoc huong dan.'
     Bao '  Chua co gi tren may bi thay doi.'
     $global:CN_MA = 6; return
   }

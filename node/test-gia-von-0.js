@@ -8,7 +8,7 @@
  *
  * Chỗ dễ làm hỏng chính việc này: nhầm "giá vốn đúng bằng 0" với "không đọc được giá vốn".
  * Ô trống, ô lỗi, ô còn là công thức chưa tính đều KHÔNG phải giá vốn 0. Nhầm là tô vàng oan hàng loạt,
- * mà tô vàng oan thì nhân viên bỏ qua luôn cả những cảnh báo thật. Bộ này canh cả hai chiều.
+ * mà tô vàng oan thì user bỏ qua luôn cả những cảnh báo thật. Bộ này canh cả hai chiều.
  *
  * LUẬT ĐỐI CHỨNG ÂM (08_BA_TRA_LOI_DEV_v2.6.md mục 4): mỗi chỉ tiêu phải kèm một đối chứng âm — dựng ra
  * đúng cái sai mà nó phải bắt, rồi chứng minh nó báo LỆCH. Chỉ tiêu không có đối chứng âm coi như chưa có.
@@ -167,7 +167,7 @@ function noteCuaDong(bc, r) {
 }
 
 /**
- * Phép chấm CÂU NOTE: phải nói đủ ba điều cho nhân viên hiểu ngay.
+ * Phép chấm CÂU NOTE: phải nói đủ ba điều cho user hiểu ngay.
  * @returns {string[]} những điều còn thiếu; rỗng nghĩa là đạt
  */
 function thieuGiCauNote(cau, maHang) {
@@ -359,7 +359,7 @@ test('GV-06', 'Câu Note nói đủ BA ĐIỀU: mã nào · giá vốn 0 · vì 
   function kiem(cau) {
     const thieu = thieuGiCauNote(cau, '1548');
     phai(thieu.length === 0, 'câu Note thiếu: ' + thieu.join(' · ') + ' — câu đang có: "' + cau + '"');
-    phai(cau.length < 260, 'câu Note dài quá, nhân viên sẽ không đọc (' + cau.length + ' ký tự)');
+    phai(cau.length < 260, 'câu Note dài quá, user sẽ không đọc (' + cau.length + ' ký tự)');
     phai(!/[A-Za-z_]+\(|\bnull\b|\bundefined\b/.test(cau), 'câu Note không được viết kiểu kỹ thuật: "' + cau + '"');
   }
   kiem(note);

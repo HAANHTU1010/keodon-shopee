@@ -24,7 +24,7 @@ const ROOT = path.join(__dirname, '..');
 const DAU_VAO = path.join(ROOT, '..', '..', '00_DAU_VAO');
 const TRACKING = path.join(DAU_VAO, 'THÁNG-8-2026-KINH-DOANH (1).xlsx');
 const FILE_XUAT = path.join(DAU_VAO, 'Order.toship.20260807_20260906.xlsx');
-const MAP_NT1 = path.join(ROOT, '..', '..', '01_TAI_LIEU', 'NGHIEM_THU_NT1', 'MAP_LISTING_SP_MALL_NT1.xlsx');
+const MAP_NT1 = path.join(__dirname, 'fixtures', 'MAP_LISTING_SP_MALL_NT1.xlsx');
 
 function phai(dk, msg) { if (!dk) throw new Error(msg); }
 function bam(p) { return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex'); }

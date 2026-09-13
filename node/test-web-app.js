@@ -165,7 +165,7 @@ async function chay() {
   // chạy lại KHÔNG sinh đơn trùng.
   // CẤM TUYỆT ĐỐI: ghi một nửa số đơn rồi báo thành công.
   //
-  // Triệu chứng thật nếu vi phạm: nhân viên nhìn thấy "XONG, ghi thêm 250 đơn", đóng máy, mà file
+  // Triệu chứng thật nếu vi phạm: user nhìn thấy "XONG, ghi thêm 250 đơn", đóng máy, mà file
   // tháng chỉ có 200 đơn. 50 đơn kia không ai biết là thiếu cho tới lúc chốt sổ cuối tháng.
   console.log('--- D-12 · đứt TRƯỚC khi Web App ghi được gì ---');
   {
@@ -207,7 +207,7 @@ async function chay() {
 
     await test('T-WA-04 câu báo mất mạng phải nói "chưa ghi được, chạy lại sau" (KE_HOACH D-12)', () => {
       // Vì sao bài này tồn tại: kế hoạch kiểm thử ghi rõ kỳ vọng là câu "chưa ghi được, chạy lại sau".
-      // Triệu chứng nếu vi phạm: nhân viên đọc "Không gọi được Web App: socket hang up" rồi không biết
+      // Triệu chứng nếu vi phạm: user đọc "Không gọi được Web App: socket hang up" rồi không biết
       // phải làm gì. Bấm lại thì sợ ghi trùng, không bấm thì mất đơn. Cả hai đều là quyết định sai
       // sinh ra từ một câu báo lỗi thiếu vế "việc phải làm".
       dung(/chạy lại|thử lại/i.test(cauLoi),
@@ -522,7 +522,7 @@ async function chay() {
     let cauLoi = '';
 
     await test('T-WA-22 máy A đang giữ khóa → máy B bị TỪ CHỐI kèm lý do đọc hiểu được', async () => {
-      // Triệu chứng nếu vi phạm: hai máy nhân viên bấm chạy cùng lúc, cả hai cùng đọc thấy "chưa có
+      // Triệu chứng nếu vi phạm: hai máy user bấm chạy cùng lúc, cả hai cùng đọc thấy "chưa có
       // đơn nào", cả hai cùng nối, file tháng có hai bản của mỗi đơn.
       await b.web.ping();
       b.sim.khoaBiMayKhacGiu = true;           // máy A đang giữ LockService
@@ -545,7 +545,7 @@ async function chay() {
 
   console.log('--- D-11 · hai máy gửi CÙNG một gói vào cùng một lúc ---');
   {
-    // Vì sao bài này tồn tại: đây mới là ca thật hay gặp: hai nhân viên cùng thả một file xuất rồi
+    // Vì sao bài này tồn tại: đây mới là ca thật hay gặp: hai user cùng thả một file xuất rồi
     // cùng bấm chạy. Khóa chỉ xếp hàng chứ không khử trùng; thứ khử trùng là tầng 2 đọc lại cột mã đơn
     // BÊN TRONG khóa. Bài này chứng minh cả hai cơ chế phải cùng làm việc.
     const b = dungBoi();

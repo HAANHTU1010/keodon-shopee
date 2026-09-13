@@ -22,7 +22,7 @@ var DanhMuc = (function () {
    * Đọc MỘT ô giá vốn, nghiêm ngặt. Trả về số, hoặc `null` nghĩa là KHÔNG ĐỌC ĐƯỢC.
    *
    * Phải tách bạch "giá vốn đúng bằng 0" với "không đọc được giá vốn", vì chỉ ca đầu mới đáng tô vàng.
-   * Nhầm hai ca là tô vàng oan hàng loạt, mà tô vàng oan thì nhân viên bỏ qua luôn cả những cảnh báo thật.
+   * Nhầm hai ca là tô vàng oan hàng loạt, mà tô vàng oan thì user bỏ qua luôn cả những cảnh báo thật.
    *
    * Ba triệu chứng thật đang chống, đo trên file tháng 8:
    *  1. Cả 76 ô cột G đều để định dạng kế toán, khúc thứ ba của định dạng hiện số 0 thành DẤU GẠCH NGANG.

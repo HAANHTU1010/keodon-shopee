@@ -353,7 +353,7 @@ var KeyIn = (function () {
   function ghiMotDong(plan, r, don, d, k, dongDau, laSheet) {
     function push(c, gt, fmt) { plan.oGhi.push({ r: r, c: c, gt: gt, dinhDang: fmt }); }
     push(k.cot_ngay, Utils.laNgay(don.ngayGhi) ? don.ngayGhi : Utils.chiNgay(Utils.parseNgay(don.ngayGhi)), k.dinh_dang_ngay);
-    // cột B "Nguồn đơn": nhân viên để trống 747/747 dòng (Context 4.1) → tool cũng để trống
+    // cột B "Nguồn đơn": user để trống 747/747 dòng (Context 4.1) → tool cũng để trống
     if (k.ghi_nguon_don) push(k.cot_nguon_don, don.tenGianHienThi || don.maGianHang, null);
     if (dongDau) push(k.cot_ma_don, Utils.chuoiMaDon(don.maDon), '@');
     push(k.cot_ten_viet_tat, d.tenVietTat || null, 'General');

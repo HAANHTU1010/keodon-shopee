@@ -691,7 +691,7 @@ console.log('--- Không ghi lùi tháng (T-53) ---');
 // bảng link của file tháng mới TỰ ĐỘNG hiện ra ở file mỏ neo — chuyện không bao giờ xảy ra ngoài đời.
 //
 // Khuyết tật dựng lại ở đây là khuyết tật THẬT, sẽ gặp ngay tháng 10 (GV mục 1.6): người tạo file
-// tháng mới ghi dòng bảng link vào file tháng MỚI mà quên ghi vào file tháng CŨ. Máy nhân viên sẽ
+// tháng mới ghi dòng bảng link vào file tháng MỚI mà quên ghi vào file tháng CŨ. Máy user sẽ
 // không định tuyến được sang tháng mới. Đây đúng bài học N-10: hai bên dùng chung một cái thước sai
 // thì cả hai cùng không thấy gì.
 console.log('--- Giả lập Web App: bảng link phải là BẢN SAO RIÊNG cho từng file tháng ---');

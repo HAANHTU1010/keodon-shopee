@@ -129,7 +129,7 @@ function chayDongBo(nguon, kho, tuyChon) {
     var dongTomTatMap = 'Mapping sản phẩm: dùng được ' + mt.dungDuoc + '/' + mt.tong + ' dòng' +
       ' (chưa ghi CÓ: ' + mt.chuaXacNhan + ', chưa điền Tên viết tắt: ' + mt.chuaDien + ', sai Cấu phần: ' + mt.loi + ')';
     kq.nhatKy.push(dongNhatKy(thoiDiem, { ten_file: 'Mapping sản phẩm', so_ten_moi: map.soThem,
-      thong_bao: dongTomTatMap + (mt.dungDuoc === 0 ? '. 0 dòng mapping được xác nhận, nhân viên cần tick.' : '') }, {}));
+      thong_bao: dongTomTatMap + (mt.dungDuoc === 0 ? '. 0 dòng mapping được xác nhận, user cần tick.' : '') }, {}));
 
     // Không chặn, không đoán mã hàng: đơn vẫn ghi đủ, dòng vàng, Note nêu lý do (D-06, HOC_TU_DU_AN_CO_PHIEU mục 6.3).
     // Nhưng phải NÓI THẲNG là kết quả chưa dùng được, và nói ở ĐẦU danh sách cảnh báo, không lẫn giữa
@@ -190,7 +190,7 @@ function canhBaoKetQuaChuaDungDuoc(kq, mt, cfg) {
   if (mt.dungDuoc === 0) {
     return 'KẾT QUẢ CHƯA DÙNG ĐƯỢC: 0/' + mt.tong + ' dòng Mapping đã ghi CÓ nên tool không nhận ra được mặt hàng nào.' +
       ' Toàn bộ ' + kq.dongVang + '/' + kq.dongGhi + ' dòng vừa ghi đều bị tô vàng, cột D để trống.' +
-      ' 0 dòng mapping được xác nhận, nhân viên cần tick.' + viecPhaiLam;
+      ' 0 dòng mapping được xác nhận, user cần tick.' + viecPhaiLam;
   }
   if (kq.dongVang > kq.dongGhi * NGUONG_DONG_VANG) {
     var pt = Math.round(kq.dongVang * 100 / kq.dongGhi);

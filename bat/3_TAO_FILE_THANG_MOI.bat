@@ -211,7 +211,7 @@ try {
 
   # ---- 4. Buoc tao file tren Google -----------------------------------
   # Ban nay CHUA co hanh dong "taoThangMoi" tren Web App. src/ShellAppsScript.gs
-  # moi nhan bon hanh dong: ping, doc, ghi, xuLy. Noi doi la nhan vien tuong
+  # moi nhan bon hanh dong: ping, doc, ghi, xuLy. Noi doi la user tuong
   # da tao xong roi di keo don vao mot file chua khoi tao.
   Gach
   Bao '  BUOC TAO FILE TREN GOOGLE CHUA BAT O BAN NAY.'

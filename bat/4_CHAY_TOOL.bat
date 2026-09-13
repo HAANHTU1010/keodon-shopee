@@ -47,7 +47,7 @@ if not defined TOOL if exist "%~dp0..\02_CODE\keodon-apps-script\node\chay-thu.j
 if not defined TOOL (
   echo MAY CHUA CAI DAT. Bam dup  1_CAI_DAT_LAN_DAU.bat  truoc.
   echo.
-  echo   Goi giao cho may nhan vien khong kem san ma nguon: ma ve may khi bam
+  echo   Goi giao cho may user khong kem san ma nguon: ma ve may khi bam
   echo   nut cai dat, va nut do keo tu kho ma tren GitHub xuong.
   echo   Chay xong nut cai dat mot lan roi quay lai bam file nay.
   echo.

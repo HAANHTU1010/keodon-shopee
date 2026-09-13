@@ -182,7 +182,7 @@ var TaoThangMoi = (function () {
    * Triệu chứng đang chống: vỏ file tháng mới do chủ dự án nhân bản **vẫn còn công thức** —
    * 4 ARRAYFORMULA ở `E4`,`F4`,`M4`,`N4` và `L4` từng dòng. Coi "ô có công thức" là "ô có dữ liệu"
    * thì mọi vỏ file đều bị chấm là "đã dùng dở" và tool KHÔNG BAO GIỜ chịu khởi tạo file nào.
-   * Ngược lại, đơn nhân viên gõ tay luôn là GIÁ TRỊ, nên luật này vẫn bắt được file đã dùng dở.
+   * Ngược lại, đơn user gõ tay luôn là GIÁ TRỊ, nên luật này vẫn bắt được file đã dùng dở.
    */
   function oCoDuLieu(ss, r, c) {
     if (ct(ss, r, c) != null) return false;
@@ -545,7 +545,7 @@ var TaoThangMoi = (function () {
     // Cùng lý do như sheet gian hàng: `Tổng nhập` cũng có công thức TỪNG DÒNG ở C, E, F, G.
     // Đo tháng 8: 485 ô mỗi cột (dòng 4→488); tháng 9 chủ shop đã kéo lại tới dòng 1000 (997 ô).
     // Xóa nội dung `A4:L2000` là quét sạch cả 485 ô đó, chỉ còn lại 76 dòng khối đầu kỳ tool ghi;
-    // nhân viên nhập hàng trong tháng từ dòng 80 trở xuống sẽ không có công thức tra Tên/Đơn vị/Giá vốn.
+    // user nhập hàng trong tháng từ dòng 80 trở xuống sẽ không có công thức tra Tên/Đơn vị/Giá vốn.
     var khoiNhap = dongCuoiDuLieu(ssNhapMoi, C('L'), 'D');
     var dCuoiNhap = khoiNhap.dong;
     tt.push({ loai: 'BO_GOP', sheet: ten, r1: 4, c1: 1, r2: DAY_VUNG, c2: C('L') });
@@ -704,7 +704,7 @@ var TaoThangMoi = (function () {
         kq.doc.tongTienTonTinhLai + ' (lệch ' + (giaTriTonCuoi - kq.doc.tongTienTonTinhLai).toFixed(2) +
         ' đ) → vùng SUM của K1 có thể chưa phủ hết danh mục.');
     }
-    if (!map) kq.canhBao.push('Tháng cũ chưa có sheet `Mapping_san_pham` → tool tạo sheet rỗng, chỉ để chứa khối điều khiển. Nhân viên sẽ phải điền lại từ đầu.');
+    if (!map) kq.canhBao.push('Tháng cũ chưa có sheet `Mapping_san_pham` → tool tạo sheet rỗng, chỉ để chứa khối điều khiển. User sẽ phải điền lại từ đầu.');
 
     // ---- B1: đặt cờ đang làm TRƯỚC khi ghi ô nào ----
     kq.batDau = [{ loai: 'TAO_SHEET', ten: TEN_SHEET_MAPPING }]

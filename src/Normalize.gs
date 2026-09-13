@@ -15,7 +15,7 @@
 var Normalize = (function () {
 
   /**
-   * Thuế sàn khấu trừ, tách hai sắc thuế rồi cộng (Context 5.2 — tái lập đúng 713/719 giá trị nhân viên đã ghi):
+   * Thuế sàn khấu trừ, tách hai sắc thuế rồi cộng (Context 5.2 — tái lập đúng 713/719 giá trị user đã ghi):
    *   gtgt = round(cơ sở × 1%), tncn = round(cơ sở × 0,5%), tổng = gtgt + tncn.
    * `TONG_TY_LE` (làm tròn một lần trên 1,5%) chỉ khớp 670/719 — giữ làm tùy chọn cấu hình để so.
    */
@@ -54,9 +54,9 @@ var Normalize = (function () {
    *   J = phí cố định + phí dịch vụ + phí xử lý giao dịch — cũng cấp đơn, lấy một lần
    *   K = thuế. Hai cách, chọn bằng `CHUNG.thue_theo_dong`:
    *       TRUE  (mặc định) — làm tròn theo TỪNG DÒNG rồi cộng: cơ sở dòng = tiền dòng − giảm giá phân bổ theo tỷ lệ.
-   *                          Đây là cách bản đối chứng đã nghiệm thu, tái lập đúng 392/393 đơn nhân viên gõ.
+   *                          Đây là cách bản đối chứng đã nghiệm thu, tái lập đúng 392/393 đơn user gõ.
    *       FALSE — làm tròn MỘT LẦN trên cơ sở cả đơn (H − I), đúng câu chữ Context 5.2; khớp 391/393.
-   *       Nhân viên gõ tay không nhất quán giữa hai cách (xem NOTES_DEV mục CHỜ CHỐT), nên để cấu hình được.
+   *       User gõ tay không nhất quán giữa hai cách (xem NOTES_DEV mục CHỜ CHỐT), nên để cấu hình được.
    *   Dù tính cách nào, K vẫn là MỘT số ghi vào ô gộp của cả đơn — không phân bổ tiền ra từng dòng (GV-v2.2 mục 1.2).
    * Phí/giảm giá khác nhau giữa các dòng (chưa gặp trong dữ liệu thật) → cộng dồn và ghi cảnh báo.
    */

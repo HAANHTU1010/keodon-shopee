@@ -50,7 +50,7 @@ const {
 
 const ROOT = path.join(__dirname, '..');
 const DAU_VAO = path.join(ROOT, '..', '..', '00_DAU_VAO');
-const NT1 = path.join(ROOT, '..', '..', '01_TAI_LIEU', 'NGHIEM_THU_NT1');
+const NT1 = path.join(__dirname, 'fixtures');
 
 const GOC = {
   tracking: path.join(DAU_VAO, 'THÁNG-8-2026-KINH-DOANH (1).xlsx'),
@@ -266,7 +266,7 @@ function inBang(cot, hang) {
   const bamGoc = {};
   Object.keys(GOC).forEach((k) => { bamGoc[k] = bam(GOC[k]); });
 
-  // Chép ra thư mục tạm rồi đọc bản chép — bản gốc trong 00_DAU_VAO và 01_TAI_LIEU không bao giờ bị mở để ghi.
+  // Chép ra thư mục tạm rồi đọc bản chép — bản gốc trong 00_DAU_VAO và node/fixtures không bao giờ bị mở để ghi.
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'keodon-xuly-'));
   const chep = {};
   Object.keys(GOC).forEach((k) => { chep[k] = path.join(tmp, k + '.xlsx'); fs.copyFileSync(GOC[k], chep[k]); });

@@ -12,7 +12,7 @@
  *                       trong MỘT lần gọi (GV-v2.3 mục 2.3 — "một lõi tính toán duy nhất")
  *
  * VÌ SAO CÓ 'xuLy' (đây là lý do tồn tại của cả khối bên dưới): trước đây lớp 2 (tiền, thuế, mapping,
- * chọn lô) và lớp 3 (gộp ô, lập kế hoạch ghi) chạy TRÊN MÁY NHÂN VIÊN. Sửa một dòng luật thuế là phải
+ * chọn lô) và lớp 3 (gộp ô, lập kế hoạch ghi) chạy TRÊN MÁY USER. Sửa một dòng luật thuế là phải
  * đi cập nhật từng máy — 2-3 máy, và không có cách nào biết máy nào đang chạy bản nào. Chuyển hai lớp
  * đó sang đây thì sửa nghiệp vụ chỉ còn một lần Deploy. Hành động 'ghi' cũ GIỮ NGUYÊN làm đường lùi và
  * để chế độ Excel trên máy (không có mạng, không có Web App) vẫn dùng lớp 2, lớp 3 tại chỗ.
@@ -337,7 +337,7 @@ function chonDongDinhTuyen_(bang, nam, thang) {
  * MỞ FILE THÁNG — phân loại lỗi của `SpreadsheetApp.openById` (GV-đóng-gói mục 6).
  *
  * VÌ SAO: Web App Deploy với `Execute as = Me`, nên TÀI KHOẢN ĐÃ DEPLOY phải có quyền Sửa MỌI file
- * tháng. Nhân viên nhân bản vỏ file tháng mới vào Drive của mình rồi quên bấm Chia sẻ là tắc — và
+ * tháng. User nhân bản vỏ file tháng mới vào Drive của mình rồi quên bấm Chia sẻ là tắc — và
  * câu Google ném ra ("You do not have permission to access the requested document.") không nói được
  * phải làm gì, lại còn hiện bằng tiếng Anh trên cửa sổ đen của người không đọc tiếng Anh.
  *
@@ -963,7 +963,7 @@ function ghiMotSheet_(sh, donDS, k, tk, viTri, canhBao, thongBao, daDoVung) {
 
   // KHỬ TRÙNG TẦNG 2 — đọc lại cột mã đơn NGAY TRƯỚC KHI GHI, và đang ở trong LockService của
   // hanhDongGhi_. Tầng 1 (node/chay-google-sheet.js) khử theo danh sách lấy từ hành động 'doc',
-  // nhưng danh sách đó đã cũ vài giây: 2-3 máy nhân viên cùng ghi một file tháng, máy A không thể
+  // nhưng danh sách đó đã cũ vài giây: 2-3 máy user cùng ghi một file tháng, máy A không thể
   // biết máy B vừa nối gì. Không có tầng 2 thì hai máy bấm cùng lúc là sinh đơn trùng.
   // getDisplayValues đọc được cả mã nằm trong Ô GỘP (ô gộp giữ giá trị ở ô trên cùng) — T-43.
   var het = sh.getLastRow();
@@ -1361,7 +1361,7 @@ function themDongMapping_(ss, dong, canhBao) {
 
 // ==================================================================== hành động XỬ LÝ (lớp 2 + lớp 3 + ghi)
 //
-// Toàn bộ khối này là phần được CHUYỂN TỪ MÁY NHÂN VIÊN SANG ĐÂY. Trước đây `node/chay-google-sheet.js`
+// Toàn bộ khối này là phần được CHUYỂN TỪ MÁY USER SANG ĐÂY. Trước đây `node/chay-google-sheet.js`
 // gọi `doc`, tự chạy lớp 2 và lớp 3 rồi mới gọi `ghi` — nghĩa là mỗi lần sửa cách tính thuế, cách chọn
 // lô hay cách gộp ô đều phải đi cập nhật từng máy. Từ bản 2.4.0, máy chỉ gửi bảng dòng đã qua lớp 1.
 //
@@ -1663,7 +1663,7 @@ function thuDinhTuyenThang() {
 /**
  * Chạy NGAY SAU MỖI LẦN DEPLOY: bắt lỗi "quên dán ba file lớp 2 vào dự án Apps Script".
  * Không ghi gì, không mở file tháng nào — chỉ hỏi bốn đối tượng lõi có mặt chưa.
- * Thiếu file thì lần chạy thật đầu tiên mới hỏng, mà lúc đó nhân viên đã thả file và đang chờ.
+ * Thiếu file thì lần chạy thật đầu tiên mới hỏng, mà lúc đó user đã thả file và đang chờ.
  */
 /**
  * DẤU VÂN TAY BẢN DỰNG — trả lời câu "bản trên Google là bản nào".

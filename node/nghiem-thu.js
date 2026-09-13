@@ -4,12 +4,12 @@
  *   node node/nghiem-thu.js [--goc <file tracking>] [--mapping <file>] [--thang 2026-08] [--giu-file]
  *
  * Bộ chuẩn: hai file `00_DAU_VAO/Order.all.*.xlsx` (tab "Tất cả", lọc ngày đặt trong tháng) +
- * `THÁNG-8-2026-KINH-DOANH (1).xlsx` + Mapping fixture `01_TAI_LIEU/NGHIEM_THU_NT1/MAP_LISTING_SP_MALL_NT1.xlsx`.
+ * `THÁNG-8-2026-KINH-DOANH (1).xlsx` + Mapping fixture `node/fixtures/MAP_LISTING_SP_MALL_NT1.xlsx`.
  *
  * Hai lần chạy (đúng cách BA đã làm ở NT-1):
- *   A — giữ nguyên dữ liệu tay: tool chỉ ghi đơn chưa có; dùng để đối chiếu từng mã đơn với bản nhân viên gõ.
+ *   A — giữ nguyên dữ liệu tay: tool chỉ ghi đơn chưa có; dùng để đối chiếu từng mã đơn với bản user gõ.
  *   B — bản trống: xóa 9 cột nhập tay ở sheet gian hàng, bỏ gộp ô vùng dữ liệu, GIỮ công thức và giữ nguyên
- *       8 ô cột L nhân viên gõ số tay; để tool key-in lại từ đầu rồi so tổng H3/L3 và đếm ô gộp mới.
+ *       8 ô cột L user gõ số tay; để tool key-in lại từ đầu rồi so tổng H3/L3 và đếm ô gộp mới.
  *
  * Bảng đối chiếu ghi ra `out/nghiem-thu/DOI_CHIEU.csv` — file RIÊNG, không thêm sheet nào vào file tracking (mục 3).
  *
@@ -28,7 +28,7 @@ const { NguonThuMuc } = require('./nguon-thu-muc');
 
 const ROOT = path.join(__dirname, '..');
 const DAU_VAO = path.join(ROOT, '..', '..', '00_DAU_VAO');
-const FIXTURE = path.join(ROOT, '..', '..', '01_TAI_LIEU', 'NGHIEM_THU_NT1', 'MAP_LISTING_SP_MALL_NT1.xlsx');
+const FIXTURE = path.join(__dirname, 'fixtures', 'MAP_LISTING_SP_MALL_NT1.xlsx');
 const OUT = path.join(ROOT, 'out', 'nghiem-thu');
 const args = process.argv.slice(2);
 function thamSo(t, mac) { const i = args.indexOf(t); return i >= 0 ? args[i + 1] : mac; }
@@ -368,7 +368,7 @@ async function main() {
   } catch (e) { vangDocHet = null; }
   const gopMoi = await oGopMoi(outB, TEN_SHEET, 3);
 
-  // ---------- đối chiếu từng mã đơn (tool ghi lại ở B ↔ nhân viên gõ ở file gốc) ----------
+  // ---------- đối chiếu từng mã đơn (tool ghi lại ở B ↔ user gõ ở file gốc) ----------
   const chung = [], chiTay = [], chiTool = [];
   Object.keys(toolB.theoMa).forEach(ma => { if (tayGoc.theoMa[ma]) chung.push(ma); else chiTool.push(ma); });
   Object.keys(tayGoc.theoMa).forEach(ma => { if (!toolB.theoMa[ma]) chiTay.push(ma); });
@@ -434,7 +434,7 @@ async function main() {
   console.log('  Loại file nhận ra: ' + JSON.stringify(A.kq.loaiFile) + ' · bỏ ' + A.kq.donBoQuaHuyHoan + ' đơn hủy/hoàn');
   console.log('  Chạy A (giữ dữ liệu tay): ghi ' + A.kq.donGhi + ' đơn, bỏ qua ' + A.kq.donDaCo + ' đơn đã có, ' + A.kq.dongVang + ' dòng vàng');
   console.log('  Chạy B (bản trống): ' + JSON.stringify(tkTrong[TEN_SHEET]) + ' · gộp ' + gopMoi.soDon + ' đơn');
-  console.log('  Chỉ nhân viên có: ' + chiTay.length + (chiTay.length ? ' (' + chiTay.slice(0, 12).join(', ') + (chiTay.length > 12 ? ' …' : '') + ')' : ''));
+  console.log('  Chỉ user có: ' + chiTay.length + (chiTay.length ? ' (' + chiTay.slice(0, 12).join(', ') + (chiTay.length > 12 ? ' …' : '') + ')' : ''));
   console.log('  Chỉ tool có     : ' + chiTool.length + (chiTool.length ? ' (' + chiTool.slice(0, 12).join(', ') + (chiTool.length > 12 ? ' …' : '') + ')' : ''));
   if (tongB.lTayNgoaiVung.length) console.log('  Ô L số tay NGOÀI vùng tool ghi (rác của bước dựng bản trống, tool đúng luật khi không đụng): dòng ' +
     tongB.lTayNgoaiVung.join(', ') + ' → L3 toàn cột ' + vn(tongB.L3) + ' chênh ' + vn(tongB.L3 - tongB.L3vung) + ' so với vùng tool ghi');

@@ -148,7 +148,7 @@ function chuanTenTruong(s) {
 }
 
 /**
- * Soát gói TRƯỚC KHI GỬI: dữ liệu người mua không được rời khỏi máy nhân viên (INV-4).
+ * Soát gói TRƯỚC KHI GỬI: dữ liệu người mua không được rời khỏi máy user (INV-4).
  *
  * Lớp 1 đã lọc sẵn — adapter chỉ đọc cột có tên trong `cfg.cot`, 9 cột người mua không bao giờ vào
  * bộ nhớ. Nhưng từ bản 2.4.0 gói đi QUA MẠNG và nằm lại trong nhật ký của Google, nên phải chốt lại

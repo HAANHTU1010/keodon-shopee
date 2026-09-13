@@ -114,7 +114,7 @@ var TestBatBien = (function () {
 
   /**
    * Kho giả: `Tổng tồn kho`, `Tổng xuất`, hai sheet gian hàng, sheet Mapping.
-   * `Shopee mall`: dữ liệu tới dòng 6 (3 dòng nhân viên đã gõ tay), công thức E/F/L/M/N kéo tới dòng 8,
+   * `Shopee mall`: dữ liệu tới dòng 6 (3 dòng user đã gõ tay), công thức E/F/L/M/N kéo tới dòng 8,
    * dòng tổng (dòng 3) `=SUM(H4:H9)`. Đúng bố cục file thật, thu nhỏ để test chạy trong một giây.
    */
   function boiCanh(tuyChon) {
@@ -170,7 +170,7 @@ var TestBatBien = (function () {
   /**
    * INV-1 — KHÔNG BAO GIỜ SỬA HOẶC XÓA DÒNG ĐÃ CÓ.
    *
-   * VÌ SAO TEST NÀY TỒN TẠI: sheet gian hàng là sổ bán hàng do người gõ tay suốt cả tháng — có ô nhân viên
+   * VÌ SAO TEST NÀY TỒN TẠI: sheet gian hàng là sổ bán hàng do người gõ tay suốt cả tháng — có ô user
    * sửa lại bằng tay, có đơn đánh dấu hoàn, có số ghi đè công thức. Tool sửa hay xóa nhầm một dòng ở đó thì
    * dữ liệu người ta gõ tay MẤT, không phục hồi được (không ai giữ bản trước đó). Bên dự án CỔ PHIẾU đã có
    * `prepSheet_()` xóa trắng rồi vẽ lại cả sheet mỗi lần chạy — hợp lý với sheet 100% do máy sinh, và là
@@ -501,7 +501,7 @@ var TestBatBien = (function () {
    * INV-4 — KHÔNG ĐỌC, KHÔNG GHI, KHÔNG IN 9 CỘT THÔNG TIN NGƯỜI MUA.
    *
    * VÌ SAO TEST NÀY TỒN TẠI: file xuất Shopee mang tên, số điện thoại và địa chỉ nhà của khách. File kết quả
-   * và file nhật ký được chép qua lại giữa 2-3 máy nhân viên và gửi cho BA. Lọt một cột là rò dữ liệu khách
+   * và file nhật ký được chép qua lại giữa 2-3 máy user và gửi cho BA. Lọt một cột là rò dữ liệu khách
    * hàng ra một file ai cũng mở được, và không thu hồi lại được. Đây là loại lỗi im lặng: không ai báo,
    * chỉ đến lúc file lọt ra ngoài mới biết.
    *

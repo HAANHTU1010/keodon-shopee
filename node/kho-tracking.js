@@ -5,7 +5,7 @@
  * Nguyên tắc (GV-v2.2 mục 1.5, mục 3):
  *  - KHÔNG ghi đè file gốc: luôn ghi ra `<tên gốc>_AUTO_<yyyymmdd_HHMM>.xlsx`.
  *  - Chỉ thêm dòng dưới dòng dữ liệu cuối; KHÔNG sửa dòng đã có.
- *  - GỘP Ô C, H, I, J, K, L cho đơn nhiều sản phẩm — đúng như nhân viên đang làm (Context 4.2).
+ *  - GỘP Ô C, H, I, J, K, L cho đơn nhiều sản phẩm — đúng như user đang làm (Context 4.2).
  *  - Chỉ được thêm đúng một sheet: `Mapping sản phẩm`.
  *  - Tự kiểm tra sau khi lưu: mở lại file, so chữ ký vùng dữ liệu CŨ (giá trị, ô gộp cũ, tiêu đề, dòng tổng);
  *    lệch một ô → xóa file kết quả và ném lỗi. Ô gộp MỚI do tool tạo cho đơn mới thì được phép.
@@ -109,7 +109,7 @@ function ketQuaDaTinh(cell) {
   return laNgay(r) ? utcSangLocal(r) : r;
 }
 
-/** Ô "trơn" (không viền, không nền, định dạng General) → coi như ngoài vùng nhân viên đã kẻ sẵn. */
+/** Ô "trơn" (không viền, không nền, định dạng General) → coi như ngoài vùng user đã kẻ sẵn. */
 function oChuaDinhDang(cell) {
   const b = cell.border;
   if (b) for (const canh of ['left', 'right', 'top', 'bottom']) if (b[canh] && b[canh].style) return false;

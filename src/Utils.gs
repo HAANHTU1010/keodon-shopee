@@ -43,7 +43,7 @@ var Utils = (function () {
     return Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime());
   }
 
-  /** Làm tròn nửa lên (4,5 → 5), đúng cách nhân viên và sàn đang làm tròn tiền. Tránh 7053.7499999 bằng cách cộng epsilon. */
+  /** Làm tròn nửa lên (4,5 → 5), đúng cách user và sàn đang làm tròn tiền. Tránh 7053.7499999 bằng cách cộng epsilon. */
   function lamTron(x) {
     var d = Math.abs(x);
     var r = Math.floor(d + 0.5 + 1e-9);

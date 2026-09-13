@@ -89,7 +89,7 @@ NUT_BAT_BUOC.forEach((ten, i) => {
  *   if(!String(g.web_app_url||'').trim())t.push('web_app_url');if(!String(g.chuoi_bi_mat…
  * cmd cắt từ `!` thứ nhất tới `!` thứ hai, còn lại `if(String(g.chuoi_bi_mat…).trim())` —
  * mất dấu phủ định. Kết quả LẬT NGƯỢC: cấu hình rỗng thì báo OK, điền đủ thì báo CHƯA ĐIỀN.
- * Cái bẫy này đã được ghi trong `DONG_GOI_GIAO_NHAN_VIEN.md` từ trước mà vẫn dính lại,
+ * Cái bẫy này đã được ghi trong `DONG_GOI_GIAO_USER.md` từ trước mà vẫn dính lại,
  * vì tài liệu không chặn được ai — chỉ bài test mới chặn được.
  *
  * Dạng duy nhất được phép là `set "TEN=!TEN_BIEN!"` — chính là cú pháp delayed expansion.
@@ -138,7 +138,7 @@ test('N-27 không nút nào còn gọi tên cũ của nút khác', () => {
  * xanh vì phép kiểm nào cũng nói OK. Chỉ có đối chứng âm bắt được.
  *
  * Nên phần này làm đúng một việc: với mỗi CỬA QUYẾT ĐỊNH ĐI TIẾP HAY DỪNG, dựng
- * một máy nhân viên giả trong thư mục tạm, CHẠY THẬT nút bấm bằng cmd.exe, rồi
+ * một máy user giả trong thư mục tạm, CHẠY THẬT nút bấm bằng cmd.exe, rồi
  * chứng minh cửa đó TRƯỢT KHI ĐÁNG TRƯỢT. Mỗi bài kèm ĐỐI CHỨNG ÂM: dựng lại
  * đúng khuyết tật vào một bản sao của nút, chạy lại, và đòi phép chấm báo LỆCH.
  *
@@ -189,7 +189,7 @@ function nutHong(ten, sua) {
 }
 
 /**
- * Máy nhân viên giả: bốn nút ở cấp gốc + thư mục `Cấu hình` bên trong.
+ * Máy user giả: bốn nút ở cấp gốc + thư mục `Cấu hình` bên trong.
  *   o.thayNut    {tên nút: đường dẫn bản thay}  — cắm bản đã dựng khuyết tật
  *   o.nut2Gia    true = thay 2_CAP_NHAT.bat bằng nút giả thoát 0 (khỏi ra mạng)
  *   o.googleSheet / o.capNhat   ghi đè hai mục của file cấu hình
@@ -416,7 +416,7 @@ test('N-31 1_CAI_DAT_LAN_DAU.bat buoc [2/6] la cua DUNG HAN: thieu khai bao kho 
 
 test('N-32 2_CAP_NHAT.bat khong bao gio KEO LUI may ve ban cu hon ban dang chay', async () => {
   // Cửa: `if ((-not $lanDau) -and ((SoSanh $vMoi $vCu) -le 0))` -> `$global:CN_MA = 3; return`.
-  // Hỏng thì máy nhân viên TỰ LÙI về sau bản đang chạy mỗi lần bấm nút cập nhật, và
+  // Hỏng thì máy user TỰ LÙI về sau bản đang chạy mỗi lần bấm nút cập nhật, và
   // không ai biết — đúng cảnh mục 1.1 mô tả. CN-06 trong test-dong-goi.js mới đo ca
   // hai bản BẰNG NHAU; ca kho CŨ HƠN máy thì chưa bài nào chạm tới.
   const zipCu = await dungZipKho('2.0.0');
@@ -437,7 +437,7 @@ test('N-32 2_CAP_NHAT.bat khong bao gio KEO LUI may ve ban cu hon ban dang chay'
     chayNut(h.may, '2_CAP_NHAT.bat', ['/nguon', zipCu]);
     const p = JSON.parse(fs.readFileSync(path.join(h.tool, 'package.json'), 'utf8'));
     if (p.version !== '9.9.0') {
-      throw new Error('máy 9.9.0 bị kéo lùi xuống ' + p.version + ' — nhân viên nhận bản cũ hơn bản đang chạy');
+      throw new Error('máy 9.9.0 bị kéo lùi xuống ' + p.version + ' — user nhận bản cũ hơn bản đang chạy');
     }
   });
   return 'may 9.9.0 + kho 2.0.0 -> thoat ma 3, package.json va src/ y nguyen · ' + dc;
@@ -504,7 +504,7 @@ test('N-33 3_TAO_FILE_THANG_MOI.bat: cac cua kiem tham so deu phai TRUOT khi dan
 test('N-34 4_CHAY_TOOL.bat: thieu cau hinh va thieu thu vien deu phai chan bang cau tieng Viet', async () => {
   // Hai cửa chưa bài nào chạm: `if not defined CFGDIR` và cửa kiểm `node_modules\exceljs`.
   // (CN-07 của test-dong-goi.js mới đo cửa thứ ba: `if not defined TOOL`.)
-  // Cửa thư viện hỏng thì nhân viên nhận nguyên một vệt lỗi thô của Node giữa màn hình đen.
+  // Cửa thư viện hỏng thì user nhận nguyên một vệt lỗi thô của Node giữa màn hình đen.
   const a = dungMay({ khongCfg: true, khongMau: true });
   const r1 = chayNut(a.may, '4_CHAY_TOOL.bat');
   dung(r1.ma === 1, 'thiếu cấu hình phải thoát mã 1, nhận được ' + r1.ma);
@@ -527,7 +527,7 @@ test('N-34 4_CHAY_TOOL.bat: thieu cau hinh va thieu thu vien deu phai chan bang 
     });
     const r = chayNut(h.may, '4_CHAY_TOOL.bat');
     if (/Cannot find module/.test(r.ra)) {
-      throw new Error('loi tho cua Node lot thang ra man hinh nhan vien: '
+      throw new Error('loi tho cua Node lot thang ra man hinh user: '
         + (r.ra.match(/Cannot find module[^\r\n]*/) || [''])[0]);
     }
     if (!/LOI: Thieu thu vien cua tool/.test(r.ra)) throw new Error('khong con cau tieng Viet nao chan lai');

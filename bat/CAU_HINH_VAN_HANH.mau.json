@@ -1,10 +1,10 @@
 {
   "_doc": "CẤU HÌNH CHO NGƯỜI VẬN HÀNH. Sửa bằng Notepad, giữ nguyên dấu ngoặc kép và dấu phẩy. File này KHÔNG chứa thông tin khách hàng. Tool ghi thẳng lên Google Sheet của tháng theo NGÀY CHẠY; máy này không giữ file .xlsx nào của tháng. Cách lấy hai dòng trong mục google_sheet: xem BAT_GOOGLE_SHEET.md. Khi đã điền thì file này CHỨA CHUỖI BÍ MẬT: đừng chụp màn hình gửi đi, đừng chép sang máy khác, đừng đồng bộ thư mục này lên đám mây.",
 
-  "_thu_muc_tha_file": "Thư mục để nhân viên thả file xuất Shopee. Nằm ngay cạnh ba file .bat. Bên trong là bốn thư mục gian hàng, mỗi thư mục có một thư mục con 'đã xử lý' — tool tự chuyển file vào đó sau khi kéo xong.",
+  "_thu_muc_tha_file": "Thư mục để user thả file xuất Shopee. Nằm ngay cạnh ba file .bat. Bên trong là bốn thư mục gian hàng, mỗi thư mục có một thư mục con 'đã xử lý' — tool tự chuyển file vào đó sau khi kéo xong.",
   "thu_muc_tha_file": "1_THA_FILE_XUAT",
 
-  "_thu_muc_gian_hang": "MÃ GIAN HÀNG (tool dùng, không đổi) → TÊN THƯ MỤC trên đĩa (nhân viên nhìn thấy). Tên thư mục đặt đúng tên sheet trên Google Sheet để khỏi phải nhớ ánh xạ. Đổi tên thư mục thì phải sửa đúng dòng ở đây, nếu không tool báo 'thư mục KHÔNG PHẢI tên gian hàng' và không đọc file trong đó.",
+  "_thu_muc_gian_hang": "MÃ GIAN HÀNG (tool dùng, không đổi) → TÊN THƯ MỤC trên đĩa (user nhìn thấy). Tên thư mục đặt đúng tên sheet trên Google Sheet để khỏi phải nhớ ánh xạ. Đổi tên thư mục thì phải sửa đúng dòng ở đây, nếu không tool báo 'thư mục KHÔNG PHẢI tên gian hàng' và không đọc file trong đó.",
   "thu_muc_gian_hang": {
     "SP_MALL": "Shopee mall",
     "SP_OFFOOD": "Offood",

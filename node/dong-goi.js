@@ -1,5 +1,5 @@
 /**
- * ĐÓNG GÓI `Tool_nhập_liệu` — bản giao cho máy nhân viên.
+ * ĐÓNG GÓI `Tool_nhập_liệu` — bản giao cho máy user.
  *
  *   node node/dong-goi.js                      → dựng gói vào out/Tool_nhập_liệu rồi tự kiểm
  *   node node/dong-goi.js --ra <thư mục>       → dựng vào chỗ khác
@@ -7,7 +7,7 @@
  *   node node/dong-goi.js --kiem <thư mục>     → CHỈ kiểm một gói đã có, không dựng lại
  *
  * VÌ SAO GÓI KHÔNG CHỨA `src/` VÀ `node/` (09_GIAO_VIEC_DEV_DONG_GOI.md mục 1).
- * Không phải để gói nhẹ. Trước đây mã tới máy nhân viên bằng HAI đường — chép tay lúc
+ * Không phải để gói nhẹ. Trước đây mã tới máy user bằng HAI đường — chép tay lúc
  * cài, và tải về lúc cập nhật — nên sẽ có ngày máy này bản cũ, máy kia bản mới, mà
  * không ai biết. Bỏ đường chép tay đi thì chỉ còn một đường, và không thể lệch nữa.
  *
@@ -147,7 +147,7 @@ function dungGoi(dich, nodePortable) {
     }
     chepCay(nodePortable, path.join(thuMucCauHinh, 'node-portable'));
   } else {
-    canhBao.push('gói CHƯA có node-portable. Máy nhân viên không cài sẵn Node.js sẽ dừng ở bước 1 ' +
+    canhBao.push('gói CHƯA có node-portable. Máy user không cài sẵn Node.js sẽ dừng ở bước 1 ' +
       'của 1_CAI_DAT_LAN_DAU.bat. Chạy lại với  --node-portable <thư mục có node.exe>  để kèm vào.');
   }
 
@@ -158,11 +158,11 @@ function dungGoi(dich, nodePortable) {
 
 /**
  * Kho GitHub có bốn thứ ở lớp ngoài: `src/`, `node/`, `package.json`, `bat/`.
- * `bat/` để sửa nút bấm cũng tới được máy nhân viên — trước đây sửa `.bat` thì phải
+ * `bat/` để sửa nút bấm cũng tới được máy user — trước đây sửa `.bat` thì phải
  * gửi lại cả gói.
  *
  * NGUY CƠ ĐI KÈM, và cách bịt. Nút bấm nay nằm ở HAI chỗ: `03_VAN_HANH/` là bản đang
- * dùng, `bat/` là bản đem xuất bản. Hai bản lệch nhau thì máy nhân viên nhận đúng cái
+ * dùng, `bat/` là bản đem xuất bản. Hai bản lệch nhau thì máy user nhận đúng cái
  * bản chưa ai chạy thử — tức là đẻ lại đúng cái bệnh "máy này một bản, máy kia một bản"
  * mà cả đợt này sinh ra để diệt. Nên `bat/` KHÔNG được sửa tay: nó do `--dong-bo-bat`
  * chép ra, và `kiemDongBoBat` bắt mọi khác biệt dù chỉ một byte.

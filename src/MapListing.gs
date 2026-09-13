@@ -35,7 +35,7 @@ var MapListing = (function () {
     TON_0: 'tồn 0 — kiểm tra lô',
     /**
      * Nửa sau của câu cảnh báo giá vốn 0; nửa đầu là danh sách mã, do `canhBaoGiaVon0` ghép vào.
-     * Viết cho nhân viên đọc là hiểu ngay, phải nói đủ ba điều: mã nào · giá vốn 0 · vì sao đáng ngờ.
+     * Viết cho user đọc là hiểu ngay, phải nói đủ ba điều: mã nào · giá vốn 0 · vì sao đáng ngờ.
      */
     GIA_VON_0: 'đang để giá vốn 0 trong kho. Mã giá vốn 0 thường là mã hàng tặng, ' +
       'bán mà trừ tồn vào đó thì lãi tính ra cao hơn thật. ' +
@@ -148,7 +148,7 @@ var MapListing = (function () {
    * Không có cảnh báo thì lỗi này im lặng: đơn vẫn ghi đủ, số vẫn đẹp, chỉ có lãi là sai.
    *
    * Im lặng khi KHÔNG ĐỌC ĐƯỢC giá vốn (ô trống, ô lỗi, công thức chưa tính — xem `DanhMuc.docGiaVon`).
-   * Không biết thì không kêu: tô vàng oan hàng loạt là cách nhanh nhất khiến nhân viên bỏ qua mọi cảnh báo.
+   * Không biết thì không kêu: tô vàng oan hàng loạt là cách nhanh nhất khiến user bỏ qua mọi cảnh báo.
    */
   function canhBaoGiaVon0(muc) {
     if (!muc) return '';

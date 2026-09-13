@@ -2,7 +2,7 @@
  * ĐÓNG GÓI + CẬP NHẬT — chạy thật, không giả lập.
  *
  * Nhóm DG-*: soi gói `Tool_nhập_liệu` vừa dựng.
- * Nhóm CN-*: dựng hẳn một "máy nhân viên" giả trong thư mục tạm, dựng một file .zip
+ * Nhóm CN-*: dựng hẳn một "máy user" giả trong thư mục tạm, dựng một file .zip
  *            giống hệt bản GitHub tải về, rồi CHẠY THẬT `2_CAP_NHAT.bat` bằng cmd.exe
  *            và soi lại từng thứ trên đĩa. Không mạng, không đụng máy thật.
  *
@@ -250,7 +250,7 @@ test('DG-08', 'Miễn trừ KHÔNG rò ra ngoài cây node-portable', () => {
 
 // ================================================ NHÓM CN — chạy thật nút cập nhật
 
-/** Dựng một "máy nhân viên" giả: bốn nút + Cấu hình có bí mật mồi, CHƯA có mã nào. */
+/** Dựng một "máy user" giả: bốn nút + Cấu hình có bí mật mồi, CHƯA có mã nào. */
 function dungMayGia(nut2) {
   const may = tamMoi('may');
   RAC.push(may);
@@ -272,7 +272,7 @@ function dungMayGia(nut2) {
   fs.mkdirSync(np, { recursive: true });
   fs.writeFileSync(path.join(np, 'npm.cmd'), '@echo off\r\necho (npm gia) bo qua\r\nexit /b 0\r\n', 'ascii');
   fs.mkdirSync(path.join(may, '1_THA_FILE_XUAT', 'Shopee mall', 'đã xử lý'.normalize('NFC')), { recursive: true });
-  fs.writeFileSync(path.join(may, '1_THA_FILE_XUAT', 'Shopee mall', 'don-cho-xu-ly.txt'), 'file cua nhan vien');
+  fs.writeFileSync(path.join(may, '1_THA_FILE_XUAT', 'Shopee mall', 'don-cho-xu-ly.txt'), 'file cua user');
   return may;
 }
 
@@ -368,10 +368,10 @@ function chayNut(may, ten, themTv) {
     return 'bí mật còn nguyên · khóa mới  khoa_hoan_toan_moi  đã được thêm';
   });
 
-  test('CN-05', 'Không đụng thư mục thả file của nhân viên', () => {
+  test('CN-05', 'Không đụng thư mục thả file của user', () => {
     const t = path.join(may, '1_THA_FILE_XUAT', 'Shopee mall', 'don-cho-xu-ly.txt');
-    dung(fs.existsSync(t), 'file nhân viên thả vào đã bị mất');
-    bang(fs.readFileSync(t, 'utf8'), 'file cua nhan vien', 'nội dung file');
+    dung(fs.existsSync(t), 'file user thả vào đã bị mất');
+    bang(fs.readFileSync(t, 'utf8'), 'file cua user', 'nội dung file');
     return 'file người dùng nguyên vẹn';
   });
 

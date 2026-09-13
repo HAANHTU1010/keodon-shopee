@@ -7,7 +7,7 @@ title Cai dat lan dau
 rem ============================================================
 rem  1_CAI_DAT_LAN_DAU.bat - chi chay dung MOT LAN tren may moi.
 rem
-rem  Goi giao nhan vien KHONG chua ma nguon. Ma ve may qua DUNG MOT DUONG
+rem  Goi giao user KHONG chua ma nguon. Ma ve may qua DUNG MOT DUONG
 rem  la  2_CAP_NHAT.bat  keo tu GitHub. Nho vay khong bao gio co canh may
 rem  nay ban cu may kia ban moi ma khong ai biet.
 rem
@@ -86,7 +86,7 @@ for /f "delims=" %%v in ('"%NODE%" -v 2^>nul') do set "NODEV=%%v"
 echo [1/6] Node.js: OK ^(%NODEV%^)
 
 rem ---- 2. Khai bao kho ma GitHub -----------------------------------------
-rem  Day la viec cua NGUOI PHU TRACH KY THUAT, khong phai cua nhan vien.
+rem  Day la viec cua NGUOI PHU TRACH KY THUAT, khong phai cua user.
 rem  Thieu no thi khong keo ma ve duoc, nen dung han o day.
 "%NODE%" -e "var fs=require('fs');var s=fs.readFileSync(process.argv[1],'utf8').replace(/^\uFEFF/,'');var c=JSON.parse(s);var u=c.cap_nhat||{};var a=String(u.chu_tai_khoan||'').trim();var b=String(u.ten_repo||'').trim();if(a.length>0&&b.length>0){console.log('      Kho ma: '+a+'/'+b);process.exit(0);}var t=[];if(a.length===0){t.push('chu_tai_khoan');}if(b.length===0){t.push('ten_repo');}console.log('      Con trong: '+t.join(', '));process.exit(2);" "%CFG%"
 set "MACFG=%ERRORLEVEL%"
@@ -95,7 +95,7 @@ if "%MACFG%"=="2" (
   echo [2/6] Khai bao kho ma GitHub: CHUA CO
   echo.
   echo   Day la viec lam MOT LAN cho may nay, do nguoi phu trach ky thuat lam,
-  echo   khong phai viec cua nhan vien.
+  echo   khong phai viec cua user.
   echo.
   echo   1. Mo file nay bang Notepad:
   echo        %CFG%
@@ -104,7 +104,7 @@ if "%MACFG%"=="2" (
   echo        "ten_repo"      : ten kho ma
   echo   3. Luu file, dong Notepad, bam dup lai file nay.
   echo.
-  echo   Cach lay hai ten do: doc  Cau hinh\HUONG_DAN_DUA_LEN_GITHUB.md
+  echo   Cach lay hai ten do: hoi nguoi phu trach ky thuat.
   echo.
   if not defined TU_DONG pause
   exit /b 1
@@ -207,7 +207,7 @@ if not "%MAGS%"=="0" (
   echo          "web_app_url"  : link /exec cua Apps Script
   echo          "chuoi_bi_mat" : chuoi bi mat cua du an
   echo        Hai thu nay do nguoi phu trach ky thuat cho biet.
-  echo        Cach lay: doc  Cau hinh\BAT_GOOGLE_SHEET.md
+  echo        Cach lay: hoi nguoi phu trach ky thuat.
   echo     3. Luu file, dong Notepad, bam dup lai file nay.
   echo.
   echo   CHUOI BI MAT LA BI MAT: dung chup man hinh gui di, dung gui qua

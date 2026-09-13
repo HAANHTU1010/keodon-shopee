@@ -24,6 +24,8 @@ du-lieu-vao/*/*.xlsx
 out/*
 !out/.keep
 *.xlsx
+# Fixture của bộ test: chỉ tên hàng + tên viết tắt, không có dữ liệu người mua, không có số tiền thật
+!node/fixtures/MAP_LISTING_SP_MALL_NT1.xlsx
 *.xls
 *.csv
 *.docx

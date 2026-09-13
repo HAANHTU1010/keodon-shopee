@@ -137,7 +137,7 @@ var TestSuite = (function () {
   }
 
   /**
-   * Hai cách làm tròn thuế cho đơn NHIỀU DÒNG đều phải chạy được, vì nhân viên gõ tay không nhất quán:
+   * Hai cách làm tròn thuế cho đơn NHIỀU DÒNG đều phải chạy được, vì user gõ tay không nhất quán:
    *   thue_theo_dong = true  (mặc định) → làm tròn TỪNG DÒNG rồi cộng; khớp 392/393 đơn tháng 8
    *   thue_theo_dong = false            → làm tròn MỘT LẦN trên cả đơn, đúng câu chữ Context 5.2; khớp 391/393
    * Cùng một đơn ba dòng dưới đây lệch nhau đúng 1 đồng — con số đó là bằng chứng cho BA chọn.
@@ -432,11 +432,11 @@ var TestSuite = (function () {
   }
 
   function T22_oLSoTayMoCoi() {
-    // Dựng đúng tình huống file tháng 8 (Context 8.3): nhân viên gõ số âm vào cột Doanh Thu ở đơn HOÀN đã ghi,
+    // Dựng đúng tình huống file tháng 8 (Context 8.3): user gõ số âm vào cột Doanh Thu ở đơn HOÀN đã ghi,
     // và bước xóa dữ liệu cũ để sót số đó lại ở dòng trống mà tool sắp ghi đơn mới.
     var bc = boiCanh({ congThucToi: 8, dongCoSan: [
       { ma: 'TEST0731AAAA01', tvt: 'dt5', sl: 1, h: 220000, j: 59100, k: 3300 },       // dòng 4: L còn công thức
-      { ma: 'TEST0808CCCC03', tvt: 'Hạt TE', sl: 1, h: 1880000, j: 0, k: 0, l: -40000 } // dòng 5: đơn HOÀN, nhân viên gõ tay
+      { ma: 'TEST0808CCCC03', tvt: 'Hạt TE', sl: 1, h: 1880000, j: 0, k: 0, l: -40000 } // dòng 5: đơn HOÀN, user gõ tay
     ] });
     var s = bc.kho.sheets['Shopee mall'];
     s.giaTri[5][11] = -36500; s.congThuc[5][11] = null; s.mang[5][11] = false;   // dòng 6: số sót ở dòng TRỐNG
@@ -446,7 +446,7 @@ var TestSuite = (function () {
     bang(k.o(T, 6, 12).congThuc, 'H6-I6-J6-K6', 'L6: số mồ côi được trả lại công thức');
     bang(k.o(T, 6, 12).gt, null, 'L6 không còn số gõ tay');
     bang(kq.giaTriTayThay, 1, 'đúng 1 ô được trả lại công thức');
-    bang(k.o(T, 5, 12).gt, -40000, 'L5 của dòng nhân viên đã ghi: GIỮ NGUYÊN số tay');
+    bang(k.o(T, 5, 12).gt, -40000, 'L5 của dòng user đã ghi: GIỮ NGUYÊN số tay');
     bang(k.o(T, 5, 12).congThuc, null, 'L5 không bị biến thành công thức');
     phai(nhatKy(kq).indexOf('số gõ tay -36500 đã được trả lại công thức') >= 0, 'nhật ký ghi rõ ô nào: ' + nhatKy(kq));
     // không có công thức nào phía trên để kéo → giữ nguyên số và cảnh báo, tuyệt đối không đoán
@@ -521,7 +521,7 @@ var TestSuite = (function () {
     var a = k.o(T, 7, 1);
     phai(Utils.laNgay(a.gt) && a.gt.getDate() === 7 && a.gt.getMonth() === 8, 'cột A = ngày chạy tool');
     bang(a.dinhDang, 'd/m/yyyy', 'định dạng ngày');
-    bang(k.o(T, 7, 2).gt, null, 'cột B "Nguồn đơn" để trống (nhân viên cũng để trống 747/747 dòng)');
+    bang(k.o(T, 7, 2).gt, null, 'cột B "Nguồn đơn" để trống (user cũng để trống 747/747 dòng)');
   }
 
   function T28_doiTenCotTrongCauHinh() {
@@ -622,7 +622,7 @@ var TestSuite = (function () {
     phai(dau.indexOf(kq.dongVang + '/' + kq.dongGhi) >= 0, 'nêu số dòng vàng trên tổng dòng ghi: ' + dau);
     phai(dau.indexOf('Xác nhận') >= 0 && dau.indexOf('Tên viết tắt') >= 0, 'nói rõ việc phải làm: ' + dau);
     // (d) log ghi rõ đúng chữ D-06 yêu cầu
-    phai(nhatKy(kq).indexOf('0 dòng mapping được xác nhận') >= 0, 'log phải ghi rõ "0 dòng mapping được xác nhận, nhân viên cần tick"');
+    phai(nhatKy(kq).indexOf('0 dòng mapping được xác nhận') >= 0, 'log phải ghi rõ "0 dòng mapping được xác nhận, user cần tick"');
   }
 
   /**
@@ -854,7 +854,7 @@ var TestSuite = (function () {
    * đảo hai nhánh `if` trong `MapListing.danhGia` vẫn xanh hết bảng. Luật nằm ở Context 6.3 và ở chính
    * chú thích trong mã, nhưng chú thích không phải hàng rào.
    *
-   * Triệu chứng thật nếu vi phạm: nhân viên điền Cấu phần cho combo nhưng ô `Hệ số` vẫn còn số 12 mà
+   * Triệu chứng thật nếu vi phạm: user điền Cấu phần cho combo nhưng ô `Hệ số` vẫn còn số 12 mà
    * tool tự điền lúc append dòng mới (xem `MapListing.boSungTenMoi`: `row['Hệ số'] = 1`, người sửa thành 12).
    * Chạy nhánh Hệ số thì combo bị quy về MỘT mã với số lượng gấp bội, hai mã còn lại của combo không bị
    * trừ kho lần nào. Kho vừa hụt vừa thừa, không lần ra được từ sổ.
