@@ -6,6 +6,10 @@
 # Dự án đã trả giá đúng lỗi này, xem README.md mục 6.4.
 *.bat text eol=crlf
 
+# Huong dan cho Notepad: BOM + CRLF, SINH RA tu ban .md (DG-11 so tung byte). Git khong duoc dung vao,
+# neu khong ban tai tu GitHub se thanh LF va Notepad cu hien ca trang tren mot dong.
+bat/*.txt -text
+
 # File nhị phân, đừng đụng vào.
 *.xlsx binary
 *.xls  binary
