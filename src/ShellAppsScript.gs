@@ -1,62 +1,46 @@
 /**
- * ShellAppsScript.gs — VỎ GOOGLE (GV-v2.2 mục 1.7): Web App NHẬN LỆNH GHI.
+ * ShellAppsScript.gs — VỎ GOOGLE: Web App NHẬN LỆNH GHI (bản 2.5.0 — Đợt 1 của 02_GIAO_VIEC_DEV.md).
  *
- * Đổi vai so với v1: KHÔNG quét Drive, KHÔNG trigger theo lịch, KHÔNG đọc file xuất.
- * Máy tính (vỏ Node) đọc file xuất (lớp 1 — nơi duy nhất biết định dạng file Shopee, phải ở lại máy
- * vì file nằm trên máy), rồi POST một gói JSON tới đây. Bốn hành động:
+ * Máy tính (vỏ Node) đọc file xuất Shopee (lớp 1 — nơi duy nhất biết định dạng file, phải ở lại máy vì
+ * file nằm trên máy), rồi POST một gói JSON tới đây. Bốn hành động:
  *
- *   hanhDong = 'ping' → trả `phienBan` thật của bản đang chạy, để máy so trước khi ghi
- *   hanhDong = 'doc'  → trả về mã đơn đã có + sheet Mapping + tồn kho, để máy tính khử trùng và chọn lô
- *   hanhDong = 'ghi'  → nối thêm dòng vào cuối sheet gian hàng, gộp ô, kéo cột L, tô vàng, ghi Note
- *   hanhDong = 'xuLy' → NHẬN THẲNG BẢNG DÒNG ĐÃ QUA LỚP 1 rồi tự làm 'doc' + lớp 2 + lớp 3 + 'ghi'
- *                       trong MỘT lần gọi (GV-v2.3 mục 2.3 — "một lõi tính toán duy nhất")
+ *   hanhDong = 'ping' → trả phiên bản + dấu vân tay bản dựng, để máy so trước khi ghi
+ *   hanhDong = 'doc'  → trả mã đơn đã có + sheet Mapping + tồn kho (đường lùi 'ghi' dùng)
+ *   hanhDong = 'ghi'  → nối dòng vào cuối sheet gian hàng (đường lùi: máy tự chạy lớp 2 + lớp 3)
+ *   hanhDong = 'xuLy' → NHẬN BẢNG DÒNG ĐÃ QUA LỚP 1 rồi tự làm đọc + lớp 2 + lớp 3 + ghi trong MỘT lần
+ *                       gọi (đường mặc định — sửa nghiệp vụ chỉ cần Deploy một lần, không đi từng máy)
  *
- * VÌ SAO CÓ 'xuLy' (đây là lý do tồn tại của cả khối bên dưới): trước đây lớp 2 (tiền, thuế, mapping,
- * chọn lô) và lớp 3 (gộp ô, lập kế hoạch ghi) chạy TRÊN MÁY USER. Sửa một dòng luật thuế là phải
- * đi cập nhật từng máy — 2-3 máy, và không có cách nào biết máy nào đang chạy bản nào. Chuyển hai lớp
- * đó sang đây thì sửa nghiệp vụ chỉ còn một lần Deploy. Hành động 'ghi' cũ GIỮ NGUYÊN làm đường lùi và
- * để chế độ Excel trên máy (không có mạng, không có Web App) vẫn dùng lớp 2, lớp 3 tại chỗ.
+ * Đây là file DUY NHẤT (ngoài tests) gọi dịch vụ của Google. Lõi (Utils/Config/Schema/KeyIn/…) không đụng
+ * tới: `dungKeHoachGhi_` bên dưới chỉ GỌI lõi, không tự tính lại một con số nào.
  *
- * Đây là file DUY NHẤT (ngoài tests) gọi dịch vụ của Google. Lõi (Utils/Config/Schema/KeyIn/…) không đụng tới:
- * `dungKeHoachGhi_` bên dưới chỉ GỌI lõi, không tự tính lại một con số nào (HOC_TU_DU_AN_CO_PHIEU mục 1).
+ * ------------------------------------------------------------------ KHÔNG CÒN CHUỖI BÍ MẬT (D-43)
+ *  Web App nhận mọi POST đúng định dạng. Không `caiDat()`, không Script Property, không token trong gói.
+ *  Chủ dự án chấp nhận rủi ro "ai có link Web App thì ghi thêm được dòng" vì nhóm nhỏ; giảm nhẹ bằng hai
+ *  điều: Web App chỉ làm đúng việc mã cho phép (CHỈ THÊM dòng, khử trùng theo mã đơn, không đọc thông tin
+ *  người mua), và link Web App chỉ nằm trong cấu hình trên máy, không đăng nơi công khai.
+ *
+ * ------------------------------------------------------------------ FILE THÁNG DO MÁY CHỈ ĐỊNH (D-42)
+ *  Máy tra `link_thang["yyyy-MM"]` trong CAU_HINH_VAN_HANH.json theo THÁNG CỦA NGÀY CHẠY rồi gửi
+ *  `spreadsheetId` trong thân gói. Web App mở đúng file đó (`moFileTheoId_`) — KHÔNG đọc bảng link nào
+ *  trên Google, không còn "file mỏ neo", và KHÔNG đụng sheet `Thông tin shop ` (sheet đó có ô đăng nhập).
+ *  Hai hàng rào:
+ *   · thiếu `spreadsheetId` → từ chối (`THIEU_ID_FILE`);
+ *   · TÊN file mở được phải mang đúng tháng/năm của gói (`kiemTenFileKhopThang_`) — link_thang trỏ nhầm
+ *     file tháng khác là từ chối (`SAI_THANG_FILE`); tên file không theo mẫu nào thì cảnh báo, không chặn.
+ *  Không ghi lùi, không ghi trước (`chotThang_`). Ngoại lệ có chủ ý: lượt chạy tay `--thang` gửi kèm
+ *  `choPhepThangKhac: true` (rà soát tab "Tất cả" theo D-21b); nút 4 không bao giờ gửi cờ này, và hàng
+ *  rào tên file vẫn áp dụng nguyên vẹn.
  *
  * ------------------------------------------------------------------ CÀI ĐẶT (một lần)
  *  1. script.google.com → New project (STANDALONE, không gắn vào file Sheet nào — mỗi tháng một file khác).
- *  2. Dán toàn bộ src/ vào (hoặc `clasp push`). Bắt buộc có, ĐỦ BẢY FILE: Utils.gs, Schema.gs, CaiDat.gs,
- *     Config.gs, DanhMuc.gs, MapListing.gs, Normalize.gs, và file này.
- *     Thiếu ba file lớp 2 (DanhMuc/MapListing/Normalize) thì 'ping', 'doc', 'ghi' vẫn chạy bình thường,
- *     riêng 'xuLy' ném "DanhMuc is not defined" — hỏng ồn ào, nhưng chỉ hỏng lúc chạy thật. Sau khi Deploy
- *     nhớ gọi thử 'xuLy' với gói rỗng (xem `thuXuLyRong()` cuối file) để bắt ngay chỗ thiếu file.
- *  3. KHÔNG tạo sheet nào cả. Bảng link các tháng ĐÃ CÓ SẴN trong sheet `Thông tin shop ` của chính
- *     các file tháng (GV-v2.3 mục 1). Xem khối "ĐỊNH TUYẾN THÁNG" bên dưới.
- *  4. Trong trình soạn thảo chạy tay MỘT LẦN:
- *         caiDat('<chuỗi bí mật tự nghĩ, dài>', '<link hoặc ID của MỘT file tháng đã có>')
- *     File tháng đó là "mỏ neo" — chỗ để bắt đầu đọc bảng link. Hai giá trị nằm trong Script
- *     Properties, KHÔNG nằm trong mã nguồn, KHÔNG in ra log.
- *  5. Deploy → New deployment → type Web app → Execute as "Me" → Who has access "Anyone".
- *     ("Anyone" là bắt buộc để máy tính POST được; cửa vẫn khóa bằng chuỗi bí mật ở bước 4.)
- *  6. Chép link /exec và chuỗi bí mật vào `03_VAN_HANH/CAU_HINH_VAN_HANH.json` → `google_sheet`.
- *  7. Kiểm tra bằng: hanhDong = 'ping' — phản hồi có `phienBan`, so với PHIEN_BAN phía máy tính.
- *
- *  Sửa mã xong phải Deploy → Manage deployments → bút chì → Version: New version → Deploy,
- *  nếu không link /exec vẫn chạy bản cũ. Google KHÔNG tự đồng bộ và KHÔNG báo lỗi khi chạy bản cũ —
- *  bên dự án chứng quyền gọi đây là "lỗi tốn kém nhất của dự án". Vì thế mọi phản hồi của Web App
- *  đều kèm `phienBan`; lệch với bản phía máy tính là TỪ CHỐI GHI (GV-v2.3 mục 2.3).
- *
- * ------------------------------------------------------------------ ĐỊNH TUYẾN THÁNG (GV-v2.3 mục 1)
- *  Bảng link nằm trong sheet `Thông tin shop ` — CHÚ Ý: tên sheet có ĐÚNG MỘT DẤU CÁCH Ở CUỐI.
- *  Bảng bắt đầu từ dòng 8:  A = năm (2023…2026) · B = tên kỳ (`Kinh Doanh T9`, `Kinh Doanh T4 + 5`)
- *  · C = link đầy đủ tới file Sheet của kỳ đó.
- *
- *  VÙNG CẤM: sheet này chứa MẬT KHẨU CÁC GIAN HÀNG ở các cột từ D trở đi. Tool chỉ được đọc
- *  A, B, C từ dòng 8 — bằng đúng một lệnh `getRange(8, 1, n, 3)`. Cấm `getDataRange()`, cấm nạp cả
- *  sheet rồi lọc, cấm in bất kỳ ô nào của sheet này ra log hay thông báo lỗi (kể cả khi báo "không
- *  tìm thấy tháng": chỉ được nêu danh sách THÁNG và số DÒNG, không nêu nội dung ô). Test bất biến
- *  chặn việc này: `node/test-dinh-tuyen-thang.js`.
- *
- *  Bảng nằm trong chính các file tháng nên phải có một file "mỏ neo" để bắt đầu: Script Property
- *  KEODON_MO_NEO_ID. Định tuyến xong, tool tự dời mỏ neo sang file tháng vừa tìm được (nếu file đó
- *  cũng có sheet `Thông tin shop `), nên mỏ neo luôn tự đi theo tháng mới nhất mà không ai phải sửa tay.
+ *  2. Dán ĐỦ 11 FILE `.gs` trong src/: CaiDat · Config · DanhMuc · KeyIn · Main · MapListing · Normalize ·
+ *     Schema · ShellAppsScript · TaoThangMoi · Utils. Chạy tay `thuXuLyRong()`: nó đếm đủ 11 file và in mã
+ *     bản dựng để đối chiếu với `var BAN_DUNG` cuối file này trên máy.
+ *  3. Deploy → New deployment → Web app → Execute as "Me" → Who has access "Anyone" → chép link `/exec`
+ *     vào `google_sheet.web_app_url` của CAU_HINH_VAN_HANH.json.
+ *  4. Sửa mã xong PHẢI Deploy → Manage deployments → bút chì → Version: New version → Deploy, nếu không
+ *     link `/exec` vẫn chạy bản cũ. Mọi phản hồi kèm `phienBan` + `banDung`: lệch `PHIEN_BAN` là TỪ CHỐI
+ *     GHI; lệch dấu vân tay bản dựng thì máy cảnh báo (`soDauVanTay` trong node/gsheet-web-app.js).
  *
  * ------------------------------------------------------------------ GIỚI HẠN 6 PHÚT
  *  Apps Script cắt một lần chạy ở 6 phút (360 giây) và cắt bằng cách NÉM NGOẠI LỆ giữa chừng — phần
@@ -76,15 +60,17 @@
  * Đổi số này MỖI KHI sửa hợp đồng gói JSON (thêm/bớt trường, đổi ý nghĩa hành động) rồi Deploy
  * New version. Không đổi thì Google im lặng chạy bản cũ và tool tưởng đã ghi đúng.
  */
-var PHIEN_BAN = '2.4.0';
+var PHIEN_BAN = '2.5.0';
 
+/**
+ * Khóa Script Property giữ chuỗi bí mật. GIỮ NGUYÊN từ bản 09/9 — chuỗi đã cài trên dự án Apps Script
+ * thật vẫn dùng tiếp, chủ dự án không phải chạy lại `caiDat`.
+ *
+ * Ngày 13/9 chủ dự án làm rõ lại D-43: KHÔNG bỏ chuỗi bí mật. Cái bỏ là việc bắt user ĐIỀN TAY —
+ * gói giao user mang sẵn chuỗi, nên ai có gói mới ghi được, và kiểm soát nằm ở chỗ kiểm soát ai nhận gói.
+ * Link Web App là `Anyone` nên không có chuỗi thì bất cứ ai dò trúng link đều ghi được vào sổ tiền.
+ */
 var TT_BI_MAT = 'KEODON_BI_MAT';
-var TT_MO_NEO = 'KEODON_MO_NEO_ID';
-
-/** CÓ MỘT DẤU CÁCH Ở CUỐI — tên thật của sheet trong file của chủ dự án. Tuyệt đối không trim khi tra. */
-var TEN_SHEET_THONG_TIN_SHOP = 'Thông tin shop ';
-var DONG_DAU_BANG_LINK = 8;
-var SO_COT_DUOC_DOC = 3;            // A, B, C. Cột D trở đi là MẬT KHẨU GIAN HÀNG — không đọc, không in.
 
 var MUI_GIO = 'Asia/Ho_Chi_Minh';
 var MAU_VANG = '#FFF2CC';
@@ -153,43 +139,58 @@ var VIEC_KEO_DAI_CONG_THUC = 'kéo dài công thức 4 cột E, F, M, N xuống 
 // ==================================================================== cài đặt & tiện ích
 
 /**
- * Chạy tay một lần trong trình soạn thảo. Không truyền tham số thì chỉ báo tình trạng.
- * `fileMoNeo` = link hoặc ID của MỘT file tháng đã có (khuyên dùng file tháng gần nhất). Bảng link
- * các tháng nằm trong chính file đó, sheet `Thông tin shop `.
+ * Chạy tay MỘT LẦN trong trình soạn thảo Apps Script để nạp chuỗi bí mật. Không truyền tham số thì chỉ
+ * báo tình trạng, không đổi gì.
+ *
+ * Không còn tham số `fileMoNeo`: từ D-42 máy gửi thẳng `spreadsheetId` trong mỗi gói, Web App không giữ
+ * id file nào. Script Property cũ `KEODON_MO_NEO_ID` nếu còn sót trên dự án thật thì vô hại — không mã
+ * nào đọc nó nữa; `caiDat()` báo luôn để chủ dự án xóa tay cho sạch.
+ *
+ * @param {string} [chuoiBiMat] chuỗi mới; bỏ trống = chỉ xem tình trạng
+ * @returns {string} câu tình trạng — CỐ Ý không chứa giá trị chuỗi
  */
-function caiDat(chuoiBiMat, fileMoNeo) {
+function caiDat(chuoiBiMat) {
   var p = PropertiesService.getScriptProperties();
   if (chuoiBiMat) {
     if (String(chuoiBiMat).length < 16) throw new Error('Chuỗi bí mật quá ngắn (cần ít nhất 16 ký tự)');
     p.setProperty(TT_BI_MAT, String(chuoiBiMat));
   }
-  if (fileMoNeo) p.setProperty(TT_MO_NEO, layIdSheet_(fileMoNeo));
-  var co = function (khoa) { return p.getProperty(khoa) ? 'đã cài' : 'CHƯA CÀI'; };
-  var tin = 'Bản ' + PHIEN_BAN + ' · Chuỗi bí mật: ' + co(TT_BI_MAT) + ' · File mỏ neo: ' + co(TT_MO_NEO);
+  var tin = 'Bản ' + PHIEN_BAN + ' · Chuỗi bí mật: ' + (p.getProperty(TT_BI_MAT) ? 'đã cài' : 'CHƯA CÀI');
+  if (p.getProperty('KEODON_MO_NEO_ID')) {
+    tin += ' · Còn sót thuộc tính cũ KEODON_MO_NEO_ID (không dùng nữa từ D-42, xóa tay được)';
+  }
   Logger.log(tin);   // cố ý không in giá trị
   return tin;
 }
 
-/** Nhận cả link đầy đủ lẫn ID trần. */
-function layIdSheet_(s) {
-  var t = String(s || '').trim();
-  var m = t.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-  if (m) return m[1];
-  if (/^[a-zA-Z0-9_-]{20,}$/.test(t)) return t;
-  throw new Error('Không nhận ra ID Google Sheet từ: ' + t);
-}
-
 function thuocTinh_(khoa) { return PropertiesService.getScriptProperties().getProperty(khoa) || ''; }
 
-/** So sánh không sớm-thoát để không rò rỉ độ dài chuỗi bí mật. */
+/** Chuỗi hex SHA-256 của một chuỗi UTF-8. */
+function bam256_(s) {
+  var b = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(s), Utilities.Charset.UTF_8);
+  var hex = '';
+  for (var i = 0; i < b.length; i++) {
+    var v = (b[i] + 256) % 256;          // Apps Script trả byte CÓ DẤU (-128..127)
+    hex += (v < 16 ? '0' : '') + v.toString(16);
+  }
+  return hex;
+}
+
+/**
+ * C-6.2: so chuỗi bí mật bằng SHA-256 hai phía thay cho vòng so từng ký tự.
+ *
+ * Vòng cũ so từng mã ký tự và cộng dồn cờ lệch — đúng về kết quả, nhưng nó vẫn duyệt qua `Math.max` của
+ * hai độ dài, nghĩa là thời gian chạy phụ thuộc độ dài chuỗi THẬT. Băm xong mới so thì hai bên luôn là
+ * 64 ký tự hex bất kể chuỗi thật dài bao nhiêu, và đổi một ký tự trong chuỗi gửi lên làm đổi toàn bộ
+ * mã băm — không còn gì để dò dần từng ký tự.
+ *
+ * Chưa cài đặt thì NÉM LỖI (không phải trả false): hai ca đó phải ra hai câu khác nhau, vì việc phải làm
+ * khác hẳn nhau — một bên là đi chạy `caiDat`, một bên là gói giao sai chuỗi.
+ */
 function biMatDung_(gui) {
   var that = thuocTinh_(TT_BI_MAT);
-  if (!that) throw new Error('Web App chưa được cài đặt: chạy caiDat(<chuỗi bí mật>, <link một file tháng đã có>) một lần');
-  var a = String(gui || '');
-  var lech = a.length === that.length ? 0 : 1;
-  var n = Math.max(a.length, that.length);
-  for (var i = 0; i < n; i++) if (a.charCodeAt(i) !== that.charCodeAt(i)) lech = 1;
-  return lech === 0;
+  if (!that) throw new Error('Web App chưa được cài đặt: chạy caiDat(<chuỗi bí mật>) một lần trong trình soạn thảo Apps Script');
+  return bam256_(String(gui == null ? '' : gui)) === bam256_(that);
 }
 
 /**
@@ -199,12 +200,17 @@ function biMatDung_(gui) {
  */
 function traLoi_(obj) {
   var o = obj || {};
-  if (o.phienBan == null) o.phienBan = PHIEN_BAN;
-  // Dấu vân tay bản dựng đi kèm MỌI phản hồi (12 ký tự, rẻ) để máy so được mà không tốn thêm một
-  // lượt gọi — thêm lượt `ping` sẽ phá các bài đang đếm chính xác số lượt gọi mạng.
-  // NHƯNG không gắn vào nhánh sai bí mật: người lạ gõ bừa một lần không được biết thêm gì về bản
-  // đang chạy. (`phienBan` hiện vẫn lọt ở nhánh đó — đó là việc riêng ở mục 3.1, không nới thêm.)
-  if (o.banDung == null && o.loi !== 'SAI_BI_MAT' && typeof BAN_DUNG !== 'undefined') o.banDung = BAN_DUNG;
+  // C-6.1 (YC-28 điểm 3): HAI nhánh chưa qua cửa bí mật không được mang theo thông tin về bản đang chạy.
+  // Người gõ bừa một lần vào link `Anyone` phải nhận đúng một chữ "sai", không thêm gì: biết số phiên bản
+  // là biết bản nào đang chạy, tra ra được kho mã công khai và đọc luôn hợp đồng gói JSON.
+  // Trước 13/9 `phienBan` vẫn lọt ở hai nhánh này — đó chính là chỗ rò còn lại của C-6.1.
+  var chuaQuaCua = (o.loi === 'SAI_BI_MAT' || o.loi === 'CHUA_CAI_DAT');
+  if (!chuaQuaCua) {
+    if (o.phienBan == null) o.phienBan = PHIEN_BAN;
+    // Dấu vân tay bản dựng đi kèm mọi phản hồi ĐÃ QUA CỬA (12 ký tự, rẻ) để máy so được mà không tốn
+    // thêm một lượt gọi — thêm lượt `ping` sẽ phá các bài đang đếm chính xác số lượt gọi mạng.
+    if (o.banDung == null && typeof BAN_DUNG !== 'undefined') o.banDung = BAN_DUNG;
+  }
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -228,47 +234,11 @@ function chuanHoaThang_(x) {
   return '';
 }
 
-// ==================================================================== định tuyến tháng (GV-v2.3 mục 1)
-//
-// Ba hàm dưới đây THUẦN: không gọi SpreadsheetApp, nên `node/test-dinh-tuyen-thang.js` chạy được
-// chúng bằng Node mà không cần Google. Phần chạm Google gom trong `bangLinkThang_()`.
-
-/** Năm ở cột A: nhận cả số 2026 lẫn chuỗi ' 2026 '. Không nhận ra → 0. */
-function namCuaO_(x) {
-  var t = String(x == null ? '' : x).trim();
-  var m = t.match(/^(\d{4})(?:\.0+)?$/);
-  return m ? Number(m[1]) : 0;
-}
+// ==================================================================== file tháng theo ID trong gói (D-42)
 
 /**
- * Cột B → danh sách tháng mà kỳ đó phủ. Không nhận ra → [] (và tool sẽ dừng chứ không đoán).
- *
- * Chịu được: 'Kinh Doanh T9' · 'KINH DOANH T10' · 'kinhdoanht9' (mất khoảng trắng) ·
- * 'Kinh Doanh Tháng 9' · và dạng GỘP KỲ 'Kinh Doanh T4 + 5' → [4, 5] (dòng 8 của bảng thật, kỳ 2023).
- *
- * Cố ý KHÔNG nhận chuỗi chỉ có 'T9' hay 'Tháng 9': cột B của sheet này nằm cạnh một bảng khác
- * (dòng 1-7: STT | Tên shop | Tên đăng nhập), khớp lỏng là định tuyến nhầm sang dòng không phải link.
- */
-function phanTichTenKy_(x) {
-  var t = String(x == null ? '' : x);
-  if (typeof t.normalize === 'function') t = t.normalize('NFC');   // fallback: Rhino không có normalize
-  t = t.toLowerCase().replace(/\s+/g, '');
-  var m = t.match(/^kinhdoanh(?:th[aáàảãạăằắẳẵặâầấẩẫậ]ng|t)(\d{1,2})((?:\+\d{1,2})*)$/);
-  if (!m) return [];
-  var ds = [Number(m[1])];
-  if (m[2]) m[2].split('+').forEach(function (s) { if (s) ds.push(Number(s)); });
-  var ra = [];
-  for (var i = 0; i < ds.length; i++) {
-    if (!(ds[i] >= 1 && ds[i] <= 12)) return [];   // 'Kinh Doanh T13' là gõ nhầm → coi như không nhận ra
-    if (ra.indexOf(ds[i]) < 0) ra.push(ds[i]);
-  }
-  return ra;
-}
-
-/**
- * Cột C → spreadsheet ID. Nhận: link có '#gid=', link không có '/edit', và chuỗi ID trần.
- * KHÔNG ném lỗi kèm nội dung ô — trả '' để phía gọi báo theo SỐ DÒNG, vì mọi ô của sheet này
- * đều có thể là mật khẩu hoặc tên đăng nhập (GV-v2.3 mục 1.5).
+ * Link hoặc ID → spreadsheet ID. Nhận: link có '#gid=', link không có '/edit', và chuỗi ID trần (≥ 20 ký
+ * tự, đúng bảng chữ của Google). Không nhận ra → '' (phía gọi tự báo lỗi, KHÔNG in lại giá trị nhận được).
  */
 function bocIdTuLink_(x) {
   var t = String(x == null ? '' : x).trim();
@@ -278,58 +248,6 @@ function bocIdTuLink_(x) {
 }
 
 function hai_(n) { return ('0' + n).slice(-2); }
-
-/** Câu báo thiếu tháng — nguyên văn theo GV-v2.3 mục 1.3. Chỉ chứa THÁNG, không chứa nội dung ô. */
-function cauThieuThang_(nam, thang) {
-  return 'Chưa có file cho tháng ' + thang + '/' + nam + '. Hãy thêm một dòng vào sheet ' +
-    "'Thông tin shop' (năm ở cột A, Kinh Doanh T" + thang + ' ở cột B, link ở cột C).';
-}
-
-/**
- * Chọn dòng định tuyến — HÀM THUẦN, `bang` là khối A:C đã đọc từ dòng 8.
- * Khớp đúng (năm, tháng); không khớp thì DỪNG. Bảng thật có lỗ hổng ở giữa (2024 nhảy từ T5 sang T8)
- * nên tuyệt đối không được chữa cháy bằng "lấy dòng cuối" hay "lấy tháng gần nhất".
- * @returns {ok:true, id, dong} | {ok:false, ma, thongBao, dangCo, dongKhop}
- */
-function chonDongDinhTuyen_(bang, nam, thang) {
-  var khop = [], dangCo = [], cuoi = null;
-  for (var i = 0; i < (bang || []).length; i++) {
-    var r = DONG_DAU_BANG_LINK + i;
-    var namO = namCuaO_(bang[i][0]);
-    var cacThang = phanTichTenKy_(bang[i][1]);
-    if (!namO || !cacThang.length) continue;
-    for (var j = 0; j < cacThang.length; j++) {
-      dangCo.push(namO + '-' + hai_(cacThang[j]));
-      cuoi = { nam: namO, thang: cacThang[j], dong: r };
-    }
-    if (namO === nam && cacThang.indexOf(thang) >= 0) khop.push({ dong: r, id: bocIdTuLink_(bang[i][2]) });
-  }
-
-  if (!khop.length) {
-    return {
-      ok: false, ma: 'KHONG_CO_THANG', thongBao: cauThieuThang_(nam, thang), dangCo: dangCo,
-      ky_cuoi: cuoi ? { nam: cuoi.nam, thang: cuoi.thang, dong: cuoi.dong } : null
-    };
-  }
-  if (khop.length > 1) {
-    return {
-      ok: false, ma: 'TRUNG_NHIEU_DONG', dangCo: dangCo,
-      dongKhop: khop.map(function (x) { return x.dong; }),
-      thongBao: 'Sheet "' + TEN_SHEET_THONG_TIN_SHOP + '" có ' + khop.length + ' dòng cùng khớp tháng ' +
-        thang + '/' + nam + ' (dòng ' + khop.map(function (x) { return x.dong; }).join(', ') +
-        '). Tool DỪNG, không tự chọn — hãy sửa cho chỉ còn đúng một dòng rồi chạy lại.'
-    };
-  }
-  if (!khop[0].id) {
-    return {
-      ok: false, ma: 'LINK_HONG', dangCo: dangCo, dongKhop: [khop[0].dong],
-      thongBao: 'Dòng ' + khop[0].dong + ' của sheet "' + TEN_SHEET_THONG_TIN_SHOP + '" khớp tháng ' +
-        thang + '/' + nam + ' nhưng cột C không phải link Google Sheet (cần dạng ' +
-        'https://docs.google.com/spreadsheets/d/<ID>/…). Tool không in nội dung ô vì sheet này chứa mật khẩu.'
-    };
-  }
-  return { ok: true, id: khop[0].id, dong: khop[0].dong, dangCo: dangCo };
-}
 
 // ---------------------------------------------------------------- phần chạm Google
 
@@ -343,7 +261,7 @@ function chonDongDinhTuyen_(bang, nam, thang) {
  *
  * VÌ SAO KHÔNG ĐỔ HẾT CHO QUYỀN: `openById` hỏng vì BA nhóm lý do khác hẳn nhau, chữa cũng khác hẳn:
  *   1. THIẾU QUYỀN      → đi chia sẻ file.
- *   2. KHÔNG THẤY FILE  → ID trong cột C của bảng link sai, hoặc file đã bị xóa hẳn. Bảo người ta đi
+ *   2. KHÔNG THẤY FILE  → link trong link_thang sai, hoặc file đã bị xóa hẳn. Bảo người ta đi
  *                         chia sẻ một file không tồn tại là đẩy họ vào ngõ cụt.
  *   3. MẠNG / HẠN MỨC   → "Service Spreadsheets failed…", "Service invoked too many times…", lỗi máy
  *                         chủ. Ba việc trên đều KHÔNG chữa được; nuốt lý do gốc ở đây là xóa mất
@@ -445,10 +363,10 @@ function phanLoaiLoiMoFile_(loi) {
 /**
  * Mở một bảng tính, đổi lỗi thô của Google thành câu tiếng Việt nêu đúng việc phải làm.
  *
- * @param {string} id     ID file — TUYỆT ĐỐI không được lọt vào thông báo (id là đường vào file tiền,
- *                        cùng luật với `thuDinhTuyenThang` và `moTaMoNeo_`).
- * @param {string} moTa   chỗ điền vào "Không mở được file ___" — 'tháng 2026-10', 'mỏ neo …'.
- * @param {string} noiKhai câu chỉ chỗ sửa: dòng nào của bảng link, hay Script Property nào.
+ * @param {string} id     ID file — TUYỆT ĐỐI không được lọt vào thông báo (id là đường vào file tiền;
+ *                        cùng luật với `thuMoFileThang`).
+ * @param {string} moTa   chỗ điền vào "Không mở được file ___" — ví dụ 'tháng 2026-10'.
+ * @param {string} noiKhai câu chỉ chỗ sửa: khóa nào của `link_thang` trong CAU_HINH_VAN_HANH.json.
  */
 function moBangTinh_(id, moTa, noiKhai) {
   try {
@@ -482,148 +400,74 @@ function moBangTinh_(id, moTa, noiKhai) {
 }
 
 /**
- * Mở đúng file tháng đã định tuyến. `f` là kết quả của `fileCuaThang_` — có sẵn kỳ và số dòng, nên
- * câu lỗi nêu được cả hai mà không phải nhắc lại id.
+ * Đọc tháng/năm từ TÊN file Google Sheet. Nhận: `THÁNG-9-2026-KINH-DOANH`, `THANG-09-2026…`,
+ * `DEMO_THÁNG-9-2026…`, `THÁNG 9/2026`, `Kinh Doanh T9-2026`, `T9-2026`. Không nhận ra → null.
+ * @returns {{nam:number, thang:number}|null}
  */
-function moFileThang_(f) {
-  return moBangTinh_(f.fileId, 'tháng ' + f.thang,
-    'Link lấy từ cột C dòng ' + f.dong + ' của sheet "' + TEN_SHEET_THONG_TIN_SHOP + '"; sửa dòng đó rồi chạy lại.');
+function thangTrongTenFile_(ten) {
+  var t = String(ten == null ? '' : ten);
+  if (typeof t.normalize === 'function') t = t.normalize('NFC');
+  t = t.toUpperCase();
+  var m = t.match(/TH[AÁ]NG[\s\-_.]*(\d{1,2})[\s\-_.\/]+(\d{4})/);
+  if (!m) m = t.match(/(?:^|[^A-Z0-9])T[\s\-_.]*(\d{1,2})[\s\-_.\/]+(\d{4})/);
+  if (!m) return null;
+  var th = Number(m[1]), nam = Number(m[2]);
+  if (!(th >= 1 && th <= 12) || !(nam >= 2000 && nam <= 2100)) return null;
+  return { nam: nam, thang: th };
 }
 
 /**
- * Tra sheet bảng link. Tên sheet có ĐÚNG MỘT DẤU CÁCH Ở CUỐI: `getSheetByName` so nguyên văn nên
- * trim là không tìm thấy sheet — rồi tool tưởng chưa khai báo tháng nào và dừng oan.
+ * HÀNG RÀO D-42: `link_thang` trỏ nhầm file tháng khác thì TỪ CHỐI (`SAI_THANG_FILE`) — chặn ca "đơn
+ * tháng 10 chui vào sổ tháng 9", loại lỗi phát hiện muộn và rất khó gỡ vì `Tổng xuất` đã trừ tồn ở
+ * tháng sai. Tên file không theo mẫu nào (chủ dự án đặt tên tùy ý) thì CẢNH BÁO chứ không chặn: tool
+ * không đoán, và chặn oan là tắc cả buổi chạy.
  */
-function sheetThongTinShop_(ss) {
-  return ss.getSheetByName(TEN_SHEET_THONG_TIN_SHOP) ||
-    ss.getSheetByName(TEN_SHEET_THONG_TIN_SHOP.replace(/\s+$/, '')) || null;
-}
-
-/**
- * Đọc khối A:C từ dòng 8 của file mỏ neo — VÙNG ĐỌC DUY NHẤT được phép trên sheet này — và trả kèm
- * TÊN file mỏ neo, để 'ping' nói được mỏ neo đang nằm ở đâu mà không phải lộ id.
- *
- * Hai chiều chặn, HAI LÝ DO KHÁC NHAU (BA đo lại thẳng trên XML của ba file ngày 08/9/2026, cả ba
- * ra cùng một con số — con số 110 ghi ở đây trước kia là SAI):
- *   · chặn CỘT (chỉ A, B, C): dòng 1-6 có MẬT KHẨU gian hàng nằm ở D→N, đúng 30 ô có nội dung
- *     (18 chuỗi + 12 số, 0 công thức). Dòng 7 rỗng hoàn toàn; cột D từ dòng 8 xuống có 0 ô.
- *     Bản đồ ô có nội dung: d1 A,B,C,D,E,H · d2,d3 A,B,C,D,H..N · d4 A,B,C,D,E,H..N ·
- *     d5,d6 A,B,C,D · d8→d46 chỉ A,B,C. Có 459 ô từ D trở đi chỉ mang ĐỊNH DẠNG, không có nội dung —
- *     nhiều khả năng đó là nguồn của hai con số 69 và 110 từng ghi ở đây: công cụ đếm ô có style
- *     chứ không đếm ô có giá trị.
- *   · chặn DÒNG (chỉ từ dòng 8): dòng 1-7 là một bảng khác (STT | Tên shop | Tên đăng nhập) và
- *     cột C của bảng đó chứa TÊN ĐĂNG NHẬP THẬT — số điện thoại và email của 5 gian hàng.
- * Vì thế dòng bắt đầu là hằng số trong mã, cố ý KHÔNG cho cấu hình đổi được.
- * Cấm getDataRange(): nó nạp cả 1000 dòng × 14 cột vào bộ nhớ, kể cả mật khẩu.
- */
-function moNeo_() {
-  var id = thuocTinh_(TT_MO_NEO);
-  if (!id) throw new Error('Chưa cài file mỏ neo: mở dự án Apps Script, chạy tay một lần ' +
-    'caiDat(<chuỗi bí mật>, <link của một file tháng đã có>). Bảng link các tháng nằm trong ' +
-    'sheet "' + TEN_SHEET_THONG_TIN_SHOP + '" của chính file đó.');
-  var ss = moBangTinh_(id, 'mỏ neo (file tháng đang giữ bảng link)',
-    'ID mỏ neo nằm trong Script Property ' + TT_MO_NEO + '; chạy tay caiDat(null, <link một file tháng đã có>) để đặt lại.');
-  var sh = sheetThongTinShop_(ss);
-  if (!sh) throw new Error('File mỏ neo "' + ss.getName() + '" không có sheet "' + TEN_SHEET_THONG_TIN_SHOP +
-    '" (chú ý dấu cách cuối tên). Chạy lại caiDat(null, <link file tháng có sheet đó>).');
-  var het = sh.getLastRow();
-  var bang = het < DONG_DAU_BANG_LINK ? [] :
-    sh.getRange(DONG_DAU_BANG_LINK, 1, het - DONG_DAU_BANG_LINK + 1, SO_COT_DUOC_DOC).getDisplayValues();
-  return { ten: ss.getName(), bang: bang };
-}
-
-function bangLinkThang_() { return moNeo_().bang; }
-
-/**
- * Kỳ CUỐI CÙNG được khai trong bảng link — lấy theo THỨ TỰ DÒNG, không lấy kỳ lớn nhất. Bảng thật
- * xếp theo thời gian và có lỗ hổng ở giữa (2024 nhảy từ T5 sang T8), nên "dòng cuối" mới là thứ
- * chủ dự án nhìn thấy khi mở sheet ra để thêm dòng mới.
- * @returns {{nam:number, thang:number, dong:number}|null}
- */
-function kyCuoiBangLink_(bang) {
-  var cuoi = null;
-  for (var i = 0; i < (bang || []).length; i++) {
-    var namO = namCuaO_(bang[i][0]);
-    var cacThang = phanTichTenKy_(bang[i][1]);
-    if (!namO || !cacThang.length) continue;
-    for (var j = 0; j < cacThang.length; j++) cuoi = { nam: namO, thang: cacThang[j], dong: DONG_DAU_BANG_LINK + i };
+function kiemTenFileKhopThang_(ss, thang, canhBao) {
+  var ten = ss.getName();
+  var mong = chuanHoaThang_(thang);
+  var doc = thangTrongTenFile_(ten);
+  if (!doc) {
+    if (canhBao) canhBao.push('Không đọc được tháng/năm trong tên file "' + ten + '" nên không kiểm chéo được ' +
+      'với tháng ' + mong + '. Vẫn ghi. Nên đặt tên file dạng THÁNG-<M>-<YYYY>-KINH-DOANH để tool tự kiểm.');
+    return true;
   }
-  return cuoi;
-}
-
-/** Mô tả mỏ neo cho 'ping': TÊN file + kỳ cuối + dòng. Tuyệt đối không có id — id là đường vào file tiền. */
-function moTaMoNeo_(ten, ky) {
-  return '"' + ten + '" · kỳ cuối ' +
-    (ky ? ky.nam + '-' + hai_(ky.thang) + ' (dòng ' + ky.dong + ')' : 'chưa có kỳ nào');
-}
-
-/**
- * CẢNH BÁO SỚM: bảng link chưa có dòng cho THÁNG SAU (GV-v2.5 mục 1, phần BA tự nhận sai đề bài).
- *
- * Ngưỡng cũ — "kỳ cuối cách tháng hiện tại từ 1 tháng trở lên" — KHÔNG BAO GIỜ kích hoạt được ở
- * nhánh ghi: chotThang_ ép tháng ghi = tháng hiện tại, nên bảng buộc phải có dòng của tháng hiện
- * tại, nếu không fileCuaThang_ đã ném KHONG_CO_THANG từ trước đó. Khoảng cách vì thế luôn ≤ 0.
- * Ngưỡng đúng là THIẾU DÒNG CỦA THÁNG SAU — đó mới là thứ báo trước được cái tắc của tháng sau.
- */
-function canhBaoBangLink_(bang, thang, canhBao) {
-  if (!canhBao) return;
-  var nam = Number(String(thang).slice(0, 4));
-  var th = Number(String(thang).slice(5, 7));
-  if (!nam || !th) return;
-  var sauNam = th === 12 ? nam + 1 : nam;
-  var sauThang = th === 12 ? 1 : th + 1;
-  if (chonDongDinhTuyen_(bang, sauNam, sauThang).ok) return;
-  var ky = kyCuoiBangLink_(bang);
-  canhBao.push('Bảng link mới khai tới ' +
-    (ky ? ky.nam + '-' + hai_(ky.thang) + ' (dòng ' + ky.dong + ')' : 'chưa có kỳ nào') +
-    ', tháng này là ' + thang + '. Thêm dòng cho tháng sau (' + sauNam + '-' + hai_(sauThang) +
-    ') ngay để tháng sau không tắc.');
+  var cua = doc.nam + '-' + hai_(doc.thang);
+  if (cua === mong) return true;
+  var e = new Error('Link tháng ' + mong + ' đang trỏ tới file "' + ten + '" (tháng ' + cua + ') — không phải ' +
+    'file của tháng ' + mong + '. Tool DỪNG, không ghi ô nào. Sửa link_thang["' + mong + '"] trong ' +
+    'CAU_HINH_VAN_HANH.json (mở bằng Notepad), hoặc bấm 3_TAO_FILE_THANG_MOI.bat chế độ 2, rồi chạy lại.');
+  e.maKeodon = 'SAI_THANG_FILE';
+  throw e;
 }
 
 /**
- * Tìm file tracking của `thang` ('yyyy-MM').
- * Không có dòng cho tháng đó → NÉM LỖI (GV-v2.3 mục 1.3: dừng và báo, tuyệt đối không ghi lùi).
+ * Mở file tháng THEO ID TRONG GÓI (D-42). Mọi hành động 'doc' / 'ghi' / 'xuLy' đi qua đây và chỉ qua đây.
+ * @returns {{ss, fileId, thang}}
  */
-function fileCuaThang_(thang) {
-  var nam = Number(String(thang).slice(0, 4));
-  var th = Number(String(thang).slice(5, 7));
-  var mn = moNeo_();
-  var kq = chonDongDinhTuyen_(mn.bang, nam, th);
-  if (!kq.ok) {
-    // Gắn mã lỗi vào chính đối tượng Error. Không gắn thì `doPost` gói lại thành `NGOAI_LE`,
-    // và hai câu gợi ý KHONG_CO_THANG / TRUNG_NHIEU_DONG bên `node/gsheet-web-app.js` thành mã
-    // chết — hàng rào tưởng có mà không bao giờ tới tay người dùng.
-    var e = new Error(kq.thongBao + moTaBangLink_(kq));
-    e.maKeodon = kq.ma;
+function moFileTheoId_(body, thang, canhBao) {
+  var id = bocIdTuLink_(body && body.spreadsheetId);
+  if (!id) {
+    var e = new Error('Gói gửi lên không có spreadsheetId hợp lệ cho tháng ' + thang + ' — máy chưa tra được ' +
+      'link_thang trong CAU_HINH_VAN_HANH.json. Thường là bản Node trên máy cũ hơn Web App: bấm ' +
+      '2_CAP_NHAT.bat rồi chạy lại. Tool chưa ghi gì.');
+    e.maKeodon = 'THIEU_ID_FILE';
     throw e;
   }
-  // KHÔNG DỜI MỎ NEO. Trước bản này capNhatMoNeo_(kq.id) đứng đúng ở đây, và đó là một cái BẪY:
-  //   1. chủ dự án nhân bản file T9 thành vỏ T10 → vỏ T10 mang theo bảng link CHỤP LÚC NHÂN BẢN,
-  //      dừng ở kỳ cũ;
-  //   2. chủ dự án thêm dòng "Kinh Doanh T10" vào bảng của file T9 (vì T9 đang là mỏ neo);
-  //   3. ngày 1/10 chạy lần đầu: đọc bảng T9, thấy T10, ghi đúng — rồi mỏ neo TỰ DỜI sang T10;
-  //   4. lần chạy THỨ HAI trong tháng 10: đọc bảng của file T10, bảng đó chưa bao giờ có dòng T10
-  //      → KHONG_CO_THANG → tool tắc, báo "chưa có file cho tháng 10/2026" trong khi file T10 đang
-  //      mở ngay trước mặt.
-  // Mỏ neo nay chỉ đổi khi người chạy tay caiDat(...). Khi ấy nó mới thật sự là MỘT nguồn sự thật:
-  // chủ dự án chỉ phải sửa bảng link ở đúng một file, mãi mãi.
-  return { fileId: kq.id, thang: thang, dong: kq.dong, bangLink: mn.bang, tenMoNeo: mn.ten };
+  var ss = moBangTinh_(id, 'tháng ' + thang,
+    'Link đó lấy từ link_thang["' + thang + '"] trong CAU_HINH_VAN_HANH.json của máy chạy tool; sửa dòng đó rồi chạy lại.');
+  kiemTenFileKhopThang_(ss, thang, canhBao);
+  return { ss: ss, fileId: id, thang: thang };
 }
 
-/** Phần đuôi thông báo: chỉ THÁNG và SỐ DÒNG, tuyệt đối không có nội dung ô. */
-function moTaBangLink_(kq) {
-  var d = '';
-  if (kq.ky_cuoi) d += ' Dòng cuối bảng đang là kỳ ' + kq.ky_cuoi.thang + '/' + kq.ky_cuoi.nam +
-    ' (dòng ' + kq.ky_cuoi.dong + ').';
-  d += ' Bảng bắt đầu từ dòng ' + DONG_DAU_BANG_LINK + ' của sheet "' + TEN_SHEET_THONG_TIN_SHOP + '".';
-  d += ' Các kỳ đã khai báo: ' + ((kq.dangCo && kq.dangCo.length) ? kq.dangCo.join(', ') : '(chưa có kỳ nào)') + '.';
-  return d;
-}
-
-/** Chốt tháng được phép ghi: phải đúng tháng của NGÀY CHẠY trên máy chủ Google. */
-function chotThang_(thangGui) {
+/**
+ * Chốt tháng được phép ghi: phải đúng tháng của NGÀY CHẠY trên máy chủ Google (T-53).
+ * `choPhepKhac === true` CHỈ đến từ lượt chạy tay `--thang` (D-21b — rà soát tab "Tất cả" tháng trước):
+ * người chủ động chọn tháng, và hàng rào tên file (`kiemTenFileKhopThang_`) vẫn áp dụng. Nút 4 không gửi cờ này.
+ */
+function chotThang_(thangGui, choPhepKhac) {
   var nay = thangHienTai_();
   var xin = chuanHoaThang_(thangGui) || nay;
+  if (choPhepKhac === true) return xin;
   if (xin < nay) throw new Error('Từ chối ghi lùi: gói dữ liệu ghi cho tháng ' + xin +
     ' nhưng hôm nay đã sang tháng ' + nay + '. Đơn của tháng trước phải do người nhập tay vào file tháng đó.');
   if (xin > nay) throw new Error('Từ chối ghi trước: gói dữ liệu ghi cho tháng ' + xin +
@@ -634,8 +478,9 @@ function chotThang_(thangGui) {
 // ==================================================================== điểm vào Web App
 
 function doGet() {
-  return ContentService.createTextOutput(
-    'keodon Web App đang chạy. Đây là cổng nhận lệnh, phải gọi bằng POST kèm chuỗi bí mật.');
+  // Câu TRUNG TÍNH (C-6.1): không nêu tên tool, không nêu cách gọi, không nêu hành động nào. Người lạ mở
+  // link bằng trình duyệt không thu được gì; người trong nhà vẫn biết cửa còn sống.
+  return ContentService.createTextOutput('keodon Web App đang chạy.');
 }
 
 function doPost(e) {
@@ -646,54 +491,41 @@ function doPost(e) {
   } catch (err) {
     return traLoi_({ ok: false, loi: 'JSON_HONG', thongBao: 'Gói gửi lên không phải JSON hợp lệ' });
   }
-  // Kiểm chuỗi bí mật trong try: chưa cài đặt thì biMatDung_ ném lỗi, để lọt ra ngoài là Apps Script
-  // trả về một trang HTML lỗi, phía máy tính chỉ thấy 'không phải JSON' và không biết vì sao.
+
+  var hd = String(body.hanhDong || '').trim().toLowerCase();
+  var mongDoi = body.phienBanMongDoi == null ? '' : String(body.phienBanMongDoi);
+
+  // CỬA BÍ MẬT — đặt TRƯỚC mọi nhánh hành động, kể cả 'ping'. Gói giao user mang sẵn chuỗi nên user
+  // không phải gõ gì; ai không có gói thì không qua được cửa này.
+  // Kiểm trong try: chưa cài đặt thì `biMatDung_` NÉM lỗi, để lọt ra ngoài là Apps Script trả trang HTML
+  // 500 và phía máy chỉ thấy "không phải JSON" — đúng cái ca khó đoán nhất.
   try {
     if (!biMatDung_(body.token)) {
-      Logger.log('Từ chối một lệnh sai chuỗi bí mật');   // cố ý không in chuỗi nhận được
       return traLoi_({ ok: false, loi: 'SAI_BI_MAT', thongBao: 'Sai chuỗi bí mật' });
     }
   } catch (err) {
     return traLoi_({ ok: false, loi: 'CHUA_CAI_DAT', thongBao: String(err && err.message ? err.message : err) });
   }
 
-  var hd = String(body.hanhDong || '').trim().toLowerCase();
-  var mongDoi = body.phienBanMongDoi == null ? '' : String(body.phienBanMongDoi);
-
-  // Lệch bản thì TỪ CHỐI GHI. Chặn cả hai nhánh có ghi ('ghi' và 'xuLy'); 'ping' và 'doc' phải chạy
-  // được để người ta nhìn thấy con số lệch mà đi triển khai lại, chặn luôn cả hai thì chỉ còn lỗi
-  // "không gọi được". Chiều ngược lại (Google đang chạy bản CŨ, chưa có đoạn này) do phía máy tính bắt:
-  // nó so `phienBan` trong phản hồi trước khi gửi lệnh ghi — bản cũ không trả trường đó là đủ để dừng.
-  // Với 'xuLy' còn một chiều nữa: bản cũ không biết hành động này nên trả HANH_DONG_LA, phía máy tính
-  // dịch mã đó thành đúng câu "hãy Deploy lại" chứ không im lặng coi như đã ghi.
+  // Lệch bản thì TỪ CHỐI GHI. Chặn cả hai nhánh có ghi ('ghi' và 'xuLy'); 'ping' và 'doc' phải chạy được
+  // để người ta nhìn thấy con số lệch mà đi triển khai lại — chặn luôn cả hai thì chỉ còn lỗi "không gọi
+  // được". Chiều ngược lại (Google đang chạy bản CŨ, chưa có đoạn này) do phía máy tính bắt: nó so
+  // `phienBan` trong phản hồi trước khi gửi lệnh ghi — bản cũ không trả trường đó là đủ để dừng. Với
+  // 'xuLy' còn một chiều nữa: bản cũ không biết hành động này nên trả HANH_DONG_LA, và phía máy dịch mã
+  // đó thành đúng câu "hãy Deploy lại" chứ không im lặng coi như đã ghi.
   if ((hd === 'ghi' || hd === 'xuly') && mongDoi && mongDoi !== PHIEN_BAN) {
     return traLoi_({ ok: false, loi: 'LECH_PHIEN_BAN', thongBao: thongBaoLechPhienBan_(PHIEN_BAN, mongDoi) });
   }
 
   try {
     if (hd === 'ping') {
-      // 'ping' phải nói được MỎ NEO ĐANG Ở ĐÂU. Trước bản này nó chỉ trả daCaiMoNeo: true/false,
-      // nên khi tool báo "chưa có file cho tháng X" chủ dự án không có cách nào biết mình vừa thêm
-      // dòng vào đúng file hay nhầm file. Trả TÊN file và KỲ CUỐI của bảng link; tuyệt đối không
-      // trả id — id là đường vào file tiền (cùng lý do thuDinhTuyenThang cố ý không in id).
-      // Bọc try: mỏ neo hỏng thì 'ping' vẫn phải trả lời được, vì nó chính là phép thử để tìm ra hỏng.
-      var mn = null, loiMoNeo = '';
-      try { if (thuocTinh_(TT_MO_NEO)) mn = moNeo_(); }
-      catch (errMn) { loiMoNeo = String(errMn && errMn.message ? errMn.message : errMn); }
-      var kyMn = mn ? kyCuoiBangLink_(mn.bang) : null;
+      // 'ping' KHÔNG mở file nào: nó chỉ trả lời "bản trên Google là bản nào, đồng hồ máy chủ đang ở tháng
+      // nào". File tháng do máy chỉ định trong từng gói (D-42), Web App không giữ id nào để mà báo.
       return traLoi_({
         ok: true, hanhDong: 'ping', thangHienTai: thangHienTai_(),
-        daCaiMoNeo: !!thuocTinh_(TT_MO_NEO),
-        moNeo: mn ? {
-          tenFile: mn.ten,
-          kyCuoi: kyMn ? kyMn.nam + '-' + hai_(kyMn.thang) : null,
-          dongCuoi: kyMn ? kyMn.dong : null,
-          moTa: moTaMoNeo_(mn.ten, kyMn)
-        } : null,
-        loiMoNeo: loiMoNeo || null,
-        // Dấu vân tay bản dựng: `PHIEN_BAN` không phân biệt được hai bản dựng cùng số phiên bản,
-        // nên tự nó không trả lời được câu "bản trên Google là bản nào". Máy so ba thứ này với
-        // chính `src/` của nó rồi cảnh báo — cảnh báo thôi, không chặn, để không tắc buổi chạy thử.
+        // `PHIEN_BAN` không phân biệt được hai bản dựng cùng số phiên bản, nên tự nó không trả lời được
+        // câu "bản trên Google là bản nào". Máy so ba thứ dưới đây với chính `src/` của nó rồi cảnh báo —
+        // cảnh báo thôi, không chặn, để không tắc buổi chạy thử.
         banDung: (typeof BAN_DUNG !== 'undefined') ? BAN_DUNG : null,
         vanTay: vanTayBanDung_(),
         hamLoi: hamLoiCoMat_(),
@@ -714,24 +546,23 @@ function doPost(e) {
 // ==================================================================== hành động ĐỌC
 
 /**
- * body: { thang?, sheets?: [tên sheet], cauHinh? }
- * trả:  { ok, thang, fileId, tenFile, sheets: {ten: {dongCuoi, dongDau, cotNote, coTieuDeNote, maDon:{ma:dòng}}},
+ * body: { thang?, spreadsheetId, sheets?: [tên sheet], cauHinh? }
+ * trả:  { ok, thang, tenFile, sheets: {ten: {dongCuoi, dongDau, cotNote, coTieuDeNote, maDon:{ma:dòng}}},
  *         mapping: {ten, header, dong}, tonKho: {ten, header, dong}, canhBao }
  */
 function hanhDongDoc_(body, batDau) {
   var cfg = Config.tao(body.cauHinh || {});
   var thang = chuanHoaThang_(body.thang) || thangHienTai_();
-  var f = fileCuaThang_(thang);
-  var ss = moFileThang_(f);
   var canhBao = [];
+  var f = moFileTheoId_(body, thang, canhBao);
+  var ss = f.ss;
 
   var tenSheets = (body.sheets && body.sheets.length) ? body.sheets
     : Object.keys(cfg.gianHang).map(function (m) { return cfg.gianHang[m].sheet; });
 
-  canhBaoBangLink_(f.bangLink, thang, canhBao);
   var tuXa = docTuXa_(ss, cfg, tenSheets, thang, canhBao);
   return {
-    ok: true, hanhDong: 'doc', thang: thang, fileId: f.fileId, tenFile: ss.getName(),
+    ok: true, hanhDong: 'doc', thang: thang, tenFile: ss.getName(),
     sheets: tuXa.sheets, mapping: tuXa.mapping, tonKho: tuXa.tonKho,
     canhBao: canhBao, giay: (new Date().getTime() - batDau) / 1000
   };
@@ -829,7 +660,7 @@ function docTonKho_(ss, cfg, canhBao) {
 
 /**
  * body: {
- *   thang, lo: {so, tong},
+ *   thang, spreadsheetId, lo: {so, tong},
  *   lenh: [ { tenSheet, don: [ { maDon, ngay, tien:{H,I,J,K}, dong:[ {tenVietTat, soLuong, vang, note} ] } ] } ],
  *   mappingThem: [ [12 cột theo SCHEMA.MAPPING] ],
  *   cauHinh?
@@ -839,8 +670,7 @@ function docTonKho_(ss, cfg, canhBao) {
  */
 function hanhDongGhi_(body, batDau) {
   var cfg = Config.tao(body.cauHinh || {});
-  var thang = chotThang_(body.thang);
-  var f = fileCuaThang_(thang);
+  var thang = chotThang_(body.thang, body.choPhepThangKhac);
 
   var lenh = body.lenh || [];
   var tongDon = 0;
@@ -853,11 +683,11 @@ function hanhDongGhi_(body, batDau) {
   if (!khoa.tryLock(30000)) throw new Error('Một lệnh ghi khác đang chạy, thử lại sau vài giây');
 
   try {
-    var ss = moFileThang_(f);
     var k = cfg.keyin;
     var tk = { donGhi: 0, donDaCo: 0, dongGhi: 0, dongVang: 0, donGopO: 0, mappingThem: 0 };
     var viTri = {}, canhBao = [], thongBao = [], daDoVung = {};
-    canhBaoBangLink_(f.bangLink, thang, canhBao);
+    var f = moFileTheoId_(body, thang, canhBao);
+    var ss = f.ss;
 
     var daGhiSheet = {};
     lenh.forEach(function (l) {
@@ -875,10 +705,11 @@ function hanhDongGhi_(body, batDau) {
 
     if (body.mappingThem && body.mappingThem.length)
       tk.mappingThem = themDongMapping_(ss, body.mappingThem, canhBao);
+    tk.mappingToLai = toLaiMapping_(ss, canhBao);        // D-47: dòng CÓ trắng lại, dòng chưa CÓ vàng
 
     SpreadsheetApp.flush();
     return {
-      ok: true, hanhDong: 'ghi', thang: thang, fileId: f.fileId, tenFile: ss.getName(),
+      ok: true, hanhDong: 'ghi', thang: thang, tenFile: ss.getName(),
       lo: body.lo || null, thongKe: tk, viTri: viTri, canhBao: canhBao, thongBao: thongBao,
       giay: (new Date().getTime() - batDau) / 1000
     };
@@ -934,28 +765,25 @@ function ghiMotSheet_(sh, donDS, k, tk, viTri, canhBao, thongBao, daDoVung) {
   // MỘT CỬA DUY NHẤT cho mọi chỉ số cột mà hàm này sẽ ghi vào. Đặt ở ĐẦU hàm chứ không đặt ngay
   // trước từng lệnh ghi: đặt trước lệnh ghi thì lệnh ghi nào quên là lọt lệnh đó, và người sửa mã
   // sáu tuần sau không có cách nào biết mình vừa thêm một lệnh chưa qua cửa.
-  // Danh sách này phải phủ ĐÚNG mọi biến được dùng làm tham số cột của getRange trong hàm này.
-  ['cot_ngay', 'cot_ma_don', 'cot_ten_viet_tat', 'cot_so_luong',
-    'cot_tong_tien_sp', 'cot_mgg_shop', 'cot_chi_phi', 'cot_thue',
-    'cot_doanh_thu'].forEach(function (t) {
-      kiemCotDuocGhi_(k[t], 'keyin.' + t);
-    });
+  // Danh sách DỰNG TỪ `Config.KEYIN_COT`, KHÔNG gõ tay (C-6.3): bản trước liệt kê tay 9 khóa trong khi
+  // KEYIN_COT có 10 — `cot_nguon_don` lọt cửa. Dựng từ nguồn thì khóa cột thêm sau này tự động được canh,
+  // không phụ thuộc vào việc người sửa mã có nhớ thêm vào đây hay không.
+  Config.KEYIN_COT.forEach(function (t) {
+    kiemCotDuocGhi_(k[t], 'keyin.' + t);
+  });
 
   // Cột Note tính SỚM, ngay tại đây, để đi qua cùng một cửa. Nó đến từ hai nguồn và cả hai đều
   // chưa từng bị kiểm: cấu hình `keyin.cot_note` (Config.gs:71 chỉ đổi chữ sang số, không kiểm gì)
   // và `doCotNote_` tự dò theo dòng tiêu đề, thứ phụ thuộc hình dạng sheet của chủ shop chứ không
   // phụ thuộc mã. Đo 08/9/2026: sheet chỉ có tiêu đề tới cột L thì doCotNote_ trả về M, và
-  // ghiMotSheet_ ghi thẳng chữ `Note` vào M2, đúng ô đặt ARRAYFORMULA.
+  // ghiMotSheet_ ghi thẳng chữ `Note` vào M2 — tức đè lên cột công thức của chủ shop.
   var cotNoteDo = k.cot_note || doCotNote_(sh, k);
   var cNote = kiemCotDuocGhi_(cotNoteDo, k.cot_note ? 'keyin.cot_note' : 'cột Note tự dò (doCotNote_)',
     VIEC_GHI_GIA_TRI, cauSuaCotNote_(sh, k, cotNoteDo));
 
   // Cột Note không được trùng bất kỳ cột nào tool tự ghi: trùng cột C là ghi chữ ghi chú đè lên
   // mã đơn vừa ghi (đo được), khóa chống trùng chết và lần chạy sau nhân đôi toàn bộ đơn.
-  [['cot_ngay', k.cot_ngay], ['cot_ma_don', k.cot_ma_don], ['cot_ten_viet_tat', k.cot_ten_viet_tat],
-    ['cot_so_luong', k.cot_so_luong], ['cot_tong_tien_sp', k.cot_tong_tien_sp],
-    ['cot_mgg_shop', k.cot_mgg_shop], ['cot_chi_phi', k.cot_chi_phi], ['cot_thue', k.cot_thue],
-    ['cot_doanh_thu', k.cot_doanh_thu]].forEach(function (x) {
+  Config.KEYIN_COT.map(function (t) { return [t, k[t]]; }).forEach(function (x) {
       if (Number(cNote) === Number(x[1]))
         throw new Error('TỪ CHỐI GHI: cột Note đang trỏ vào cột ' + Utils.chuCot(cNote) +
           ', trùng keyin.' + x[0] + '. Sửa keyin.cot_note rồi chạy lại.');
@@ -1359,6 +1187,50 @@ function themDongMapping_(ss, dong, canhBao) {
   return bang.length;
 }
 
+/**
+ * D-47 (YC-29): TÔ LẠI TOÀN TAB Mapping sau mỗi lượt xử lý — dòng đã ghi CÓ ở cột `Xác nhận` → nền trắng
+ * (null = bỏ nền), dòng chưa CÓ → vàng `MAU_VANG`. MỘT lệnh `setBackgrounds` cho cả vùng, không tô từng ô
+ * (Apps Script chỉ có 6 phút; tô từng ô là nguyên nhân số một gây hết giờ). Idempotent: chạy mười lần ra
+ * cùng một kết quả. Không đụng dòng tiêu đề, không đổi giá trị, ghi chú hay định dạng chữ — chỉ nền.
+ *
+ * VÌ SAO CÓ: trước 12/9 trên Google chỉ `themDongMapping_` tô vàng dòng MỚI; user ghi CÓ xong dòng vẫn vàng
+ * vĩnh viễn, vì `MapListing.dongCanToVang` chỉ được gọi ở đường Excel (`Main.gs` → `kho.ghiMapping`). Một
+ * tab vàng rực thì màu vàng thôi hết nghĩa, và dòng thật sự cần người xem chìm lẫn vào đó.
+ *
+ * Luật "CÓ" dùng chung `MapListing.laCo` — cùng một luật với lớp 2, không chép lại lần thứ hai.
+ * @returns {number} số dòng đã tô lại (0 nếu không có sheet Mapping hoặc chưa dán MapListing.gs)
+ */
+function toLaiMapping_(ss, canhBao) {
+  var sh = sheetMapping_(ss);
+  if (!sh) return 0;
+  if (typeof MapListing === 'undefined' || typeof MapListing.laCo !== 'function') {
+    canhBao.push('Không tô lại sheet Mapping: dự án Apps Script chưa dán MapListing.gs (dấu vân tay bản dựng sẽ kêu đúng file này).');
+    return 0;
+  }
+  var het = sh.getLastRow();
+  if (het < 2) return 0;
+  var rong = Math.max(sh.getLastColumn(), SCHEMA.MAPPING.length);
+  var header = sh.getRange(1, 1, 1, rong).getDisplayValues()[0];
+  var cXN = 0;
+  for (var i = 0; i < header.length; i++) {
+    if (MapListing.tenCotChuan(header[i]) === 'Xác nhận') { cXN = i + 1; break; }
+  }
+  if (!cXN) {
+    canhBao.push('Sheet Mapping không có cột "Xác nhận" nên không tô lại được dòng CÓ / chưa CÓ.');
+    return 0;
+  }
+  var xn = sh.getRange(2, cXN, het - 1, 1).getDisplayValues();
+  var nen = [];
+  for (var r = 0; r < xn.length; r++) {
+    var mau = MapListing.laCo(xn[r][0]) ? null : MAU_VANG;
+    var hang = [];
+    for (var c = 0; c < rong; c++) hang.push(mau);
+    nen.push(hang);
+  }
+  sh.getRange(2, 1, het - 1, rong).setBackgrounds(nen);
+  return xn.length;
+}
+
 // ==================================================================== hành động XỬ LÝ (lớp 2 + lớp 3 + ghi)
 //
 // Toàn bộ khối này là phần được CHUYỂN TỪ MÁY USER SANG ĐÂY. Trước đây `node/chay-google-sheet.js`
@@ -1526,18 +1398,52 @@ function chiaKhoiDon_(donDS, toiDa) {
  * hanhDong = 'xuLy' — MỘT lần gọi làm hết: đọc file tháng → lớp 2 → lớp 3 → ghi.
  *
  * body: {
- *   thang, ngayGhi, lo: {so, tong},
+ *   thang, spreadsheetId, ngayGhi, lo: {so, tong},
  *   cacFile: [ { maGianHang, tenFile, dong: [ dòng đã qua lớp 1 ] } ],
  *   tenMoiTruocDo?          khóa các tên hàng mới đã nối vào Mapping ở lượt gọi trước (xem dungKeHoachGhi_)
  *   cauHinh?, nguongGiay?   (nguongGiay chỉ để test; chỉ được phép NHỎ HƠN NGUONG_GIAY_XU_LY)
  * }
- * trả: { ok, thang, fileId, tenFile, lo, thongKe:{donGhi,donDaCo,dongGhi,dongVang,donGopO,tenMoi,...},
+ * trả: { ok, thang, tenFile, lo, thongKe:{donGhi,donDaCo,dongGhi,dongVang,donGopO,tenMoi,...},
  *        xong, sheetDaXong, sheetConLai, khoaTenMoi, viTri, canhBao, thongBao, giay }
  */
+/**
+ * D-04 / YC-36: từ chối cả lượt nếu một file bị thả nhầm thư mục gian hàng.
+ *
+ * Luật nằm ở LÕI (`MapListing.soatThaNhamGian`) để vỏ Excel và vỏ Google dùng chung đúng một luật —
+ * hai bản chép tay sẽ lệch nhau, và lệch ở đúng chỗ này nghĩa là một vỏ chặn còn vỏ kia cho qua.
+ *
+ * Chặn là NÉM LỖI, không phải cảnh báo: ghi nửa gói rồi mới báo thì người ta phải đi dọn tay 432 dòng
+ * trong sổ tiền — đúng việc đã phải làm đêm 07/9/2026.
+ */
+function kiemGianHangCuaFile_(cacFile, tuXa, cfg, canhBao) {
+  if (typeof MapListing === 'undefined' || typeof MapListing.soatThaNhamGian !== 'function') {
+    canhBao.push('Không kiểm chéo được gian hàng: dự án Apps Script chưa dán bản MapListing.gs mới ' +
+      '(dấu vân tay bản dựng sẽ kêu đúng file này).');
+    return;
+  }
+  var bangMap = tuXa.mapping ? bangCuaSheet_(tuXa.mapping, 1) : null;
+  var kq = MapListing.soatThaNhamGian(cacFile.map(function (x) {
+    return {
+      maGianHang: x.maGianHang,
+      tenFile: x.tenFile || '(không rõ tên file)',
+      tenListing: (x.dong || []).map(function (d) { return d.tenListing; })
+    };
+  }), bangMap, cfg);
+
+  kq.canhBao.forEach(function (c) { canhBao.push(c); });
+  if (!kq.chan.length) return;
+
+  var e = new Error(kq.chan.map(function (x) {
+    return x.cau + ' (' + x.soKhac + '/' + x.khop + ' tên hàng của file đã khai ở gian kia, ' +
+      x.soMinh + '/' + x.khop + ' ở gian đang thả)';
+  }).join('\n'));
+  e.maKeodon = 'SAI_GIAN_HANG';
+  throw e;
+}
+
 function hanhDongXuLy_(body, batDau) {
   var cfg = Config.tao(body.cauHinh || {});
-  var thang = chotThang_(body.thang);          // T-53: không ghi lùi, không ghi trước
-  var f = fileCuaThang_(thang);
+  var thang = chotThang_(body.thang, body.choPhepThangKhac);   // T-53: không ghi lùi, không ghi trước
 
   var cacFile = body.cacFile || [];
   var demDon = {};
@@ -1549,9 +1455,9 @@ function hanhDongXuLy_(body, batDau) {
     throw new Error('Gói có ' + tongDon + ' đơn, quá ' + TOI_DA_DON_MOT_LO +
       ' đơn một lô. Vỏ Node phải chia lô nhỏ hơn.');
 
-  var ss = moFileThang_(f);
   var canhBao = [], thongBao = [];
-  canhBaoBangLink_(f.bangLink, thang, canhBao);
+  var f = moFileTheoId_(body, thang, canhBao);
+  var ss = f.ss;
 
   // ---- (1) ĐỌC — y hệt hành động 'doc', chỉ lấy sheet của các gian hàng có mặt trong gói ----
   var tenSheets = [];
@@ -1561,6 +1467,16 @@ function hanhDongXuLy_(body, batDau) {
   });
   if (!tenSheets.length) tenSheets = Object.keys(cfg.gianHang).map(function (m) { return cfg.gianHang[m].sheet; });
   var tuXa = docTuXa_(ss, cfg, tenSheets, thang, canhBao);
+
+  // ---- (1b) D-04: FILE CÓ ĐÚNG GIAN HÀNG KHÔNG (YC-36) ----
+  //
+  // Phép kiểm này PHẢI nằm ở đây chứ không nằm trên máy. Từ bản 2.4.0 đường chạy hằng ngày là `xuLy`,
+  // và bảng Mapping thật nằm trên Google — máy user không đọc được nó trước khi gọi. Bản trước có phép
+  // kiểm ở `node/chay-thu.js` nhưng trên đường Google nó chỉ chạy khi cấu hình khai `file_mapping_mau`,
+  // mà cấu hình thật không khai, nên đường chạy hằng ngày thực tế KHÔNG được canh.
+  //
+  // Ở đây thì Mapping đã nằm sẵn trong tay (`tuXa.mapping`), và vẫn còn trước mọi lệnh ghi.
+  kiemGianHangCuaFile_(cacFile, tuXa, cfg, canhBao);
 
   // ---- (2) LỚP 2 + LỚP 3 — hàm thuần, chưa chạm ô nào ----
   var goi = dungKeHoachGhi_(cfg, cacFile, tuXa, {
@@ -1608,6 +1524,7 @@ function hanhDongXuLy_(body, batDau) {
     }
 
     dongDauDauThoiGian_(ss, daGhiSheet, canhBao);
+    tk.mappingToLai = toLaiMapping_(ss, canhBao);        // D-47: dòng CÓ trắng lại, dòng chưa CÓ vàng
     SpreadsheetApp.flush();
 
     var xong = sheetConLai.length === 0;
@@ -1619,7 +1536,7 @@ function hanhDongXuLy_(body, batDau) {
     }
 
     return {
-      ok: true, hanhDong: 'xuLy', thang: thang, fileId: f.fileId, tenFile: ss.getName(),
+      ok: true, hanhDong: 'xuLy', thang: thang, tenFile: ss.getName(),
       lo: body.lo || null,
       // Con số báo về là số THẬT SỰ ĐÃ GHI trong lần gọi này (không phải số dự kiến), trừ `donDaCo`
       // gộp cả hai tầng khử trùng và `tenMoi` là số tên mới lớp 2 phát hiện.
@@ -1628,7 +1545,7 @@ function hanhDongXuLy_(body, batDau) {
         donDaCo: goi.thongKe.donDaCo + tk.donDaCo,
         donDaCoTang1: goi.thongKe.donDaCo, donDaCoTang2: tk.donDaCo,
         donTrungTrongGoi: goi.thongKe.donTrungTrongGoi,
-        tenMoi: goi.thongKe.tenMoi, mappingThem: tk.mappingThem,
+        tenMoi: goi.thongKe.tenMoi, mappingThem: tk.mappingThem, mappingToLai: tk.mappingToLai,
         donDuKien: goi.thongKe.donGhi, dongDuKien: goi.thongKe.dongGhi
       },
       mapTomTat: MapListing.tomTat(goi.map),
@@ -1648,14 +1565,16 @@ function hanhDongXuLy_(body, batDau) {
 // ==================================================================== chạy tay để kiểm tra
 
 /**
- * Chạy trong trình soạn thảo để xem bảng link tháng có đọc được không (không ghi gì).
- * Cố ý KHÔNG in id file: log của Apps Script ai xem cũng được, còn id là đường vào file tiền thật.
+ * Chạy tay trong trình soạn thảo: thử mở MỘT file tháng theo link/ID và xem tên file có khớp tháng không
+ * (không ghi gì). Cố ý KHÔNG in id ra log — log Apps Script ai xem cũng được, id là đường vào file tiền.
+ *   thuMoFileThang('<link file tháng>', '2026-10')
  */
-function thuDinhTuyenThang() {
-  var thang = thangHienTai_();
-  var f = fileCuaThang_(thang);
-  var tin = 'Bản ' + PHIEN_BAN + ' · tháng ' + thang + ' → "' +
-    moFileThang_(f).getName() + '" (dòng ' + f.dong + ')';
+function thuMoFileThang(linkHoacId, thang) {
+  var th = chuanHoaThang_(thang) || thangHienTai_();
+  var canhBao = [];
+  var f = moFileTheoId_({ spreadsheetId: linkHoacId }, th, canhBao);
+  var tin = 'Bản ' + PHIEN_BAN + ' · tháng ' + th + ' → "' + f.ss.getName() + '"' +
+    (canhBao.length ? ' · ' + canhBao.join(' · ') : ' · tên file khớp tháng');
   Logger.log(tin);
   return tin;
 }
@@ -1701,9 +1620,9 @@ function vanTayBanDung_() {
  * Băm bắt được "file này khác bản trên máy". Danh sách hàm bắt được thứ khác: bản dán lên là bản
  * TRƯỚC KHI có tính năng đó. Hai phép độc lập nhau, và ca hỏng thật thường rơi vào cả hai.
  *
- * `camMaVanCo` là chiều ngược lại, quan trọng không kém: `capNhatMoNeo_` đã bị bỏ vì nó dời mỏ neo
- * sang file tháng mới, mà bảng link của file đó dừng ở tháng trước — lần chạy sau tắc `KHONG_CO_THANG`.
- * Nó CÒN trên Google nghĩa là bản dán lên cũ hơn, và cái bẫy đó vẫn đang giăng.
+ * `camMaVanCo` là chiều ngược lại, quan trọng không kém: cả cụm mỏ neo / bảng link trên Google / chuỗi
+ * bí mật đã bị bỏ hẳn (D-42, D-43). Còn hàm nào trong số đó trên Google nghĩa là bản dán lên cũ hơn bản
+ * trên máy, và cái bẫy cũ vẫn đang giăng — phải kêu đúng tên hàm để người dán biết dán lại file nào.
  */
 /**
  * Viết `typeof <tên>` thẳng cho từng hàm, KHÔNG tra động qua `this[ten]`: `this` chỉ là đối tượng
@@ -1718,35 +1637,49 @@ function hamLoiCoMat_() {
   xet('chepCongThucXuong_', typeof chepCongThucXuong_);
   xet('cauDauThoiGian_', typeof cauDauThoiGian_);
   xet('ghiDauThoiGian_', typeof ghiDauThoiGian_);
-  xet('moNeo_', typeof moNeo_);
-  xet('kyCuoiBangLink_', typeof kyCuoiBangLink_);
   xet('phanLoaiLoiMoFile_', typeof phanLoaiLoiMoFile_);
-  xet('moFileThang_', typeof moFileThang_);
+  xet('moFileTheoId_', typeof moFileTheoId_);
+  xet('kiemTenFileKhopThang_', typeof kiemTenFileKhopThang_);
+  xet('toLaiMapping_', typeof toLaiMapping_);
   xet('kiemCotDuocGhi_', typeof kiemCotDuocGhi_);
   xet('doCotNote_', typeof doCotNote_);
   xet('hanhDongXuLy_', typeof hanhDongXuLy_);
+  // Hàm của bản CŨ (mỏ neo · bảng link trên Google · chuỗi bí mật). Còn trên Google nghĩa là bản dán lên
+  // cũ hơn bản trên máy — và cái bẫy mỏ neo cùng cửa bí mật vẫn đang giăng ở đó.
   if (typeof capNhatMoNeo_ === 'function') camMaVanCo.push('capNhatMoNeo_');
+  if (typeof moNeo_ === 'function') camMaVanCo.push('moNeo_');
+  if (typeof fileCuaThang_ === 'function') camMaVanCo.push('fileCuaThang_');
+  if (typeof bangLinkThang_ === 'function') camMaVanCo.push('bangLinkThang_');
+  if (typeof biMatDung_ === 'function') camMaVanCo.push('biMatDung_');
+  if (typeof caiDat === 'function') camMaVanCo.push('caiDat');
   return { co: co, thieu: thieu, camMaVanCo: camMaVanCo };
 }
 
 function thuXuLyRong() {
-  // `typeof <tên chưa khai báo>` là biểu thức DUY NHẤT không ném ReferenceError trong JavaScript —
-  // đó là lý do dùng typeof ở đây thay vì thử gọi hàm rồi bắt lỗi.
+  // `typeof <tên chưa khai báo>` là biểu thức DUY NHẤT không ném ReferenceError trong JavaScript — đó là
+  // lý do dùng typeof ở đây thay vì thử gọi hàm rồi bắt lỗi.
+  //
+  // C-6.4: ĐẾM ĐỦ 11 FILE. Bản trước chỉ đếm 7 rồi in "đủ 7 file lõi", câu đó đọc như một lời bảo đảm đã
+  // dán đủ — đúng chỗ người dán tay sẽ tin nhầm. Bằng chứng dán ĐÚNG BẢN vẫn là mã bản dựng, không phải
+  // con số file: thiếu file thì kêu tên file, dán nhầm bản cũ thì lệch mã bản dựng.
+  var can = [
+    ['Utils.gs', typeof Utils], ['Schema.gs', typeof SCHEMA], ['CaiDat.gs', typeof CaiDat],
+    ['Config.gs', typeof Config], ['DanhMuc.gs', typeof DanhMuc], ['MapListing.gs', typeof MapListing],
+    ['Normalize.gs', typeof Normalize], ['KeyIn.gs', typeof KeyIn], ['Main.gs', typeof chayDongBo],
+    ['TaoThangMoi.gs', typeof TaoThangMoi]
+  ];
   var thieu = [];
-  if (typeof Utils === 'undefined') thieu.push('Utils.gs');
-  if (typeof SCHEMA === 'undefined') thieu.push('Schema.gs');
-  if (typeof CaiDat === 'undefined') thieu.push('CaiDat.gs');
-  if (typeof Config === 'undefined') thieu.push('Config.gs');
-  if (typeof DanhMuc === 'undefined') thieu.push('DanhMuc.gs');
-  if (typeof MapListing === 'undefined') thieu.push('MapListing.gs');
-  if (typeof Normalize === 'undefined') thieu.push('Normalize.gs');
+  for (var i = 0; i < can.length; i++) if (can[i][1] === 'undefined') thieu.push(can[i][0]);
+  var co = can.length - thieu.length + 1;          // +1: chính file này đang chạy
   var hl = hamLoiCoMat_();
-  var dau = ' · bản dựng ' + ((typeof BAN_DUNG !== 'undefined') ? BAN_DUNG : '(chưa có dấu vân tay)');
+  var dau = ' · bản dựng ' + ((typeof BAN_DUNG !== 'undefined') ? BAN_DUNG : '(chưa có dấu vân tay)') +
+    ' — bằng chứng dán ĐÚNG BẢN là mã này trùng var BAN_DUNG cuối src/ShellAppsScript.gs trên máy';
   if (hl.thieu.length) dau += ' · THIẾU HÀM LÕI: ' + hl.thieu.join(', ') + ' — bản dán lên cũ hơn bản trên máy';
   if (hl.camMaVanCo.length) dau += ' · CÒN HÀM ĐÃ BỎ: ' + hl.camMaVanCo.join(', ') + ' — bản dán lên cũ hơn bản trên máy';
   var tin = thieu.length
-    ? 'THIẾU FILE trong dự án Apps Script: ' + thieu.join(', ') + ' — hành động xuLy sẽ hỏng. Dán nốt rồi Deploy lại.' + dau
-    : 'Bản ' + PHIEN_BAN + ' · đủ 7 file lõi · hành động xuLy dùng được.' + dau;
+    ? 'THIẾU FILE trong dự án Apps Script (mới thấy ' + co + '/11): ' + thieu.join(', ') +
+      ' — dán nốt rồi Deploy → Manage deployments → New version.' + dau
+    : 'Bản ' + PHIEN_BAN + ' · đủ 11/11 file .gs · hành động xuLy dùng được.' + dau;
   Logger.log(tin);
   return tin;
 }
@@ -1761,6 +1694,6 @@ function chayBoTest() {
   return 'Tổng ' + kq.length + ' · hỏng ' + hong.length;
 }
 
-var VAN_TAY_SHELL = 'ed708598';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_SHELL = '346c1fb5';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
 
-var BAN_DUNG = 'bf97940bfccf';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay
+var BAN_DUNG = '8f02bd753878';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay

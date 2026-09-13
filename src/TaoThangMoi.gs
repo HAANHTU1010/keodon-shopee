@@ -248,7 +248,7 @@ var TaoThangMoi = (function () {
   /**
    * ĐO vùng công thức của một sheet TRƯỚC và SAU khi xóa `dCuoi-3` dòng đầu.
    * Xóa hẳn dòng thì các dòng dưới DỒN LÊN: ô công thức không mất, chỉ đổi số dòng.
-   * Đây là số liệu để chỉ tiêu nghiệm thu N-10 chấm, và để thấy vùng công thức bị ăn mòn bao nhiêu.
+   * Đây là số liệu để chỉ tiêu nghiệm thu TM-10 chấm, và để thấy vùng công thức bị ăn mòn bao nhiêu.
    */
   function doVungCongThuc(ss, cotCongThuc, dCuoi) {
     var d = {};
@@ -712,7 +712,7 @@ var TaoThangMoi = (function () {
 
     // ---- B3: dọn sheet gian hàng ----
     var ttB3 = [];
-    kq.doc.vungCongThuc = {};       // số ô công thức từng cột, TRƯỚC và SAU khi xóa dòng — chỉ tiêu N-10 chấm trên đây
+    kq.doc.vungCongThuc = {};       // số ô công thức từng cột, TRƯỚC và SAU khi xóa dòng — chỉ tiêu TM-10 chấm trên đây
     /** Ô gõ tay nằm DƯỚI khối đơn: tool cố ý KHÔNG xóa tới đó, phải báo để người xử lý tay. */
     function baoOLac(t, oLac, dCuoi) {
       if (!oLac || !oLac.length) return;
@@ -924,4 +924,4 @@ var TaoThangMoi = (function () {
   };
 })();
 
-var VAN_TAY_TAOTHANGMOI = '6eb86bd5';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_TAOTHANGMOI = 'f9013fb6';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

@@ -139,7 +139,9 @@ var Config = (function () {
     return g;
   }
 
-  return { tao: tao, traTrangThai: traTrangThai, gianHang: gianHang, TRANG_THAI_CHUAN: TRANG_THAI_CHUAN, CHE_DO_CONG_THUC: CHE_DO_CONG_THUC };
+  // KEYIN_COT xuất ra để tầng ghi (`ghiMotSheet_` trong ShellAppsScript.gs) dựng danh sách cửa TỪ ĐÂY,
+  // không gõ tay: thêm khóa cột ở đây là hàng rào tự động canh khóa đó (C-6.3).
+  return { tao: tao, traTrangThai: traTrangThai, gianHang: gianHang, TRANG_THAI_CHUAN: TRANG_THAI_CHUAN, CHE_DO_CONG_THUC: CHE_DO_CONG_THUC, KEYIN_COT: KEYIN_COT.slice() };
 })();
 
-var VAN_TAY_CONFIG = '1d11db07';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_CONFIG = '427a4962';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

@@ -1,5 +1,5 @@
 /**
- * test-tao-thang-moi.js — BỘ NGHIỆM THU 12 CHỈ TIÊU N-1…N-12 của tính năng "tạo file tháng mới"
+ * test-tao-thang-moi.js — BỘ NGHIỆM THU 12 CHỈ TIÊU TM-01…TM-12 của tính năng "tạo file tháng mới"
  * (`01_TAI_LIEU/DAC_TA_TAO_FILE_THANG_MOI.md` mục 9.2), chạy được bằng một lệnh và tự chấm.
  *
  *   node node/test-tao-thang-moi.js [--thu-muc <thư mục tạm>]
@@ -11,7 +11,7 @@
  *   3. So kết quả với `THANG-9-2026-KINH-DOANH_DA_SUA_CONG_THUC.xlsx` (bản user làm tay).
  * KHÔNG file nào trong `00_DAU_VAO` bị ghi — vỏ và kết quả đều nằm trong thư mục tạm.
  *
- * === VÌ SAO N-10 ĐƯỢC VIẾT LẠI ===
+ * === VÌ SAO TM-10 ĐƯỢC VIẾT LẠI ===
  * Bản cũ khẳng định *"`E4`,`F4`,`M4`,`N4` là ARRAYFORMULA"* — tức **đúng một ô mỗi cột**.
  * Chỉ tiêu đó mã hóa luôn một giả định sai, nên tool ghi một ô ARRAYFORMULA và chỉ tiêu vẫn ĐẠT,
  * trong khi file sinh ra mất sạch công thức từ dòng 5 xuống. Số đo cùng ngày:
@@ -25,7 +25,7 @@
  * Bản mới đo đúng thứ quan trọng: **số dòng có công thức DÙNG ĐƯỢC ở mỗi cột, và dòng cuối cùng
  * còn công thức** — chi tiết ba vế ở `kiemN10()`. Đây KHÔNG phải nới test: bản cũ chỉ cần 1 ô là
  * qua, bản mới bắt tool chứng minh nó **không đánh rơi một ô công thức nào** ngoài đúng số dòng
- * đã xóa, trên cả 16 cột của 4 sheet. Bài `doiChungAm()` dựng lại đúng file lỗi cũ và bắt N-10
+ * đã xóa, trên cả 16 cột của 4 sheet. Bài `doiChungAm()` dựng lại đúng file lỗi cũ và bắt TM-10
  * mới phải KÊU — nếu không kêu thì bài test này cũng vô dụng như bản cũ.
  */
 const fs = require('fs');
@@ -46,14 +46,14 @@ const TMP = path.resolve(thamSo('--thu-muc', process.env.THU_MUC_TAM || path.joi
 const GIAN_HANG = ['Shopee mall', 'Offood', 'Importmart', 'Babyiu'];
 const COT_CT = ['E', 'F', 'M', 'N'];
 /**
- * SÀN của N-10: mỗi cột công thức phải còn ít nhất ngần này dòng dùng được.
+ * SÀN của TM-10: mỗi cột công thức phải còn ít nhất ngần này dòng dùng được.
  * Vì sao 100 chứ không phải 300 (con số BA nêu ở `05_GIAO_VIEC_DEV_v2.4.md` mục 4):
  *   300 là ngưỡng "đủ chỗ cho một tháng bán hàng" — thứ **tool không tạo ra được**, vì tool không
  *   tự viết công thức. Vùng công thức dài bao nhiêu là do chủ shop kéo tay tới đâu: đo tháng 8,
  *   `Importmart` chỉ có 169 ô mỗi cột, `Babyiu` 302 ô. Bắt tool phải ra 300 dòng là bắt nó đi bịa
  *   công thức — đúng thứ vừa gây ra lỗi này.
  *   Việc "vùng còn đủ chỗ cho tháng tới không" là một CẢNH BÁO (lớp cảnh báo vùng công thức),
- *   không phải điều kiện đạt của N-10. N-10 chấm cái tool chịu trách nhiệm: **không làm mất ô nào
+ *   không phải điều kiện đạt của TM-10. TM-10 chấm cái tool chịu trách nhiệm: **không làm mất ô nào
  *   ngoài số dòng đã xóa**, và **không bao giờ để một cột tụt về một-hai ô** như bản cũ (1 ô).
  */
 const SAN_DONG_CT = 100;
@@ -178,10 +178,10 @@ function docGiaTri(anh, sheet, r, chu) {
 function so(v) { const n = Number(v); return isNaN(n) ? null : n; }
 function vn(n) { return Number(n).toLocaleString('vi-VN', { maximumFractionDigits: 2 }); }
 
-// ---------------------------------------------------------------- N-10 (bản viết lại)
+// ---------------------------------------------------------------- TM-10 (bản viết lại)
 
 /**
- * Chỉ tiêu N-10 mới. Ba vế, cả ba đều là số đo, không vế nào nói "là ARRAYFORMULA":
+ * Chỉ tiêu TM-10 mới. Ba vế, cả ba đều là số đo, không vế nào nói "là ARRAYFORMULA":
  *
  *  (a) `H3:L3` đúng `SUM(x4:x2000)` và không còn dòng đơn nào từ `A4`  — giữ nguyên vế cũ.
  *  (b) BẢO TOÀN: với mỗi cột E, F, M, N, `số ô công thức SAU == số ô TRƯỚC − số dòng tool đã xóa`.
@@ -228,7 +228,7 @@ async function chayNghiemThu() {
   const fileVo = path.join(TMP, 'T9_VO_RONG.xlsx');
   const fileRa = path.join(TMP, 'T9_TOOL_SINH.xlsx');
 
-  console.log('NGHIỆM THU TẠO FILE THÁNG MỚI — 12 chỉ tiêu N-1…N-12 (DAC_TA mục 9.2)');
+  console.log('NGHIỆM THU TẠO FILE THÁNG MỚI — 12 chỉ tiêu TM-01…TM-12 (DAC_TA mục 9.2)');
   console.log('  tháng cũ  : ' + FILE_CU);
   console.log('  thư mục tạm: ' + TMP);
 
@@ -256,11 +256,11 @@ async function chayNghiemThu() {
   const phep = [];
   const them = (ma, ten, dat, so) => phep.push({ ma, ten, dat: !!dat, so });
 
-  // N-1 — số dòng khối nhập đầu kỳ
-  them('N-1', 'Số dòng khối nhập đầu kỳ ở `Tổng nhập`', khoi.ds.length === 76,
+  // TM-01 — số dòng khối nhập đầu kỳ
+  them('TM-01', 'Số dòng khối nhập đầu kỳ ở `Tổng nhập`', khoi.ds.length === 76,
     `tool ${khoi.ds.length} dòng · bản tay 75 · danh mục tháng 8 có ${dm.length} mã`);
 
-  // N-2 — tồn đầu kỳ từng mã
+  // TM-02 — tồn đầu kỳ từng mã
   const theoTen = {};
   khoi.ds.forEach(d => { theoTen[d.tenVietTat.trim().toLowerCase()] = d.ton; });
   let khop = 0; const lech2 = [];
@@ -269,39 +269,39 @@ async function chayNghiemThu() {
     if (v != null && Math.abs(v - m.ton) < 1e-9) khop++;
     else lech2.push(m.tenVietTat + ': ' + v + ' ≠ ' + m.ton);
   });
-  them('N-2', 'Tồn đầu kỳ từng mã khớp `Tổng tồn kho`!H tháng 8', khop === dm.length,
+  them('TM-02', 'Tồn đầu kỳ từng mã khớp `Tổng tồn kho`!H tháng 8', khop === dm.length,
     `${khop}/${dm.length} mã khớp` + (lech2.length ? ' · lệch: ' + lech2.slice(0, 3).join(' · ') : ''));
 
-  // N-3 — giá trị khối đầu kỳ
+  // TM-03 — giá trị khối đầu kỳ
   const moc = kq.ke.doc.giaTriTonCuoi;
   const d3 = khoi.tongI - moc;
-  them('N-3', 'SUM(I4:I' + (3 + khoi.ds.length) + ') == `Tổng tồn kho`!K1 tháng 8', Math.abs(d3) < 1,
+  them('TM-03', 'SUM(I4:I' + (3 + khoi.ds.length) + ') == `Tổng tồn kho`!K1 tháng 8', Math.abs(d3) < 1,
     `${vn(khoi.tongI)} vs ${vn(moc)} · lệch ${d3.toFixed(4)} đ (ngưỡng < 1 đ)`);
 
-  // N-4 — Ngày nhập trống 100%
-  them('N-4', 'Cột `Ngày nhập` của khối đầu kỳ trống 100%', khoi.dongCoNgay.length === 0,
+  // TM-04 — Ngày nhập trống 100%
+  them('TM-04', 'Cột `Ngày nhập` của khối đầu kỳ trống 100%', khoi.dongCoNgay.length === 0,
     `${khoi.dongCoNgay.length} ô có ngày`);
 
-  // N-5 — danh sách sheet
+  // TM-05 — danh sách sheet
   const sCu = anhCu.tenSheet, sMoi = anhSau.tenSheet;
   const themSheet = sMoi.filter(t => sCu.indexOf(t) < 0);
   const thieuSheet = sCu.filter(t => sMoi.indexOf(t) < 0);
-  them('N-5', 'Danh sách sheet = tháng cũ + đúng một `Mapping_san_pham`',
+  them('TM-05', 'Danh sách sheet = tháng cũ + đúng một `Mapping_san_pham`',
     thieuSheet.length === 0 && themSheet.length === 1 && themSheet[0] === 'Mapping_san_pham',
     `${sCu.length} → ${sMoi.length} sheet · thêm [${themSheet.join(', ')}] · thiếu [${thieuSheet.join(', ')}]`);
 
-  // N-6 — Lợi nhuận dòng 5
+  // TM-06 — Lợi nhuận dòng 5
   const dong5 = [];
   for (let c = chiSoCot('D'); c <= chiSoCot('L'); c++) dong5.push(so(docO(anhSau, 'Lợi nhuận', 5, chuCot(c))));
   const mong5 = [9, 8, 7, 6, 5, 4, 3, 2, 1];
-  them('N-6', '`Lợi nhuận` dòng 5 = 9,8,7,6,5,4,3,2,1', dong5.join(',') === mong5.join(','), dong5.join(','));
+  them('TM-06', '`Lợi nhuận` dòng 5 = 9,8,7,6,5,4,3,2,1', dong5.join(',') === mong5.join(','), dong5.join(','));
 
-  // N-7 — ô gộp năm dòng 4
+  // TM-07 — ô gộp năm dòng 4
   const gop4 = (anhSau.sheets['Lợi nhuận'].gopO || []).filter(g => g.r1 === 4 && g.r2 === 4 && g.c1 === chiSoCot('D'));
   const gopText = gop4.length ? gop4.map(g => 'D4:' + chuCot(g.c2) + '4').join(',') : '(không có)';
-  them('N-7', '`Lợi nhuận` ô gộp năm dòng 4 = D4:L4', gopText === 'D4:L4', gopText);
+  them('TM-07', '`Lợi nhuận` ô gộp năm dòng 4 = D4:L4', gopText === 'D4:L4', gopText);
 
-  // N-8 — cột E dòng 6→16 là giá trị cứng, bằng cột D tháng 8
+  // TM-08 — cột E dòng 6→16 là giá trị cứng, bằng cột D tháng 8
   let dat8 = 0; const lech8 = [];
   for (let r = 6; r <= 16; r++) {
     const conCT = docCT(anhSau, 'Lợi nhuận', r, 'E') != null;
@@ -310,25 +310,25 @@ async function chayNghiemThu() {
     if (!conCT && ((a == null && b == null) || (a != null && b != null && Math.abs(a - b) < 0.01))) dat8++;
     else lech8.push('E' + r + (conCT ? ' còn công thức' : `: ${b} ≠ ${a}`));
   }
-  them('N-8', '`Lợi nhuận` cột E dòng 6→16 là giá trị cứng, bằng cột D tháng 8', dat8 === 11,
+  them('TM-08', '`Lợi nhuận` cột E dòng 6→16 là giá trị cứng, bằng cột D tháng 8', dat8 === 11,
     `${dat8}/11 dòng` + (lech8.length ? ' · ' + lech8.join(' · ') : ''));
 
-  // N-9 — năm công thức cột D, sáu ô phải trống
+  // TM-09 — năm công thức cột D, sáu ô phải trống
   const coCT = [6, 7, 8, 11, 12].filter(r => docCT(anhSau, 'Lợi nhuận', r, 'D') != null);
   const conSot = [9, 10, 13, 14, 15, 16].filter(r => {
     const v = docGiaTri(anhSau, 'Lợi nhuận', r, 'D');
     return !(v == null || v === '') || docCT(anhSau, 'Lợi nhuận', r, 'D') != null;
   });
-  them('N-9', '5 công thức D6,D7,D8,D11,D12; D9,D10,D13…D16 trống', coCT.length === 5 && conSot.length === 0,
+  them('TM-09', '5 công thức D6,D7,D8,D11,D12; D9,D10,D13…D16 trống', coCT.length === 5 && conSot.length === 0,
     `${coCT.length}/5 ô có công thức · ${conSot.length} ô phải-trống còn nội dung`);
 
-  // N-10 (VIẾT LẠI) — vùng công thức từng dòng của 4 sheet gian hàng
+  // TM-10 (VIẾT LẠI) — vùng công thức từng dòng của 4 sheet gian hàng
   const kq10 = kiemN10(anhSau, demVo, demSinh, demThat, kq.ke.doc.vungCongThuc);
-  them('N-10', 'Sheet gian hàng: `H3:L3` là `SUM(x4:x2000)` · không còn đơn từ `A4` · mỗi cột E/F/M/N ' +
+  them('TM-10', 'Sheet gian hàng: `H3:L3` là `SUM(x4:x2000)` · không còn đơn từ `A4` · mỗi cột E/F/M/N ' +
     `BẢO TOÀN (số ô sau = số ô trước − số dòng đã xóa, sai số 0) và còn ≥ ${SAN_DONG_CT} dòng công thức, dòng cuối ≥ ${3 + SAN_DONG_CT}`,
     kq10.dat, kq10.chiTiet);
 
-  // N-11 — không lỗi ở dòng tổng
+  // TM-11 — không lỗi ở dòng tổng
   const oKiem = [['Shopee mall', 3, 'H'], ['Shopee mall', 3, 'L'], ['Offood', 3, 'L'], ['Importmart', 3, 'L'],
   ['Babyiu', 3, 'L'], ['Đơn ngoài', 3, 'L'], ['Đơn ngoài', 3, 'M'], ['Tiktok', 3, 'K'],
   ['Tổng nhập', 2, 'I'], ['Tổng tồn kho', 1, 'K'], ['Lợi nhuận', 6, 'D'], ['Lợi nhuận', 7, 'D'],
@@ -339,14 +339,14 @@ async function chayNghiemThu() {
     if (typeof v === 'string' && /^#/.test(v.trim())) loi11.push(`${x[0]}!${x[2]}${x[1]}=${v}`);
     else if (so(v) == null) loi11.push(`${x[0]}!${x[2]}${x[1]}=${v === null ? '(rỗng)' : '"' + v + '"'}`);
   });
-  them('N-11', 'Không `#REF!`/`#N/A`/`#VALUE!`, mọi dòng tổng ra số', loi11.length === 0,
+  them('TM-11', 'Không `#REF!`/`#N/A`/`#VALUE!`, mọi dòng tổng ra số', loi11.length === 0,
     loi11.length ? loi11.join(' · ') : `${oKiem.length}/${oKiem.length} ô sạch`);
 
-  // N-12 — Mapping_san_pham
+  // TM-12 — Mapping_san_pham
   const lop = napLoiTaoThangMoi();
   const mapCu = kq.ke.doc.mapping ? lop.TaoThangMoi.demDongMapping(kq.ke.doc.mapping.bang) : 0;
   const mapMoi = lop.TaoThangMoi.demDongMapping((lop.TaoThangMoi.docMapping(anhSau) || { bang: null }).bang);
-  them('N-12', '`Mapping_san_pham` số dòng bằng đúng bản tháng 8', mapMoi === mapCu,
+  them('TM-12', '`Mapping_san_pham` số dòng bằng đúng bản tháng 8', mapMoi === mapCu,
     `tháng mới ${mapMoi} dòng vs tháng 8 ${mapCu} dòng` + (mapCu === 0 ? ' (tháng 8 chưa có sheet này)' : ''));
 
   // ---- in bảng ----
@@ -406,7 +406,7 @@ async function kichBanConDon() {
       console.log(`| ${ten} | ${ch} | ${a.soO} ô (4→${a.dongCuoi}) | ${b.soO} ô (${b.dongDau}→${b.dongCuoi}) | ${dxoa >= 4 ? dxoa - 3 : 0} | ${t.soO} ô (4→${t.dongCuoi}) |`);
     }
   }
-  console.log('N-10 trên kịch bản X: ' + (n10.dat ? 'ĐẠT' : 'LỆCH') + ' · ' + n10.chiTiet);
+  console.log('TM-10 trên kịch bản X: ' + (n10.dat ? 'ĐẠT' : 'LỆCH') + ' · ' + n10.chiTiet);
   console.log('Công thức `Shopee mall`!E4 sau khi dồn: ' + mauMoi.slice(0, 90));
   console.log(`  → trỏ vào ĐÚNG dòng của chính nó ($D4): ${dungDong ? 'ĐÚNG' : 'SAI'}`);
   const dat = n10.dat && dungDong;
@@ -417,10 +417,10 @@ async function kichBanConDon() {
 // ---------------------------------------------------------------- đối chứng âm
 
 /**
- * ĐỐI CHỨNG ÂM — dựng lại đúng lỗi cũ trên file kết quả rồi bắt N-10 phải KÊU.
+ * ĐỐI CHỨNG ÂM — dựng lại đúng lỗi cũ trên file kết quả rồi bắt TM-10 phải KÊU.
  * Lỗi cũ: xóa nội dung `A4:O2000` (mất công thức từng dòng) rồi ghi MỘT ARRAYFORMULA vào
- * `E4`,`F4`,`M4`,`N4`. Chỉ tiêu N-10 bản cũ khẳng định *"E4/F4/M4/N4 là ARRAYFORMULA"* nên
- * vẫn chấm ĐẠT. Nếu bản N-10 mới cũng chấm ĐẠT thì nó vô dụng y như bản cũ — bài này chặn điều đó.
+ * `E4`,`F4`,`M4`,`N4`. Chỉ tiêu TM-10 bản cũ khẳng định *"E4/F4/M4/N4 là ARRAYFORMULA"* nên
+ * vẫn chấm ĐẠT. Nếu bản TM-10 mới cũng chấm ĐẠT thì nó vô dụng y như bản cũ — bài này chặn điều đó.
  */
 async function doiChungAm(demVo) {
   const nguon = path.join(TMP, 'T9_TOOL_SINH.xlsx');
@@ -447,8 +447,8 @@ async function doiChungAm(demVo) {
   console.log('| Sheet | ' + COT_CT.map(c => 'cột ' + c).join(' | ') + ' |');
   console.log('|---|' + COT_CT.map(() => '---|').join(''));
   for (const ten of GIAN_HANG) console.log('| ' + ten + ' | ' + COT_CT.map(c => `${dem[ten][c].soO} ô (dòng ${dem[ten][c].dongDau})`).join(' | ') + ' |');
-  console.log('N-10 bản CŨ ("E4/F4/M4/N4 là ARRAYFORMULA") trên file này: ĐẠT — 16/16 ô đúng là ARRAYFORMULA');
-  console.log('N-10 bản MỚI trên file này: ' + (kt.dat ? 'ĐẠT ← BÀI TEST VÔ DỤNG' : 'LỆCH ← đúng như phải thế'));
+  console.log('TM-10 bản CŨ ("E4/F4/M4/N4 là ARRAYFORMULA") trên file này: ĐẠT — 16/16 ô đúng là ARRAYFORMULA');
+  console.log('TM-10 bản MỚI trên file này: ' + (kt.dat ? 'ĐẠT ← BÀI TEST VÔ DỤNG' : 'LỆCH ← đúng như phải thế'));
   return { dat: !kt.dat };
 }
 
@@ -498,7 +498,7 @@ async function main() {
   const d = await doiChungAm(a.demVo);
   const hong = a.hongN + (x.dat ? 0 : 1) + (y.dat ? 0 : 1) + (d.dat ? 0 : 1);
   console.log('\n' + (hong === 0
-    ? 'TẤT CẢ ĐẠT — 12/12 chỉ tiêu N-1…N-12, kịch bản X, kịch bản Y và đối chứng âm.'
+    ? 'TẤT CẢ ĐẠT — 12/12 chỉ tiêu TM-01…TM-12, kịch bản X, kịch bản Y và đối chứng âm.'
     : hong + ' MỤC HỎNG.'));
   process.exit(hong === 0 ? 0 : 1);
 }

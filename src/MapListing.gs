@@ -370,8 +370,137 @@ var MapListing = (function () {
     return t;
   }
 
+
+  // ==================================================================== D-04: KIỂM CHÉO GIAN HÀNG
+  //
+  // File xuất Shopee KHÔNG có cột nào cho biết đơn thuộc gian hàng nào (xem `CaiDat.gs` danh sách cột:
+  // không có tên shop, không có mã shop, không có tên người bán). Thứ duy nhất nói lên gian hàng là
+  // THƯ MỤC người ta thả file vào — và thư mục thì kéo nhầm một cái là xong.
+  //
+  // Đêm 07/9/2026 chuyện đó xảy ra thật: một file của Tmart bị thả vào thư mục Importmart, 432 đơn chui
+  // vào sheet sai. Không có phép kiểm nào chặn, và phải đối chiếu tay mới lần ra.
+  //
+  // Dấu hiệu gián tiếp duy nhất còn lại: sheet `Mapping_san_pham` đã ghi mỗi tên listing thuộc gian nào.
+  // Đa số áp đảo tên hàng trong file thuộc một gian KHÁC thư mục đang thả, mà gian đang thả gần như
+  // không khớp gì, thì đó là thả nhầm.
+  //
+  // HAI ĐIỀU KIỆN, PHẢI ĐỦ CẢ HAI (YC-36):
+  //   · ≥ 80% tên hàng khớp được thuộc về MỘT gian khác
+  //   · < 20% tên hàng khớp được thuộc về gian đang thả
+  // Điều kiện thứ hai là thứ cứu những gian bán hàng chung nhau: hai gian cùng bán 30 mã giống nhau thì
+  // điều kiện một có thể đúng, nhưng điều kiện hai sẽ sai, và tool không chặn oan.
+  //
+  // KHÔNG ĐỦ DỮ LIỆU THÌ CHỈ CẢNH BÁO, VẪN GHI. Gian mới mở, Mapping còn trống, file chỉ vài dòng — chặn
+  // trong những ca đó là làm tool trở thành thứ cản đường. Thà bỏ sót còn hơn chặn oan: chặn oan vài lần
+  // là người ta tìm cách tắt phép kiểm đi, và thế là mất luôn cả những lần nó đúng.
+  var D04_TOI_THIEU = 5;      // dưới ngần này tên hàng khớp được thì không kết luận gì
+  var D04_TY_LE_KHAC = 0.8;   // ≥ 80% thuộc một gian khác
+  var D04_TY_LE_MINH = 0.2;   // < 20% thuộc gian đang thả
+
+  /**
+   * Chỉ mục "tên listing → mã gian hàng" lấy từ bảng Mapping. Dùng MỌI dòng, không cần `Xác nhận` = CÓ:
+   * dòng chưa xác nhận vẫn nói đúng listing đó xuất hiện ở gian nào, mà đó là tất cả những gì phép kiểm
+   * này cần. Đòi CÓ thì file của một gian vừa mở sẽ không khớp gì và phép kiểm thành vô dụng.
+   *
+   * Listing từng khai ở NHIỀU gian (hàng bán chung, hoặc Mapping đã bị một lần chạy nhầm làm bẩn) thì
+   * BỎ — không kết luận được gì từ nó. Không dòng nào khai gian hàng → trả null, vỏ bỏ qua phép kiểm.
+   */
+  function chiMucGianTheoListing(bangMapping, cfg) {
+    if (!bangMapping || !bangMapping.length) return null;
+    var head = (bangMapping[0] || []).map(function (h) { return tenCotChuan(h); });
+    var iTen = head.indexOf('Tên trên Shopee'), iGian = head.indexOf('Gian hàng');
+    if (iTen < 0 || iGian < 0) return null;
+    var gianCua = {};
+    for (var r = 1; r < bangMapping.length; r++) {
+      var hang = bangMapping[r] || [];
+      var ten = Utils.chuanHoaChuoi(hang[iTen]);
+      var g = maGian(cfg, hang[iGian]);
+      if (!ten || !g || !cfg.gianHang[g]) continue;
+      if (!gianCua[ten]) gianCua[ten] = {};
+      gianCua[ten][g] = 1;
+    }
+    var idx = {}, co = 0;
+    Object.keys(gianCua).forEach(function (t) {
+      var g = Object.keys(gianCua[t]);
+      if (g.length === 1) { idx[t] = g[0]; co++; }
+    });
+    return co ? idx : null;
+  }
+
+  /**
+   * Soát từng file xem có bị thả nhầm thư mục gian hàng không.
+   *
+   * @param {Array} cacFile  [{ maGianHang, tenFile, tenListing: [..] }] — `tenListing` có thể lặp, hàm tự khử
+   * @param {Array} bangMapping bảng Mapping 2 chiều (dòng 0 là tiêu đề)
+   * @param {Object} cfg
+   * @returns {{chan: Array, canhBao: Array}}  `chan` = phải DỪNG; `canhBao` = ghi tiếp nhưng nói cho biết
+   */
+  function soatThaNhamGian(cacFile, bangMapping, cfg) {
+    var ra = { chan: [], canhBao: [] };
+    if (cfg && cfg.chung && cfg.chung.canh_bao_gian_hang_la === false) return ra;   // cố ý tắt
+    var idx = chiMucGianTheoListing(bangMapping, cfg);
+    if (!idx) return ra;                       // Mapping chưa khai gian nào → không đoán bừa
+    (cacFile || []).forEach(function (x) {
+      var dem = {}, daXet = {}, khop = 0;
+      (x.tenListing || []).forEach(function (t) {
+        var k = Utils.chuanHoaChuoi(t);
+        if (!k || daXet[k] || !idx[k]) return;
+        daXet[k] = 1; khop++;
+        dem[idx[k]] = (dem[idx[k]] || 0) + 1;
+      });
+      var cuaMinh = dem[x.maGianHang] || 0;
+      var khac = null;
+      Object.keys(dem).forEach(function (g) {
+        if (g !== x.maGianHang && (khac === null || dem[g] > dem[khac])) khac = g;
+      });
+      if (!khac) return;                       // không gian nào khác có mặt → không có gì để nói
+      if (khop < D04_TOI_THIEU) {
+        // Có dấu hiệu nhưng chưa đủ số để kết luận. Nói một câu rồi ghi tiếp.
+        if (dem[khac] > cuaMinh) {
+          ra.canhBao.push('File "' + x.tenFile + '" chỉ khớp được ' + khop + ' tên hàng trong Mapping ' +
+            '(cần ' + D04_TOI_THIEU + ' để kết luận), trong đó ' + dem[khac] + ' tên thuộc gian ' +
+            tenGian_(cfg, khac) + ' chứ không phải ' + tenGian_(cfg, x.maGianHang) +
+            '. Tool VẪN GHI — kiểm lại xem file có đúng thư mục không.');
+        }
+        return;
+      }
+      var tyLeKhac = dem[khac] / khop;
+      var tyLeMinh = cuaMinh / khop;
+      if (tyLeKhac >= D04_TY_LE_KHAC && tyLeMinh < D04_TY_LE_MINH) {
+        ra.chan.push({
+          tenFile: x.tenFile, gianThat: khac, gianThuMuc: x.maGianHang,
+          khop: khop, soKhac: dem[khac], soMinh: cuaMinh,
+          cau: cauThaNhamGian(cfg, khac, x.maGianHang)
+        });
+      } else if (tyLeKhac >= D04_TY_LE_KHAC) {
+        // Đủ áp đảo nhưng gian đang thả cũng khớp kha khá → hai gian bán chung hàng. Không chặn.
+        ra.canhBao.push('File "' + x.tenFile + '": ' + dem[khac] + '/' + khop + ' tên hàng cũng có ở gian ' +
+          tenGian_(cfg, khac) + ', nhưng ' + cuaMinh + '/' + khop + ' có ở gian ' +
+          tenGian_(cfg, x.maGianHang) + ' nên tool không chặn (hai gian bán chung hàng).');
+      }
+    });
+    return ra;
+  }
+
+  function tenGian_(cfg, ma) {
+    var g = cfg && cfg.gianHang ? cfg.gianHang[ma] : null;
+    return g && g.ten ? g.ten : String(ma);
+  }
+
+  /** Nguyên văn câu báo thả nhầm (YC-36). Hai vỏ phải in CÙNG một câu. */
+  function cauThaNhamGian(cfg, gianThat, gianThuMuc) {
+    return 'FILE NÀY GIỐNG GIAN ' + tenGian_(cfg, gianThat) + ', ĐANG THẢ VÀO ' +
+      tenGian_(cfg, gianThuMuc) + ' — tool không ghi. Kéo file sang đúng thư mục rồi bấm lại.';
+  }
+
   return {
     GIAN_MOI: GIAN_MOI,
+    D04_TOI_THIEU: D04_TOI_THIEU,
+    D04_TY_LE_KHAC: D04_TY_LE_KHAC,
+    D04_TY_LE_MINH: D04_TY_LE_MINH,
+    chiMucGianTheoListing: chiMucGianTheoListing,
+    soatThaNhamGian: soatThaNhamGian,
+    cauThaNhamGian: cauThaNhamGian,
     LY_DO: LY_DO,
     maGian: maGian,
     khoa: khoa,
@@ -386,8 +515,9 @@ var MapListing = (function () {
     boSungTenMoi: boSungTenMoi,
     sangBang: sangBang,
     dongCanToVang: dongCanToVang,
+    laCo: laCo,
     tomTat: tomTat
   };
 })();
 
-var VAN_TAY_MAPLISTING = '4aa62129';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_MAPLISTING = 'f2bc43a1';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

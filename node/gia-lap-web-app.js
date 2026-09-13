@@ -1,7 +1,7 @@
 /**
  * gia-lap-web-app.js — WEB APP GIẢ, CHẠY HOÀN TOÀN NỘI BỘ (GV-v2.3 mục 2.4).
  *
- * Mục đích: test trọn luồng giai đoạn 2 khi chủ dự án chưa gửi link Web App và chuỗi bí mật.
+ * Mục đích: test trọn luồng giai đoạn 2 mà không cần mạng và không cần link Web App thật.
  *
  * KHÔNG mở cổng mạng, KHÔNG gọi ra ngoài. Mọi lời gọi `https` bị chặn lại trong tiến trình:
  * module này thay `require.cache['https']` bằng một bản giả, nên `node/gsheet-web-app.js`
@@ -11,26 +11,34 @@
  * ------------------------------------------------------------------ KIẾN TRÚC BA TẦNG
  *  Tầng 1 — MÁY TÍNH (mã thật, không đụng):  node/chay-google-sheet.js → node/gsheet-web-app.js
  *  Tầng 2 — ĐƯỜNG TRUYỀN (giả, ở đây):       shim `https` + bơm lỗi (302 · 500 · HTML đăng nhập ·
- *                                            hết giờ · đứt giữa chừng · lệch phiên bản)
+ *                                            401/403 · hết giờ · đứt giữa chừng · lệch phiên bản)
  *  Tầng 3 — APPS SCRIPT (mã thật, không đụng): src/ShellAppsScript.gs chạy trong Node nhờ bộ dịch vụ
  *                                            Google giả (SpreadsheetApp, PropertiesService,
  *                                            LockService, ContentService, Utilities, Logger)
  *
  * Nghĩa là: khi một bài test hỏng thì hỏng ở MÃ THẬT, không phải ở bản mô phỏng viết lại.
  *
- * BÍ MẬT: chuỗi bí mật chỉ đi trong thân gói POST. `sim.moiChuOiDaIn()` gom lại mọi chuỗi mà
- * hệ thống đã in/ném/trả về để test INV-7 quét.
+ * INV-7: `sim.moiChuoiDaIn()` gom lại mọi chuỗi mà hệ thống đã in / ném / trả về để test quét. Thứ phải
+ * không lộ: CHUỖI BÍ MẬT (D-43 sửa 13/9 — vẫn còn, chỉ là nạp sẵn trong gói), LINK Web App, link file
+ * tháng và ID file tháng.
+ *
+ * FILE THÁNG (D-42): mỗi `sim.khaiThang(thang)` dựng một file tháng có ID riêng và ghi link vào
+ * `sim.linkThang` — chính là khóa `link_thang` mà `sim.cauHinhMay()` đưa cho máy. Không còn bảng link
+ * trên Google, không mỏ neo, không SỔ LINK THÁNG.
  */
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { EventEmitter } = require('events');
 
 const SRC = path.join(__dirname, '..', 'src');
 
 // Các file .gs cần cho VỎ GOOGLE (tầng 3). Cố ý KHÔNG nạp tests/ để không phụ thuộc file đang sửa.
-const FILE_VO_GOOGLE = ['Utils.gs', 'Schema.gs', 'CaiDat.gs', 'Config.gs', 'ShellAppsScript.gs'];
+// Tám file mà 'xuLy' và 'ghi' cần. Có cả ba file lớp 2 vì D-47 (`toLaiMapping_`) gọi `MapListing.laCo`.
+const FILE_VO_GOOGLE = ['Utils.gs', 'Schema.gs', 'CaiDat.gs', 'Config.gs',
+  'DanhMuc.gs', 'MapListing.gs', 'Normalize.gs', 'ShellAppsScript.gs'];
 
 // Các file .gs cần cho LÕI phía máy tính (tầng 1 gọi tới).
 const FILE_LOI_MAY = ['Utils.gs', 'Schema.gs', 'CaiDat.gs', 'Config.gs', 'adapters/AdapterFileXuat.gs',
@@ -45,8 +53,13 @@ const HOST_CHUYEN_HUONG = 'https://script.googleusercontent.com/macros/echo?user
  * Ghép các file .gs rồi chạy trong một phạm vi riêng, trả về mọi tên `var`/`function` cấp cao nhất.
  * `moiTruong` trở thành biến trong phạm vi đó — đây là cách bơm dịch vụ Google giả vào mã thật.
  */
-function napGs(danhSachFile, moiTruong) {
-  const src = danhSachFile.map((f) => fs.readFileSync(path.join(SRC, f), 'utf8')).join('\n;\n');
+/**
+ * @param {Function} [suaNguon] đổi mã nguồn TRƯỚC khi nạp — chỉ dùng cho ĐỐI CHỨNG ÂM: dựng lại đúng một
+ *   khuyết tật đã chữa, rồi chứng minh phép chấm bắt được nó. Đừng dùng để làm test dễ qua.
+ */
+function napGs(danhSachFile, moiTruong, suaNguon) {
+  let src = danhSachFile.map((f) => fs.readFileSync(path.join(SRC, f), 'utf8')).join('\n;\n');
+  if (suaNguon) src = suaNguon(src);
   const ten = new Set();
   for (const m of src.matchAll(/^(?:var|function)\s+([A-Za-z_$][\w$]*)/gm)) ten.add(m[1]);
   const khoa = Object.keys(moiTruong || {});
@@ -388,6 +401,11 @@ const HTML_QUA_GIO = [
   '</body></html>'
 ].join('\n');
 
+const HTML_403 = [
+  '<!DOCTYPE html><html><head><title>Error 403</title></head><body>',
+  '<div>You do not have permission to access this resource.</div></body></html>'
+].join('\n');
+
 const HTML_500 = [
   '<!DOCTYPE html><html><head><title>Error</title></head><body>',
   '<div>Sorry, unable to open the file at this time.</div>',
@@ -402,29 +420,25 @@ let DEM_SIM = 0;
  * Dựng một Web App giả hoàn chỉnh.
  *
  * @param {Object} tc
- *   biMat        chuỗi bí mật đã "cài bằng caiDat()" phía Apps Script
  *   ngay         mốc thời gian máy chủ Google, ISO hoặc Date (mặc định 2026-09-08T03:00:00Z)
- *   khongCaiDat  true → chưa chạy caiDat(), để thử nhánh CHUA_CAI_DAT
- *   soLinkThang  { 'yyyy-MM': tênFile }  các tháng đã khai trong SỔ LINK THÁNG
- *   bangLinkDungChung
- *                true → DỰNG LẠI BẢN GIẢ LẬP CŨ: mọi file tháng dùng CHUNG một đối tượng sheet bảng
- *                link. Đây là tiền đề SAI đã được gỡ (xem khối "bảng định tuyến tháng" bên dưới).
- *                Chỉ dùng cho ĐỐI CHỨNG ÂM — để chứng minh bản cũ làm lọt lỗi mà bản mới bắt được.
- *                KHÔNG dùng cho test thường: bật lên là test lại xanh trong khi thực tế đỏ.
+ *   biMat        chuỗi bí mật đã "cài bằng caiDat()" phía Apps Script
+ *   khongCaiDat  true = dựng đúng ca "Web App chưa chạy caiDat lần nào" (→ CHUA_CAI_DAT)
+ *   suaNguon     đổi mã nguồn trước khi nạp — CHỈ cho đối chứng âm, xem chú thích napGs
  */
 function taoGiaLap(tc) {
   const o = tc || {};
   const sim = {
     ten: 'GIA_LAP_' + (++DEM_SIM),
     url: URL_GIA,
-    duong: new URL(URL_GIA).pathname,
+    // Chuỗi mặc định đủ dài và tự nhận ra được khi nó lỡ lọt vào một câu in — bài quét INV-7 tìm đúng nó.
     biMat: o.biMat == null ? 'BI-MAT-GIA-LAP-KEODON-0123456789-DE-NHAN-RA' : o.biMat,
+    duong: new URL(URL_GIA).pathname,
     thuocTinh: {},
     file: {},                    // fileId -> BangTinhGia
     nhatKy: [],                  // Logger.log
     nhatKyGhi: [],               // mọi lệnh chạm sheet
     nhatKyDoc: [],               // mọi vùng đã đọc (để chứng minh không đọc quá cột C của 'Thông tin shop ')
-    nhatKyGoi: [],               // mọi gói POST đã nhận (KHÔNG lưu token)
+    nhatKyGoi: [],               // mọi gói POST đã nhận (KHÔNG lưu spreadsheetId)
     chuOiDaTraVe: [],            // mọi thân phản hồi (để INV-7 quét)
     loi: {},                     // cờ bơm lỗi
     khoaDangGiu: false,
@@ -444,8 +458,14 @@ function taoGiaLap(tc) {
     Date: DateGia,
     SpreadsheetApp: {
       openById(id) {
+        // `loi.loiMoFile`: dựng ca Google TỪ CHỐI mở file (quyền / file đã xóa) — D-46 ca (3).
+        // Chuỗi truyền vào phải là câu Google ném THẬT, để `phanLoaiLoiMoFile_` phân loại đúng nhánh.
+        const l = sim.loi || {};
+        if (l.loiMoFile) throw new Error(String(l.loiMoFile));
         const ss = sim.file[id];
-        if (!ss) throw new Error('Không mở được Google Sheet có ID "' + id + '" (giả lập chưa dựng file này)');
+        // Câu Google ném thật khi ID sai/không tồn tại — nó KHÔNG mang ID. Giả lập tự nhét ID vào đây thì
+        // bài quét rò rỉ INV-7 sẽ bắt chính cái giả lập chứ không bắt mã thật.
+        if (!ss) throw new Error('Unexpected error while getting the method or property openById on object SpreadsheetApp.');
         return ss;
       },
       flush() { sim.soLanFlush++; }
@@ -481,151 +501,60 @@ function taoGiaLap(tc) {
     },
     Utilities: {
       formatDate: (d, tz, mau) => dinhDangNgay(d, tz, mau),
-      sleep: () => { }
+      sleep: () => { },
+      DigestAlgorithm: { SHA_256: 'SHA_256' },
+      Charset: { UTF_8: 'UTF_8' },
+      // Apps Script trả mảng byte CÓ DẤU (-128..127). Trả byte không dấu ở đây thì `bam256_` trên giả lập
+      // ra một chuỗi hex khác bản chạy thật, và cả bộ test sẽ xanh trên một phép so không tồn tại.
+      computeDigest(thuatToan, chuoi) {
+        if (thuatToan !== 'SHA_256') throw new Error('Giả lập chỉ hỗ trợ SHA_256, nhận: ' + thuatToan);
+        const b = crypto.createHash('sha256').update(String(chuoi), 'utf8').digest();
+        return Array.from(b).map((v) => (v > 127 ? v - 256 : v));
+      }
     },
     Logger: { log: (s) => { sim.nhatKy.push(String(s)); } },
     console: { log: (s) => { sim.nhatKy.push(String(s)); }, error: (s) => { sim.nhatKy.push(String(s)); } }
   };
 
-  sim.vo = napGs(FILE_VO_GOOGLE, moiTruong);
+  sim.vo = napGs(FILE_VO_GOOGLE, moiTruong, o.suaNguon);   // `suaNguon`: xem chú thích napGs — chỉ cho đối chứng âm
 
-  // ---------------------------------------------------------- bảng định tuyến tháng
+  // ---------------------------------------------------------- file tháng (D-42: máy chỉ định ID)
   //
-  // GV-v2.3 mục 1: bảng link các tháng nằm SẴN trong sheet `Thông tin shop ` (một dấu cách cuối tên)
-  // của chính các file tháng, từ dòng 8: A năm · B tên kỳ · C link. Cột D trở đi là MẬT KHẨU GIAN HÀNG.
+  // Mỗi file tháng là một Google Sheet riêng với ID riêng. Máy giữ `link_thang` ("yyyy-MM" → link) và gửi
+  // `spreadsheetId` trong từng gói; Web App KHÔNG đọc bảng link nào, không giữ mỏ neo. Giả lập vì thế chỉ
+  // cần hai việc: dựng file theo ID, và trả đúng `link_thang` cho máy qua `cauHinhMay()`.
   //
-  // MỖI FILE THÁNG MANG MỘT BẢN SAO RIÊNG CỦA BẢNG LINK — không phải cùng một đối tượng.
-  //
-  // Bản trước của giả lập này làm `ss.sheets.push(shShop)`, tức gắn CÙNG MỘT đối tượng sheet vào mọi
-  // file tháng, và chú thích cũ biện minh bằng "mỏ neo dời tới đâu cũng đọc được". Cơ chế dời mỏ neo
-  // ĐÃ BỎ (`capNhatMoNeo_` không còn — xem ShellAppsScript.gs, khối "KHÔNG DỜI MỎ NEO"), nên lời biện
-  // minh đó không còn đúng, và cái nó nướng sẵn vào giả lập là một TIỀN ĐỀ SAI: dùng chung đối tượng
-  // thì một dòng ghi vào bảng link của file tháng này TỰ ĐỘNG hiện ra ở bảng link của MỌI file tháng
-  // khác, kể cả file mỏ neo. Ngoài đời mỗi file tháng là một Google Sheet riêng: dòng chỉ có mặt ở
-  // file nào đã được ghi vào file đó. Giả lập chung đối tượng làm test XANH trong khi thực tế ĐỎ —
-  // loại sai nguy hiểm nhất, vì nó không báo gì cả.
-  //
-  // Cách làm đúng, chép theo `nap()` của `node/test-dinh-tuyen-thang.js` (ở đó mỗi file gọi
-  // `sheetThongTinShop(...)` một lần riêng): giữ một DANH SÁCH CHUẨN các dòng đã khai, và dựng cho
-  // mỗi file tháng một `SheetGia` mới phát lại danh sách đó. Khai thêm tháng thì ghi dòng mới vào
-  // TỪNG bản sao — đúng thao tác thật mà `3_TAO_FILE_THANG_MOI.bat` phải làm ở cả file tháng cũ lẫn
-  // file tháng mới (GV mục 1.6).
-  //
-  // Bố cục cũ (`SỔ LINK THÁNG`: Tháng | Link | Ghi chú từ dòng 2) vẫn dựng kèm để bản `.gs` cũ chạy được.
-  sim.CHUOI_MAT_KHAU_BAY = 'MAT-KHAU-GIAN-HANG-KHONG-DUOC-DOC-9988';
-  sim.CHUOI_TEN_DANG_NHAP_BAY = 'TEN-DANG-NHAP-DONG-1-DEN-7-KHONG-DUOC-DOC';
-  sim.TEN_SHEET_LINK = sim.vo.TEN_SHEET_THONG_TIN_SHOP || 'Thông tin shop ';
-  sim.soLinkThang = {};
-
-  const soLink = new BangTinhGia('SỔ LINK THÁNG', 'ID_SO_LINK_THANG', sim);
-  sim.file['ID_SO_LINK_THANG'] = soLink;
-  const shSoLink = soLink.themSheet(sim.vo.TEN_SHEET_SO_LINK || 'SỔ LINK THÁNG');
-  shSoLink.datNen(1, 1, { v: 'Tháng' }); shSoLink.datNen(1, 2, { v: 'Link' }); shSoLink.datNen(1, 3, { v: 'Ghi chú' });
-
-  // Danh sách chuẩn các dòng bảng link đã khai: { dong, nam, tenKy, link, matKhau }. Mỗi bản sao
-  // dựng sau đều phát lại danh sách này, nên bản sao nào cũng khớp nhau lúc vừa dựng.
-  const dongBangLink = [];
-  // Mọi bản sao đang sống, để khai thêm tháng thì ghi vào tất cả.
-  sim.banSaoBangLink = [];
+  // Bản trước dựng cả một sheet `Thông tin shop ` cho mỗi file tháng, kèm chuỗi mồi mật khẩu để bắt rò
+  // rỉ. Bỏ hết theo D-42: Web App không còn đường nào chạm tới sheet đó, nên dựng nó lên chỉ để canh một
+  // lối đi đã bịt là nuôi một tiền đề sai trong giả lập.
+  sim.soLinkThang = {};        // 'yyyy-MM' → BangTinhGia. Giữ nguyên TÊN để các bộ test cũ khỏi phải đổi.
+  sim.fileThang = sim.soLinkThang;
+  sim.linkThang = {};          // 'yyyy-MM' → link — đúng hình dạng khóa `link_thang` của cấu hình thật
+  // ID ≥ 20 ký tự, đúng bảng chữ Google cho phép, để `bocIdTuLink_` phía Apps Script nhận ra.
+  sim.idCua = (thang) => 'ID_FILE_' + String(thang).replace('-', '_') + '_GIA_LAP_KEODON';
+  sim.linkCua = (thang) => 'https://docs.google.com/spreadsheets/d/' + sim.idCua(thang) + '/edit#gid=0';
 
   /**
-   * Dựng MỘT bản sao mới của sheet `Thông tin shop ` cho bảng tính `ss`.
-   * Dòng 1-7 là bảng KHÁC (STT | Tên shop | Tên đăng nhập) — vùng cấm đọc; bảng link từ dòng 8.
-   */
-  function dungBanSaoBangLink(ss) {
-    // CHẾ ĐỘ DỰNG LẠI KHUYẾT TẬT (`bangLinkDungChung`) — chỉ dùng cho đối chứng âm, xem chú thích
-    // của tùy chọn ở đầu `taoGiaLap`. Trả về ĐÚNG đối tượng sheet đã dựng lần đầu, tức tái hiện
-    // nguyên si bản giả lập CŨ: một sheet gắn vào mọi file tháng.
-    if (o.bangLinkDungChung && sim.banSaoBangLink.length) {
-      const chung = sim.banSaoBangLink[0];
-      ss.sheets.push(chung);
-      return chung;
-    }
-    const sh = new SheetGia(sim.TEN_SHEET_LINK, ss);
-    for (let r = 1; r <= 6; r++) {
-      sh.datNen(r, 1, { v: r });
-      sh.datNen(r, 2, { v: 'Gian hàng ' + r });
-      sh.datNen(r, 3, { v: sim.CHUOI_TEN_DANG_NHAP_BAY + '-' + r });
-      sh.datNen(r, 4, { v: sim.CHUOI_MAT_KHAU_BAY + '-' + r });
-    }
-    sh.datNen(7, 1, { v: 'Năm' });
-    sh.datNen(7, 2, { v: 'Tên kỳ' });
-    sh.datNen(7, 3, { v: 'Link' });
-    sh.datNen(7, 4, { v: 'Mật khẩu' });
-    dongBangLink.forEach((d) => {
-      sh.datNen(d.dong, 1, { v: d.nam });
-      sh.datNen(d.dong, 2, { v: d.tenKy });
-      sh.datNen(d.dong, 3, { v: d.link });
-      sh.datNen(d.dong, 4, { v: d.matKhau });
-    });
-    ss.sheets.push(sh);
-    sim.banSaoBangLink.push(sh);
-    return sh;
-  }
-
-  // Bản sao của chính file SỔ LINK THÁNG (bố cục cũ vẫn cần một bảng link để đọc).
-  sim.sheetLinkThang = dungBanSaoBangLink(soLink);
-
-  let demDongSoLink = 1, demDongShop = 7;
-
-  /**
-   * Khai một tháng: dựng vỏ file tháng, cấp cho nó BẢN SAO RIÊNG của bảng link, rồi ghi dòng mới
-   * vào MỌI bản sao (cả hai bố cục).
-   *
-   * @param {Object} [tuyChon]
-   *   chiGhiVaoFileNay  true → CỐ Ý chỉ ghi dòng mới vào bản sao của chính file tháng này, không
-   *                     ghi vào bản sao của các file tháng đã có. Đây là dựng lại đúng khuyết tật
-   *                     "người tạo file tháng mới quên thêm dòng vào file tháng cũ" — dùng cho đối
-   *                     chứng âm. Giả lập dùng chung một đối tượng KHÔNG dựng nổi ca này.
+   * Khai một tháng: dựng vỏ file tháng và ghi link vào `link_thang` giả.
+   * Tên file mặc định theo mẫu THẬT `THÁNG-<M>-<YYYY>-KINH-DOANH` để `kiemTenFileKhopThang_` đọc được —
+   * đặt tên khác mẫu là dựng đúng ca "tên file không đọc được tháng", tool phải cảnh báo chứ không chặn.
+   * @param {Object} [tuyChon] khongKhaiLink: true → dựng file mà KHÔNG ghi link (ca "quên khai tháng")
    */
   sim.khaiThang = function (thang, tenFile, tuyChon) {
     const tc = tuyChon || {};
-    const id = 'ID_FILE_' + thang.replace('-', '_');
-    const ss = new BangTinhGia(tenFile || ('KINH DOANH T' + Number(thang.slice(5)) + '-' + thang.slice(0, 4)), id, sim);
+    const id = sim.idCua(thang);
+    const ss = new BangTinhGia(
+      tenFile || ('THÁNG-' + Number(thang.slice(5)) + '-' + thang.slice(0, 4) + '-KINH-DOANH'), id, sim);
     sim.file[id] = ss;
     sim.soLinkThang[thang] = ss;
-    // Bản sao riêng, phát lại các dòng đã khai trước đó — không phải cùng một đối tượng.
-    const shCuaThangNay = dungBanSaoBangLink(ss);
-
-    const link = 'https://docs.google.com/spreadsheets/d/' + id + '/edit#gid=0';
-    demDongSoLink++;
-    shSoLink.datNen(demDongSoLink, 1, { v: thang });
-    shSoLink.datNen(demDongSoLink, 2, { v: link });
-    shSoLink.datNen(demDongSoLink, 3, { v: 'sổ tháng ' + Number(thang.slice(5)) });
-
-    demDongShop++;
-    const d = {
-      dong: demDongShop,
-      nam: Number(thang.slice(0, 4)),
-      tenKy: 'Kinh Doanh T' + Number(thang.slice(5)),
-      link: link,
-      matKhau: sim.CHUOI_MAT_KHAU_BAY + '-T' + Number(thang.slice(5))
-    };
-    // Dòng mới phải được ghi vào bảng link của TỪNG file tháng đang có — đúng thao tác thật.
-    const dich = tc.chiGhiVaoFileNay ? [shCuaThangNay] : sim.banSaoBangLink;
-    dich.forEach((sh) => {
-      sh.datNen(d.dong, 1, { v: d.nam });
-      sh.datNen(d.dong, 2, { v: d.tenKy });
-      sh.datNen(d.dong, 3, { v: d.link });
-      sh.datNen(d.dong, 4, { v: d.matKhau });
-    });
-    // Chỉ vào danh sách chuẩn khi dòng đã có mặt ở mọi bản sao; ca thiếu sót cố ý thì không, để bản
-    // sao dựng sau này cũng thiếu đúng như thật.
-    if (!tc.chiGhiVaoFileNay) dongBangLink.push(d);
-
-    // Mỏ neo: file tháng đầu tiên được khai. KHÔNG dời nữa — `capNhatMoNeo_` đã bị bỏ, nên bảng link
-    // được đọc luôn là bảng link CỦA FILE MỎ NEO, không phải của tháng đang dùng.
-    const TT_NEO = sim.vo.TT_MO_NEO || sim.vo.TT_SO_LINK_THANG;
-    if (!o.khongCaiDat && TT_NEO && !sim.thuocTinh[TT_NEO]) sim.thuocTinh[TT_NEO] = id;
+    if (!tc.khongKhaiLink) sim.linkThang[thang] = sim.linkCua(thang);
     return ss;
   };
 
-  // ---------------------------------------------------------- cài đặt như caiDat() đã chạy
-  const TT_BI_MAT = sim.vo.TT_BI_MAT || 'KEODON_BI_MAT';
-  if (!o.khongCaiDat) {
-    sim.thuocTinh[TT_BI_MAT] = sim.biMat;
-    if (sim.vo.TT_SO_LINK_THANG) sim.thuocTinh[sim.vo.TT_SO_LINK_THANG] = 'ID_SO_LINK_THANG';
-  }
+  // ---------------------------------------------------------- cài đặt như caiDat() đã chạy một lần
+  // `khongCaiDat` dựng đúng ca Web App vừa Deploy mà chưa ai chạy `caiDat` — phải ra CHUA_CAI_DAT, KHÁC
+  // hẳn ca sai chuỗi, vì việc phải làm khác nhau.
+  if (!o.khongCaiDat) sim.thuocTinh[sim.vo.TT_BI_MAT || 'KEODON_BI_MAT'] = sim.biMat;
 
   // ---------------------------------------------------------- xử lý một gói POST
   const doiTuongLoi = () => sim.loi || {};
@@ -658,6 +587,10 @@ function taoGiaLap(tc) {
     if (l.htmlDangNhap) {                                                  // deploy sai quyền truy cập
       sim.chuOiDaTraVe.push(HTML_DANG_NHAP);
       return { statusCode: 200, headers: { 'content-type': 'text/html; charset=UTF-8' }, body: HTML_DANG_NHAP };
+    }
+    if (l.ma403 || l.ma401) {                                              // D-46 ca (1): Google từ chối thẳng
+      sim.chuOiDaTraVe.push(HTML_403);
+      return { statusCode: l.ma401 ? 401 : 403, headers: { 'content-type': 'text/html' }, body: HTML_403 };
     }
     if (l.quaSauPhut) {                                                    // vượt 6 phút → Google trả 500 HTML
       sim.chuOiDaTraVe.push(HTML_QUA_GIO);
@@ -710,9 +643,10 @@ function taoGiaLap(tc) {
   sim.xoaLoi = () => { sim.loi = {}; return sim; };
   sim.demLai = () => { sim.nhatKyGoi = []; sim.nhatKyGhi = []; sim.demGoiGhi = 0; return sim; };
 
-  /** Cấu hình để đưa cho `WebAppGoogleSheet` / `chayLenGoogleSheet`. */
+  /** Cấu hình đưa cho `WebAppGoogleSheet` / `chayLenGoogleSheet` — đúng hình dạng CAU_HINH_VAN_HANH.json. */
   sim.cauHinhMay = (ghiDe) => Object.assign({
-    bat: true, web_app_url: sim.url, chuoi_bi_mat: sim.biMat
+    bat: true, web_app_url: sim.url, chuoi_bi_mat: sim.biMat,
+    link_thang: Object.assign({}, sim.linkThang)
   }, ghiDe || {});
 
   /** Ảnh chụp toàn bộ ô của một file tháng — dùng cho INV-1, INV-3, T-47. */
@@ -776,10 +710,14 @@ const TIEU_DE_GIAN_HANG = ['Ngày ', 'Nguồn đơn', 'Thông tin ĐH', 'Tên vi
   'SL', 'Tổng Tiền SP', 'MGG Shop', 'Chi phí', 'Thuế', 'Doanh Thu', 'Mã hàng', 'Check tồn', 'Còn Nợ'];
 
 /**
- * Sheet gian hàng đúng bố cục Google Sheet giai đoạn 2:
- *  dòng 1 tiêu đề lớn · dòng 2 tiêu đề cột · dòng 3 dòng tổng ·
- *  E, F, M, N là ARRAYFORMULA MỘT Ô ở dòng 4 (ô đầu cột), các dòng dưới chỉ là giá trị tràn ra;
- *  L có công thức theo từng dòng.
+ * Sheet gian hàng theo bố cục Google Sheet: dòng 1 tiêu đề lớn · dòng 2 tiêu đề cột · dòng 3 dòng tổng ·
+ * cột L có công thức theo từng dòng.
+ *
+ * HÌNH DẠNG E, F, M, N Ở ĐÂY LÀ BIẾN THỂ, KHÔNG PHẢI FILE THẬT: fixture này CỐ Ý dựng "ARRAYFORMULA một ô
+ * ở dòng 4, các dòng dưới là giá trị tràn". File thật là công thức TỪNG DÒNG bọc `ARRAY_CONSTRAIN` (đo
+ * 08/9/2026), và `node/test-chep-cong-thuc.js` phủ đúng hình dạng đó. Giữ biến thể này vì tool phải chịu
+ * được CẢ HAI: gặp ARRAYFORMULA thật phủ cả cột thì `mauChepCongThucDS_` xếp `TRAN_CA_COT` và KHÔNG chép
+ * đè lên — chép đè là giết vùng tràn của nó.
  *
  * @param {Array} dongCu [{ma, tvt, sl, h, i, j, k}] — dòng sau của đơn nhiều hàng để ma='' rồi gộp
  * @param {Object} tc { thieuTieuDe: n → chỉ ghi n tiêu đề đầu (dựng ca hiểm cho INV-3) }
@@ -795,7 +733,7 @@ function dungSheetGianHang(ss, ten, dongCu, tc) {
     sh.datNen(3, ci, { ct: 'SUM(R[1]C:R[997]C)' });
   });
 
-  // ARRAYFORMULA neo ở ô đầu cột (dòng 4) — đây chính là thứ T-47/INV-3 bảo vệ.
+  // Biến thể ARRAYFORMULA neo ở ô đầu cột (dòng 4) — KHÔNG phải hình dạng thật, xem chú thích trên.
   const NEO = {
     5: 'ARRAYFORMULA(IF(RC[-1]="";"";INDEX(\'Tổng tồn kho\'!R3C3:R482C7;MATCH(RC[-1];\'Tổng tồn kho\'!R3C4:R482C4;0);1)))',
     6: 'ARRAYFORMULA(IF(RC[-2]="";"";INDEX(\'Tổng tồn kho\'!R3C3:R482C7;MATCH(RC[-2];\'Tổng tồn kho\'!R3C4:R482C4;0);4)))',
@@ -812,7 +750,7 @@ function dungSheetGianHang(ss, ten, dongCu, tc) {
     if (d.sl != null) sh.datNen(r, 7, { v: d.sl });
     ['h', 'i', 'j', 'k'].forEach((x, j) => { if (d[x] != null) sh.datNen(r, 8 + j, { v: d[x], dd: '#,##0' }); });
     sh.datNen(r, 12, { ct: 'IF(RC[-4]="";"";RC[-4]-RC[-3]-RC[-2]-RC[-1])' });
-    // Giá trị tràn từ ARRAYFORMULA: có giá trị hiển thị nhưng KHÔNG có công thức riêng.
+    // Giá trị tràn từ biến thể ARRAYFORMULA: có giá trị hiển thị nhưng KHÔNG có công thức riêng.
     if (soTieuDe >= 14) {
       sh.datNen(r, 5, { v: d.tvt ? 'SP ' + d.tvt : '' });
       sh.datNen(r, 6, { v: d.tvt ? 'HOP' : '' });
@@ -849,5 +787,5 @@ module.exports = {
   dungSheetGianHang, dungSheetDanhMuc, dungSheetMapping,
   BangTinhGia, SheetGia,
   URL_GIA, TIEU_DE_GIAN_HANG, FILE_VO_GOOGLE, FILE_LOI_MAY,
-  HTML_DANG_NHAP, HTML_QUA_GIO, HTML_500
+  HTML_DANG_NHAP, HTML_QUA_GIO, HTML_500, HTML_403
 };

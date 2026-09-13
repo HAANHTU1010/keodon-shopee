@@ -1,5 +1,5 @@
 {
-  "_doc": "CẤU HÌNH CHO NGƯỜI VẬN HÀNH. Sửa bằng Notepad, giữ nguyên dấu ngoặc kép và dấu phẩy. File này KHÔNG chứa thông tin khách hàng. Tool ghi thẳng lên Google Sheet của tháng theo NGÀY CHẠY; máy này không giữ file .xlsx nào của tháng. Cách lấy hai dòng trong mục google_sheet: xem BAT_GOOGLE_SHEET.md. Khi đã điền thì file này CHỨA CHUỖI BÍ MẬT: đừng chụp màn hình gửi đi, đừng chép sang máy khác, đừng đồng bộ thư mục này lên đám mây.",
+  "_doc": "CẤU HÌNH CHO NGƯỜI VẬN HÀNH. Sửa bằng Notepad, giữ nguyên dấu ngoặc kép và dấu phẩy. File này KHÔNG chứa thông tin khách hàng. Tool ghi thẳng lên Google Sheet của tháng theo NGÀY CHẠY; máy này không giữ file .xlsx nào của tháng. File này CHỨA CHUỖI BÍ MẬT và LINK CÁC FILE THÁNG — tức là đường vào sổ tiền: đừng chụp màn hình gửi đi, đừng chép sang máy khác, đừng đồng bộ thư mục này lên đám mây. Gói giao cho bạn đã điền sẵn, bình thường không phải sửa gì.",
 
   "_thu_muc_tha_file": "Thư mục để user thả file xuất Shopee. Nằm ngay cạnh ba file .bat. Bên trong là bốn thư mục gian hàng, mỗi thư mục có một thư mục con 'đã xử lý' — tool tự chuyển file vào đó sau khi kéo xong.",
   "thu_muc_tha_file": "1_THA_FILE_XUAT",
@@ -15,12 +15,15 @@
   "_ten_thu_muc_da_xu_ly": "Tên thư mục con nằm TRONG từng thư mục gian hàng, nơi tool chuyển file xuất vào sau khi đã kéo đơn xong. File chỉ rời thư mục thả KHI DỮ LIỆU ĐÃ VÀO ĐÍCH — chạy hỏng thì file nằm nguyên chỗ cũ để bấm lại.",
   "ten_thu_muc_da_xu_ly": "đã xử lý",
 
-  "_google_sheet": "ĐÍCH GHI. Hai dòng dưới do người phụ trách kỹ thuật cho biết, làm theo BAT_GOOGLE_SHEET.md. web_app_url là link /exec của Apps Script. chuoi_bi_mat LÀ BÍ MẬT: không chép vào mã nguồn, không gửi qua chat, không chụp màn hình gửi đi — ai có nó là ghi được vào sổ. Ghi vào file của tháng nào là do chính Web App quyết qua bảng link các tháng trên Google, máy này không cần biết.",
+  "_google_sheet": "ĐÍCH GHI. Gói giao cho bạn đã điền sẵn hai dòng này, bình thường không phải sửa. web_app_url là link /exec của Apps Script. chuoi_bi_mat LÀ BÍ MẬT: không chép vào mã nguồn, không gửi qua chat, không chụp màn hình gửi đi — ai có nó cộng với link là ghi thẳng được vào sổ.",
   "google_sheet": {
     "bat": true,
     "web_app_url": "",
     "chuoi_bi_mat": ""
   },
+
+  "_link_thang": "LINK FILE GOOGLE SHEET CỦA TỪNG THÁNG, dạng \"YYYY-MM\": \"link\". Tool lấy tháng theo NGÀY CHẠY của máy rồi tra đúng dòng ở đây; không có dòng của tháng đó thì tool DỪNG và báo, tuyệt đối không tự đoán và không ghi lùi vào tháng trước. ĐỪNG sửa tay mục này: bấm 3_TAO_FILE_THANG_MOI.bat để thêm tháng mới — nút đó ghi đúng chỗ, đúng định dạng. Nút 2_CAP_NHAT.bat không bao giờ ghi đè mục này.",
+  "link_thang": {},
 
   "_cap_nhat": "Dùng cho nút  2_CAP_NHAT.bat  (nút số 2, ở ngoài cùng cạnh ba nút kia): tải bản mã mới nhất từ kho mã GitHub công khai về máy này. Điền tên tài khoản GitHub vào chu_tai_khoan và tên kho mã vào ten_repo, hai tên này do người phụ trách kỹ thuật cho biết. Để trống thì bấm 2_CAP_NHAT.bat sẽ báo rõ và dừng, không tải gì. Dòng nhanh để 'main', chỉ đổi khi được dặn. 2_CAP_NHAT.bat chỉ thay src, node, package.json và ba nút bấm kia; nó KHÔNG BAO GIỜ ghi đè chính file này và không đụng thư mục thả file. Cách tạo kho mã: xem HUONG_DAN_DUA_LEN_GITHUB.md.",
   "cap_nhat": {

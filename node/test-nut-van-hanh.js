@@ -134,7 +134,7 @@ test('N-27 không nút nào còn gọi tên cũ của nút khác', () => {
  * một chữ `not` rơi mất, một dấu so sánh viết ngược, và cửa chặn vẫn còn nguyên
  * đó, vẫn chạy, chỉ là không bao giờ chặn ai nữa.
  *
- * Bài học N-10 và cái bẫy `!` của bước 4 là cùng một họ: mọi bài dương tính đều
+ * Bài học TM-10 (test-tao-thang-moi.js) và cái bẫy `!` của bước 4 là cùng một họ: mọi bài dương tính đều
  * xanh vì phép kiểm nào cũng nói OK. Chỉ có đối chứng âm bắt được.
  *
  * Nên phần này làm đúng một việc: với mỗi CỬA QUYẾT ĐỊNH ĐI TIẾP HAY DỪNG, dựng
@@ -161,7 +161,9 @@ const DA_XU_LY = 'đã xử lý'.normalize('NFC');
 // Chuỗi mồi: lọt ra chỗ không được phép, hoặc bị xóa mất, thì bài test bắt được ngay.
 const BI_MAT_MOI = 'BI-MAT-RIENG-CUA-MAY-NAY-0123456789';
 const LINK_MOI = 'https://script.google.com/macros/s/MOI_LINK_CUA_MAY_NAY/exec';
-const LINK_SHEET = 'https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit';
+// Chuỗi MỒI, không phải link thật. Dài đúng 24 ký tự ID — vừa đủ để nút 3 nhận là link Google Sheet
+// hợp lệ (ngưỡng 20), vừa dưới ngưỡng 25 mà INV-7 dùng để phát hiện link file tháng THẬT lọt vào mã.
+const LINK_SHEET = 'https://docs.google.com/spreadsheets/d/MOI_KHONG_PHAI_LINK_THAT/edit';
 
 /** Chạy một phép chấm trên bản SAI, đòi nó phải báo LỆCH. Không lệch là bài test mù. */
 async function doiChungAm(nhan, chay) {

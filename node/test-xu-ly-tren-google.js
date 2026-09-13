@@ -662,6 +662,164 @@ function inBang(cot, hang) {
     });
   }
 
+  // ================================================================ D-47: tô lại tab Mapping
+  //
+  // Trước 12/9 chỉ `themDongMapping_` tô vàng DÒNG MỚI. User mở tab, điền tên viết tắt, ghi "CÓ" — dòng
+  // vẫn vàng, mãi mãi, vì luật đổi màu (`MapListing.dongCanToVang`) chỉ chạy ở đường Excel. Sau vài tháng
+  // tab vàng rực, và dòng thật sự cần người xem chìm lẫn trong đó. D-47 tô lại CẢ TAB sau mỗi lượt.
+  //
+  // Năm bài dưới đi thẳng vào Web App thay vì qua `chayLenGoogleSheet`, để dựng được đúng thế cờ
+  // "3 dòng CÓ + 2 dòng chưa" — bảng Mapping thật có 317 dòng và trạng thái của nó do chủ shop sửa hằng
+  // ngày, bám vào đó thì bài test đo trạng thái file chứ không đo mã.
+  {
+    const HEADER = ['Gian hàng', 'Tên trên Shopee', 'Phân loại', 'Tên viết tắt', 'Hệ số', 'Cấu phần', 'Xác nhận'];
+    const BANG_MAP = [
+      HEADER,
+      ['Shopee mall', 'Gấu bông size 1', '', 'gvs km 1', 1, '', 'CÓ'],
+      ['Shopee mall', 'Gấu bông size 2', '', 'gvs km 2', 1, '', 'Có'],     // luật laCo bỏ qua hoa/thường
+      ['Shopee mall', 'Hàng chưa soát A', '', '', '', '', ''],             // chưa ghi gì → vàng
+      ['Shopee mall', 'Gấu bông size 3', '', 'gvs km 3', 1, '', 'co'],     // không dấu vẫn là CÓ
+      ['Shopee mall', 'Hàng chưa soát B', '', 'tam', 1, '', 'chưa']        // có chữ nhưng KHÔNG phải CÓ → vàng
+    ];
+    const DONG_CO = [2, 3, 5];        // ba dòng đã ghi CÓ
+    const DONG_VANG = [4, 6];         // hai dòng chưa CÓ
+    const RONG = 7;
+
+    /** Dựng một file tháng chỉ có sheet gian hàng + sheet Mapping, rồi gọi thẳng doPost. */
+    function simMapping(tuyChon) {
+      const sim = gl.taoGiaLap(Object.assign({ ngay: NGAY_MAY_CHU_GOOGLE }, tuyChon || {}));
+      const ss = sim.khaiThang(THANG, 'KINH DOANH T9-2026');
+      gl.dungSheetGianHang(ss, TEN_SHEET, DONG_CU_CO_SAN);
+      gl.dungSheetMapping(ss, JSON.parse(JSON.stringify(BANG_MAP)));
+      sim.shMap = ss.getSheetByName('Mapping_san_pham');
+      sim.ghiMotDon = (ma) => JSON.parse(sim.vo.doPost({
+        postData: {
+          contents: JSON.stringify({
+            // `token`: cua bi mat van con (YC-28, D-43 sua 13/9) — goi thang doPost thi phai tu mang.
+            token: sim.biMat,
+            hanhDong: 'ghi', phienBanMongDoi: sim.vo.PHIEN_BAN, thang: THANG,
+            spreadsheetId: sim.idCua(THANG),
+            lenh: [{
+              tenSheet: TEN_SHEET,
+              don: [{
+                maDon: ma, ngay: '2026-09-08', tien: { H: 1000, I: 0, J: 0, K: 0 },
+                dong: [{ tenVietTat: 'gvs km 1', soLuong: 1 }]
+              }]
+            }]
+          })
+        }
+      }).getContent());
+      return sim;
+    }
+
+    /** Bản đồ màu vùng Mapping: 'r:c' → màu đã chuẩn hóa ('' = không tô, vì Sheets coi trắng là không tô). */
+    function mauMapping(sh, denDong) {
+      const m = {};
+      for (let r = 1; r <= denDong; r++) {
+        for (let c = 1; c <= RONG; c++) {
+          const v = sh.nen[r + ':' + c];
+          m[r + ':' + c] = (v == null || v === '' || String(v).toLowerCase() === '#ffffff') ? '' : String(v).toUpperCase();
+        }
+      }
+      return m;
+    }
+    /** Danh sách SỐ DÒNG đang vàng. */
+    function dongVang(sh, denDong) {
+      const m = mauMapping(sh, denDong);
+      const d = {};
+      Object.keys(m).forEach((k) => { if (m[k] === '#FFF2CC') d[k.split(':')[0]] = 1; });
+      return Object.keys(d).map(Number).sort((a, b) => a - b);
+    }
+
+    {
+      const sim = simMapping();
+      const kq = sim.ghiMotDon('2609080000XLA1');
+      const vang = dongVang(sim.shMap, 6);
+      const mau = mauMapping(sim.shMap, 6);
+
+      test('T-XL-33 ba dòng CÓ + hai dòng chưa → đúng HAI dòng vàng, và vàng TRỌN dòng', () => {
+        dung(kq.ok, 'lượt ghi phải chạy: ' + JSON.stringify(kq).slice(0, 160));
+        bang(kq.thongKe.mappingToLai, 5, 'phải tô lại đủ 5 dòng dữ liệu');
+        bang(vang, DONG_VANG, 'danh sách dòng vàng');
+        DONG_VANG.forEach((r) => {
+          for (let c = 1; c <= RONG; c++) bang(mau[r + ':' + c], '#FFF2CC', 'dòng vàng ' + r + ' cột ' + c);
+        });
+        DONG_CO.forEach((r) => {
+          for (let c = 1; c <= RONG; c++) bang(mau[r + ':' + c], '', 'dòng đã CÓ ' + r + ' cột ' + c + ' phải sạch nền');
+        });
+        for (let c = 1; c <= RONG; c++) bang(mau['1:' + c], '', 'dòng tiêu đề không được đụng tới');
+      });
+
+      test('T-XL-34 chỉ MỘT lệnh setBackgrounds cho cả tab — không tô từng ô (quota 6 phút)', () => {
+        // Tô từng ô là nguyên nhân số một gây hết giờ trên Apps Script: 317 dòng × 7 cột = 2.219 lệnh.
+        const lenhNen = sim.nhatKyGhi.filter((x) => x.sheet === 'Mapping_san_pham' && x.kieu === 'nen');
+        bang(lenhNen.length, 1, 'số lệnh đổi nền trên tab Mapping');
+        bang(lenhNen[0].dong1, 2, 'phải bắt đầu từ dòng 2 — dòng tiêu đề nằm ngoài vùng');
+        bang(lenhNen[0].soDong, 5, 'phải phủ trọn 5 dòng dữ liệu trong một lệnh');
+      });
+
+      test('T-XL-35 không lệnh ghi GIÁ TRỊ nào chạm tab Mapping khi không có tên hàng mới', () => {
+        const chamGiaTri = sim.nhatKyGhi.filter((x) => x.sheet === 'Mapping_san_pham' && x.kieu !== 'nen');
+        bang(chamGiaTri.length, 0, 'chỉ `themDongMapping_` được ghi giá trị vào tab này, mà lượt này không có tên mới: ' +
+          JSON.stringify(chamGiaTri.map((x) => x.kieu + '@' + x.dong1)));
+        bang(kq.thongKe.mappingThem, 0, 'không được nối thêm dòng Mapping nào');
+      });
+      sim.thaoGo();
+    }
+
+    test('T-XL-36 chạy MƯỜI lượt liên tiếp: màu sau lượt 1 và sau lượt 10 giống hệt nhau (idempotent)', () => {
+      const sim = simMapping();
+      // Chấm `ok` của TỪNG lượt: thiếu phép này thì một lượt bị từ chối cũng cho ra "màu đứng yên",
+      // và bài test xanh vì KHÔNG CÓ GÌ XẢY RA — đúng bệnh TM-10.
+      const okDS = [sim.ghiMotDon('2609080000XLB0')];
+      const sauLan1 = JSON.stringify(mauMapping(sim.shMap, 6));
+      for (let i = 1; i <= 9; i++) okDS.push(sim.ghiMotDon('2609080000XLB' + i));
+      bang(okDS.filter((r) => r && r.ok).length, 10, 'cả 10 lượt phải thật sự ghi được');
+      bang(okDS.reduce((t, r) => t + r.thongKe.donGhi, 0), 10, 'mỗi lượt phải ghi đúng 1 đơn mới');
+      const sauLan10 = JSON.stringify(mauMapping(sim.shMap, 6));
+      sim.thaoGo();
+      bang(sauLan10, sauLan1, 'màu phải đứng yên sau 10 lượt');
+    });
+
+    test('T-XL-37 ĐỐI CHỨNG ÂM: bỏ lệnh gọi toLaiMapping_ → dòng vừa ghi CÓ vẫn vàng vĩnh viễn', () => {
+      // Dựng lại ĐÚNG khuyết tật trước 12/9. Không có bài này thì ba bài trên chỉ chứng minh "màu đang
+      // đúng", chưa chứng minh chúng nhìn thấy được lúc màu SAI.
+      const CU = 'tk.mappingToLai = toLaiMapping_(ss, canhBao);';
+      const suaNguon = (src) => {
+        const n = src.split(CU).length - 1;
+        if (n !== 2) {
+          throw new Error('ĐỐI CHỨNG ÂM HỎNG: cần đúng 2 chỗ gọi toLaiMapping_ trong ShellAppsScript.gs, ' +
+            'tìm được ' + n + '. Mã đã đổi — sửa lại chuỗi mốc, ĐỪNG bỏ qua bài này.');
+        }
+        return src.split(CU).join('tk.mappingToLai = 0;');
+      };
+
+      // Thế cờ: dòng 4 đang vàng sẵn (chưa soát), user vừa điền tên viết tắt và ghi "CÓ" vào ô Xác nhận.
+      const dungThe = (tuyChon) => {
+        const sim = simMapping(tuyChon);
+        for (let c = 1; c <= RONG; c++) sim.shMap.nen['4:' + c] = '#FFF2CC';
+        sim.shMap.giaTri['4:4'] = 'gvs km 9';
+        sim.shMap.giaTri['4:7'] = 'CÓ';
+        return sim;
+      };
+
+      const simHong = dungThe({ suaNguon: suaNguon });
+      const kqHong = simHong.ghiMotDon('2609080000XLC1');
+      const vangHong = dongVang(simHong.shMap, 6);
+      simHong.thaoGo();
+      dung(kqHong.ok, 'bản gỡ lệnh gọi vẫn phải ghi được đơn: ' + JSON.stringify(kqHong).slice(0, 140));
+      dung(vangHong.indexOf(4) >= 0,
+        'bản KHÔNG tô lại lẽ ra phải để dòng 4 vàng nguyên — phép chấm đang mù, dòng vàng: ' + JSON.stringify(vangHong));
+
+      // Bản thật: cùng thế cờ đó, dòng 4 phải trắng lại.
+      const simThat = dungThe();
+      simThat.ghiMotDon('2609080000XLC1');
+      const vangThat = dongVang(simThat.shMap, 6);
+      simThat.thaoGo();
+      bang(vangThat, [6], 'bản thật: chỉ còn dòng 6 vàng, dòng 4 phải trắng lại');
+    });
+  }
+
   // Bấm chạy LẦN HAI trên đúng file tháng vừa ghi — tiêu chí nghiệm thu giai đoạn 2.
   {
     const sim = dungSim(JSON.parse(JSON.stringify(tonKho)), JSON.parse(JSON.stringify(mapping)), maDaCoSan);

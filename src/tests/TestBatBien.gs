@@ -25,7 +25,16 @@ var TestBatBien = (function () {
   var NGAY_GHI = '2026-09-07';
   var COT_Z = 26;                       // KE_HOACH_KIEM_THU INV-1 nói rõ vùng băm là A1:Z<dòng cuối cũ>
 
-  /** Cột ARRAYFORMULA của file trên Google Sheet — ghi một ô là hỏng cả cột (INV-3). E=5, F=6, M=13, N=14. */
+  /**
+    * Bốn cột CÔNG THỨC CỦA CHỦ SHOP trên file Google Sheet — tool không được ghi giá trị vào (INV-3).
+    * E=5, F=6, M=13, N=14.
+    *
+    * Đo thẳng trên file thật 08/9/2026: mỗi ô một công thức riêng, bọc `ARRAY_CONSTRAIN(...;1;1)` —
+    * KHÔNG phải một `ARRAYFORMULA` duy nhất ở đầu cột như tài liệu trước 08/9 viết. Hai hình dạng này
+    * hỏng theo hai kiểu khác nhau, nên đừng lẫn: công thức từng dòng thì ghi đè một ô là mất đúng ô đó
+    * (và dòng ấy im lặng ra số sai); ARRAYFORMULA một ô thì ghi vào vùng tràn là `#REF!` cả cột.
+    * Cấm ghi vì lý do THỨ NHẤT — nhưng mã vẫn chịu được cả hai hình dạng, xem `mauChepCongThucDS_`.
+    */
   var COT_CAM_SHEET = [5, 6, 13, 14];
 
   function phai(dk, msg) { if (!dk) throw new Error(msg); }
@@ -381,16 +390,21 @@ var TestBatBien = (function () {
    * INV-3a — VỎ GHI GOOGLE SHEET KHÔNG ĐƯỢC GHI GIÁ TRỊ / CÔNG THỨC VÀO E, F, M, N.
    *
    * VÌ SAO TEST NÀY TỒN TẠI: trên file Google Sheet của chủ shop, bốn cột E (Tên sản phẩm), F (Đơn vị),
-   * M (Mã hàng), N (Check tồn) là ARRAYFORMULA đặt ở MỘT ô đầu cột, tự đổ giá trị xuống mọi dòng. Ghi bất kỳ
-   * giá trị nào vào một ô trong vùng đổ đó thì Google trả `#REF!` và HỎNG CẢ CỘT của cả sheet — không phải
-   * hỏng một ô. Triệu chứng nhìn thấy: cả cột E hiện `#REF!`, kéo theo `Tổng xuất` và `Lợi nhuận` sai theo.
+   * M (Mã hàng), N (Check tồn) là CÔNG THỨC TỪNG DÒNG — mỗi ô một công thức riêng bọc
+   * `ARRAY_CONSTRAIN(...;1;1)` (đo trên file thật 08/9/2026; tài liệu trước đó viết là "ARRAYFORMULA một
+   * ô" và đã được đính chính). Ghi giá trị đè lên một ô là XÓA MẤT công thức của đúng ô đó, và dòng ấy
+   * im lặng cho ra số sai — không có `#REF!`, không có dấu hiệu gì để ai nhìn ra.
+   * Triệu chứng: `Tổng xuất` và `Lợi nhuận` lệch, mà không ai biết lệch từ dòng nào.
+   *
+   * Đây là lý do bất biến này ĐÁNG GIÁ HƠN chứ không phải nhẹ đi sau đính chính: hỏng ồn ào (`#REF!` cả
+   * cột) thì ai cũng thấy ngay; hỏng im lặng một ô thì vài tuần sau đối chiếu mới lộ.
    *
    * CÁCH KIỂM: gọi THẲNG `ghiMotSheet_` (hàm ghi thật của Web App) trên một sheet giả ghi lại mọi vùng bị ghi,
    * với 3 đơn (một đơn 2 mặt hàng → gộp ô; một dòng vàng → tô nền + ghi Note). Không một vùng ghi giá trị hay
    * công thức nào được phủ cột 5, 6, 13, 14.
    *
    * Ghi nền (`setBackgrounds`) CÓ phủ E, F, M, N khi tô vàng cả dòng, và đó là an toàn: Google lưu định dạng
-   * tách khỏi giá trị, tô màu một ô trong vùng ARRAYFORMULA không làm cột đó `#REF!`. Test cố ý chỉ chặn
+   * tách khỏi giá trị, tô màu một ô không đụng gì tới công thức trong ô đó. Test cố ý chỉ chặn
    * ghi GIÁ TRỊ và CÔNG THỨC. (Câu chữ T-47 "không chạm" chặt hơn — điểm này cần BA chốt lại thành văn.)
    */
   function INV3a_voGhiSheetKhongChamEFMN() {

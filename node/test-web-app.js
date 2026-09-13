@@ -85,16 +85,19 @@ function napFileThang(ss, dongCu) {
 }
 
 /**
- * Bối cảnh chuẩn: máy chủ Google đang là 08/9/2026, bảng link đã khai tháng 8 và tháng 9.
+ * Bối cảnh chuẩn: máy chủ Google đang là 08/9/2026; `link_thang` trên máy đã khai tháng 8 và tháng 9.
+ * `thieuThang9: true` dựng đúng ca D-42 "chưa khai link tháng đang chạy" — tool phải dừng TRÊN MÁY.
  * @param {Object} tc { thieuThang9, dongCu, mayGhiDe }
  */
 function dungBoi(tc) {
   const o = tc || {};
   const sim = gl.taoGiaLap({ ngay: NGAY_MAY_CHU });
-  const thang8 = napFileThang(sim.khaiThang('2026-08', 'THÁNG 8-2026 KINH DOANH'),
+  const thang8 = napFileThang(sim.khaiThang('2026-08', 'THÁNG-8-2026-KINH-DOANH'),
     [{ ma: 'T8CU000001', tvt: 'dt5', sl: 1, h: 9000, i: 0, j: 0, k: 0 }]);
-  const thang9 = o.thieuThang9 ? null
-    : napFileThang(sim.khaiThang('2026-09', 'THÁNG 9-2026 KINH DOANH'), o.dongCu || []);
+  // `khongKhaiLink` dựng file tháng 9 trên Google NHƯNG không ghi link vào link_thang: đúng cảnh
+  // "chủ dự án đã tạo bản sao file tháng mà quên bấm nút 3 khai link".
+  const thang9 = napFileThang(sim.khaiThang('2026-09', 'THÁNG-9-2026-KINH-DOANH',
+    o.thieuThang9 ? { khongKhaiLink: true } : undefined), o.dongCu || []);
   const tao = (them) => new WebAppGoogleSheet(sim.cauHinhMay(
     Object.assign({ duong: 'ghi', cotPII: cfg.cotPII }, o.mayGhiDe, them)));
   return { sim, thang8, thang9, web: tao(), tao: tao };
@@ -339,17 +342,19 @@ async function chay() {
       return b;
     }
 
-    await test('T-WA-11 SAI CHUỖI BÍ MẬT → chỉ đúng file cấu hình và hàm caiDat() phải sửa', async () => {
-      // Triệu chứng nếu vi phạm: người vận hành đi Deploy lại Web App (việc mất 10 phút và có rủi ro)
-      // trong khi thật ra chỉ cần sửa một dòng trong CAU_HINH_VAN_HANH.json.
-      await ban('biMat', () => { }, { chuoi_bi_mat: 'CHUOI-BI-MAT-GO-NHAM-0000' });
-      const c = cau.biMat;
-      dung(/bí mật/i.test(c), 'không nêu chuyện gì: ' + c);
-      dung(/CAU_HINH_VAN_HANH\.json/.test(c), 'không chỉ ra file cấu hình phải sửa: ' + c);
-      dung(/caiDat/.test(c), 'không nhắc hàm caiDat() đã cài chuỗi nào: ' + c);
-      dung(c.indexOf('CHUOI-BI-MAT-GO-NHAM-0000') < 0, 'INV-7: câu báo lộ chuỗi bí mật đã gửi');
-      bang(dong.biMat, 0, 'không được ghi dòng nào');
-      return 'lượt gọi mạng ' + luot.biMat + ' · dòng ghi ' + dong.biMat + '\n        ' + c;
+    await test('T-WA-11 GOOGLE TỪ CHỐI 403 → đúng MỘT câu lỗi quyền D-46, kèm mã HTTP thật', async () => {
+      // D-43 bỏ chuỗi bí mật nên ca "sai bí mật" không còn tồn tại. Ca THAY THẾ nó ở đúng vị trí này —
+      // "cửa đóng, gõ không vào" — là quyền truy cập: Deploy để "Only myself", hoặc file tháng chưa chia
+      // sẻ. Triệu chứng nếu vi phạm: user đọc một trang HTML tiếng Anh giữa cửa sổ đen rồi đi sửa lung
+      // tung ba thứ khác, trong khi việc phải làm chỉ là một dòng trong hộp Deploy.
+      await ban('quyen403', (sim) => sim.datLoi({ ma403: true }));
+      const c = cau.quyen403;
+      dung(/LỖI QUYỀN TRUY CẬP/.test(c), 'phải mở đầu bằng câu chuẩn D-46: ' + c);
+      dung(/Who has access = Anyone/.test(c), 'phải nêu việc (1) Deploy/quyền truy cập: ' + c);
+      dung(/quyền Chỉnh sửa/.test(c), 'phải nêu việc (2) chia sẻ file tháng: ' + c);
+      dung(/HTTP 403/.test(c), 'phải giữ mã HTTP thật để người phụ trách dò được: ' + c);
+      bang(dong.quyen403, 0, 'không được ghi dòng nào');
+      return 'lượt gọi mạng ' + luot.quyen403 + ' · dòng ghi ' + dong.quyen403 + '\n        ' + c.split('\n')[0];
     });
 
     await test('T-WA-12 CHƯA TRIỂN KHAI LẠI (lệch phiên bản) → nguyên văn câu "Deploy → New version"', async () => {
@@ -406,7 +411,10 @@ async function chay() {
       // hề nhận được gói nào.
       await ban('htmlDangNhap', (sim) => sim.datLoi({ htmlDangNhap: true }));
       const c = cau.htmlDangNhap;
-      dung(/không phải JSON/i.test(c), 'không nói rõ phản hồi không phải JSON: ' + c);
+      // D-46: gom về cùng MỘT câu chuẩn với ca 403 — cùng nguyên nhân, cùng cách chữa. Nhưng dòng chi
+      // tiết phải giữ dấu vết "không phải JSON / trang HTML" để người phụ trách phân biệt được hai ca.
+      dung(/LỖI QUYỀN TRUY CẬP/.test(c), 'phải là câu chuẩn D-46: ' + c);
+      dung(/không phải JSON/i.test(c), 'dòng chi tiết phải giữ dấu vết phản hồi không phải JSON: ' + c);
       dung(/quyền truy cập|Anyone/i.test(c), 'không chỉ ra lỗi quyền truy cập khi Deploy: ' + c);
       bang(dong.htmlDangNhap, 0, 'không được ghi dòng nào');
       return 'mã HTTP 200 nhưng thân là HTML · lượt gọi mạng ' + luot.htmlDangNhap +
@@ -426,18 +434,24 @@ async function chay() {
       return 'lượt gọi mạng ' + luot.quaGio + ' · dòng ghi ' + dong.quaGio;
     });
 
-    await test('T-WA-17 bốn loại lỗi cho BỐN CÂU KHÁC NHAU, không phải một câu chung chung', () => {
-      const ten = ['biMat', 'phienBan', 'ma500', 'htmlDangNhap'];
+    await test('T-WA-17 lỗi KHÁC NGUYÊN NHÂN thì KHÁC CÂU; hai ca cùng nguyên nhân thì cố ý cùng câu', () => {
+      // Ba nhóm, ba cách chữa khác hẳn nhau, nên phải khác câu ngay từ đầu dòng:
+      //   quyen403/htmlDangNhap → đi sửa quyền · phienBan → đi Deploy · ma500 → chạy lại / xem Executions.
+      const ten = ['quyen403', 'phienBan', 'ma500'];
       for (let i = 0; i < ten.length; i++) {
         for (let j = i + 1; j < ten.length; j++) {
           dung(cau[ten[i]] !== cau[ten[j]], ten[i] + ' và ' + ten[j] + ' cùng một câu');
-          // 40 ký tự đầu là phần "chuyện gì". Trùng nhau ở đây nghĩa là người đọc phải soi tới cuối
-          // câu mới phân biệt được, trên cửa sổ đen thì gần như không phân biệt được.
+          // 40 ký tự đầu là phần "chuyện gì". Trùng nhau ở đây nghĩa là người đọc phải soi tới cuối câu
+          // mới phân biệt được, mà trên cửa sổ đen thì gần như không phân biệt được.
           dung(cau[ten[i]].slice(0, 40) !== cau[ten[j]].slice(0, 40),
             ten[i] + ' và ' + ten[j] + ' mở đầu giống hệt 40 ký tự');
         }
       }
-      return ten.map((t) => t + ': "' + cau[t].slice(0, 46).replace(/\n/g, ' ') + '…"').join('\n        ');
+      // Chiều ngược lại, cũng phải canh: 403 và trang đăng nhập là CÙNG một nguyên nhân (quyền), nên
+      // D-46 cố ý cho chúng cùng MỘT câu. Tách thành hai câu là bắt người đọc tự đoán mình đang ở ca nào.
+      bang(cau.quyen403.split('\n')[0], cau.htmlDangNhap.split('\n')[0],
+        'hai ca quyền phải cùng một câu chuẩn D-46 ở dòng đầu');
+      return ten.map((t) => t + ': "' + cau[t].split('\n')[0].slice(0, 46) + '…"').join('\n        ');
     });
 
     await test('T-WA-18 KHÔNG THỬ LẠI VÔ HẠN, mỗi loại lỗi chỉ tốn ĐÚNG 1 lượt gọi mạng', () => {
@@ -574,33 +588,184 @@ async function chay() {
   // (lệnh ghi dừng, `thaoTac.length === 0`). Hai bài dưới đây CỐ Ý không lặp lại hai bài đó: chúng đi
   // trọn đường máy tính → mạng → Apps Script và đo thứ hai bài kia không đo: SỐ DÒNG THẬT CỦA FILE
   // THÁNG TRƯỚC, trước và sau. "Không ghi lùi" chỉ chứng minh được bằng con số đó.
-  console.log('--- D-14 · tháng hiện tại chưa có trong bảng link (bổ sung cho T-DT-19 / T-DT-44) ---');
+  console.log('--- D-42 · chưa khai link tháng đang chạy → dừng TRÊN MÁY, không ghi lùi ---');
   {
-    const b = dungBoi({ thieuThang9: true });   // bảng link dừng ở tháng 8
+    const b = dungBoi({ thieuThang9: true });   // file tháng 9 có thật, nhưng link_thang chưa khai
     const t8Truoc = { dong: soDongCua(b.thang8), ma: maDonCua(b.thang8) };
 
-    await test('T-WA-25 chưa khai tháng 9 → DỪNG, và file tháng 8 không bị ghi lùi một dòng nào', async () => {
-      // Triệu chứng nếu vi phạm: đơn tháng 9 nằm trong sổ tháng 8. Dòng tổng tháng 8 sai, dòng tổng
-      // tháng 9 thiếu, và không ai phát hiện cho tới lúc đối chiếu cuối quý.
+    await test('T-WA-25 chưa khai link tháng 9 → DỪNG trên máy, chưa gọi mạng, tháng 8 không bị ghi lùi', async () => {
+      // Triệu chứng nếu vi phạm: đơn tháng 9 nằm trong sổ tháng 8. Dòng tổng tháng 8 sai, dòng tổng tháng
+      // 9 thiếu, và không ai phát hiện cho tới lúc đối chiếu cuối quý.
+      // Khác bản 2.4.0 ở CHỖ DỪNG: trước đây Web App bên Google mới phát hiện thiếu tháng, nay máy tra
+      // link_thang trước khi gửi nên dừng ngay tại chỗ — không tốn một lượt gọi mạng nào.
       b.sim.demLai();
-      const cauLoi = await batLoi(() => b.web.ghi('2026-09', lenhMau(5)), 'tháng chưa khai');
-      dung(/Chưa có file cho tháng 9\/2026/.test(cauLoi), 'câu báo không nêu đúng tháng: ' + cauLoi);
-      dung(/Thông tin shop/.test(cauLoi), 'câu báo không chỉ ra chỗ phải thêm dòng: ' + cauLoi);
+      const cauLoi = await batLoi(() => b.web.ghi('2026-09', lenhMau(5)), 'chưa khai link tháng');
+      dung(/CHƯA CÓ LINK FILE THÁNG 2026-09/.test(cauLoi), 'câu báo không nêu đúng tháng: ' + cauLoi);
+      dung(/CAU_HINH_VAN_HANH\.json/.test(cauLoi), 'phải chỉ ra file cấu hình phải sửa: ' + cauLoi);
+      dung(/3_TAO_FILE_THANG_MOI\.bat/.test(cauLoi), 'phải chỉ ra nút phải bấm: ' + cauLoi);
+      dung(/không ghi gì/i.test(cauLoi), 'phải nói rõ là CHƯA ghi gì: ' + cauLoi);
+      bang(b.sim.nhatKyGoi.length, 0, 'phải dừng TRƯỚC khi gọi mạng, không tốn lượt gọi nào');
       bang(maDonCua(b.thang8), t8Truoc.ma, 'file tháng 8 phải y nguyên từng mã đơn');
       bang(soDongCua(b.thang8), t8Truoc.dong, 'file tháng 8 phải y nguyên số dòng');
-      return 'dòng tháng 8 ' + t8Truoc.dong + ' → ' + soDongCua(b.thang8) + ' · mã đơn tháng 8 ' +
-        JSON.stringify(maDonCua(b.thang8)) + ' · lượt gọi mạng ' + b.sim.nhatKyGoi.length +
-        '\n        ' + cauLoi.slice(0, 150) + ' …';
+      bang(soDongCua(b.thang9), 0, 'file tháng 9 cũng không được ghi gì');
+      return 'dòng tháng 8 ' + t8Truoc.dong + ' → ' + soDongCua(b.thang8) + ' · lượt gọi mạng ' +
+        b.sim.nhatKyGoi.length + '\n        ' + cauLoi.slice(0, 150) + ' …';
     });
 
-    await test('T-WA-26 câu báo D-14 KHÔNG lộ mật khẩu gian hàng nằm cùng sheet "Thông tin shop "', () => {
-      // Bảng link nằm ở cột A, B, C; cột D trở đi là MẬT KHẨU GIAN HÀNG. Câu báo lỗi in ra cửa sổ đen
-      // và vào file nhật ký, lộ ở đây là lộ vĩnh viễn.
+    await test('T-WA-26 link_thang trỏ NHẦM file tháng khác → Web App từ chối SAI_THANG_FILE, không ghi', async () => {
+      // Hàng rào thứ hai của D-42, và là hàng rào quan trọng hơn: thiếu link thì tool tắc — ai cũng thấy.
+      // Trỏ NHẦM link thì tool chạy êm và ghi vào sổ sai tháng — không ai thấy. Chỉ tên file tố giác được.
+      const b2 = dungBoi();
+      // Máy khai link tháng 9 cho khóa "2026-08": đúng cảnh dán nhầm dòng trong CAU_HINH_VAN_HANH.json.
+      const web = b2.tao({ link_thang: { '2026-08': b2.sim.linkCua('2026-09') }, choPhepThangKhac: true });
+      const t9Truoc = soDongCua(b2.thang9);
+      const cauLoi = await batLoi(() => web.ghi('2026-08', lenhMau(3)), 'link trỏ nhầm tháng');
+      dung(/SAI_THANG_FILE/.test(cauLoi), 'phải mang mã SAI_THANG_FILE: ' + cauLoi);
+      dung(/THÁNG-9-2026/.test(cauLoi), 'phải nêu TÊN file mà link đang trỏ tới: ' + cauLoi);
+      dung(/link_thang/.test(cauLoi), 'phải chỉ ra khóa cấu hình phải sửa: ' + cauLoi);
+      bang(soDongCua(b2.thang9), t9Truoc, 'file tháng 9 không được nhận một dòng nào của tháng 8');
+      return 'dòng tháng 9 ' + t9Truoc + ' → ' + soDongCua(b2.thang9) + '\n        ' + cauLoi.slice(0, 150);
+    });
+
+    await test('T-WA-26b INV-7: không lượt nào in link Web App, link file tháng hay ID file ra ngoài', () => {
+      // D-43 bỏ chuỗi bí mật, nên thứ phải giữ kín nay là ĐƯỜNG VÀO: link /exec và ID file tháng. Câu báo
+      // lỗi in ra cửa sổ đen rồi vào file nhật ký — lộ ở đó là lộ vĩnh viễn.
       const moi = b.sim.moiChuoiDaIn().join('\n');
-      dung(moi.indexOf(b.sim.CHUOI_MAT_KHAU_BAY) < 0, 'LỘ MẬT KHẨU GIAN HÀNG');
-      dung(moi.indexOf(b.sim.CHUOI_TEN_DANG_NHAP_BAY) < 0, 'LỘ TÊN ĐĂNG NHẬP');
-      dung(moi.indexOf(b.sim.biMat) < 0, 'LỘ CHUỖI BÍ MẬT');
-      return 'quét ' + moi.length + ' ký tự đã in/trả về · 0 lần khớp chuỗi mồi';
+      dung(moi.indexOf('GIA_LAP_KEODON/exec') < 0, 'LỘ LINK WEB APP trong đầu ra của Web App');
+      const web = b.tao();
+      const che = web.chePhu('mở https://docs.google.com/spreadsheets/d/' + b.sim.idCua('2026-09') +
+        '/edit bằng link ' + b.sim.url);
+      dung(che.indexOf(b.sim.idCua('2026-09')) < 0, 'chePhu() không che được ID file tháng: ' + che);
+      dung(che.indexOf(b.sim.url) < 0, 'chePhu() không che được link Web App: ' + che);
+      return 'quét ' + moi.length + ' ký tự đã in/trả về · chePhu() che cả link Web App lẫn ID file tháng';
+    });
+  }
+
+  // ================================================================== YC-30 (D-46): BA CA MỘT CÂU
+  //
+  // Ba nguyên nhân khác nhau, cùng MỘT việc phải làm, nên cùng MỘT câu. Trước 13/9 mỗi ca ra một câu
+  // khác nhau và không ca nào nói được việc phải làm: ca 403 in "Web App trả mã 403"; ca trang đăng nhập
+  // rơi vào `JSON.parse` hỏng nên in "Web App trả về không phải JSON"; ca Web App mở không được file thì
+  // in nguyên câu của Apps Script. Người vận hành đọc ba câu đó không ai đoán ra là phải đi chia sẻ file.
+  {
+    const CAU = 'LỖI QUYỀN TRUY CẬP — kiểm tra: (1) Web App đã Deploy bản mới, Who has access = Anyone; ' +
+      '(2) file Google Sheet tháng 2026-09 phải do tài khoản đã deploy Web App sở hữu hoặc được chia sẻ ' +
+      'quyền Chỉnh sửa.';
+
+    console.log('\n--- YC-30 (D-46): ba ca quyền truy cập gom về một câu ---');
+
+    await test('T-WA-27 ba ca (403 · trang đăng nhập HTML · Web App báo không mở được file) → ĐÚNG MỘT CÂU', async () => {
+      const ca = [
+        ['HTTP 403', { ma403: true }, 403],
+        ['trang đăng nhập HTML (mã 200)', { htmlDangNhap: true }, 200],
+        ['Web App trả NGOAI_LE không mở được file', { loiMoFile: 'You do not have permission to access the requested document.' }, 200]
+      ];
+      const thu = [];
+      for (const [ten, co, maHttp] of ca) {
+        const b2 = dungBoi();
+        b2.sim.datLoi(co);
+        const cau = await batLoi(() => b2.tao().ghi('2026-09', lenhMau(2)), ten);
+        dung(cau.indexOf(CAU) === 0, ten + ': câu phải MỞ ĐẦU đúng nguyên văn D-46, nhận: ' + cau.slice(0, 200));
+        dung(cau.indexOf('Chi tiết') > 0, ten + ': phải có dòng chi tiết để người sửa còn manh mối');
+        if (maHttp !== 200) {
+          dung(cau.indexOf('HTTP ' + maHttp) > 0, ten + ': dòng chi tiết phải ghi mã HTTP thật, nhận: ' + cau);
+        }
+        bang(soDongCua(b2.thang9), 0, ten + ': từ chối rồi thì KHÔNG được ghi dòng nào');
+        b2.sim.thaoGo();
+        thu.push(ten);
+      }
+      return thu.length + ' ca · cùng một câu mở đầu · 0 dòng được ghi';
+    });
+
+    await test('T-WA-28 ĐỐI CHỨNG ÂM: Web App trả 200 JSON hợp lệ → KHÔNG được in câu lỗi quyền', async () => {
+      // Câu đỏ này dừng cả lượt chạy. In oan vài lần là người vận hành quen tay bỏ qua, rồi bỏ qua luôn
+      // lần nó đúng. Phép chấm ở T-WA-27 chỉ có nghĩa nếu chiều ngược lại cũng được canh.
+      const b2 = dungBoi();
+      const kq = await b2.tao().ghi('2026-09', lenhMau(2));
+      dung(kq && kq.thongKe.donGhi === 2, 'lượt bình thường phải ghi được 2 đơn: ' + JSON.stringify(kq && kq.thongKe));
+      const moi = b2.sim.moiChuoiDaIn().join('\n');
+      dung(moi.indexOf('LỖI QUYỀN TRUY CẬP') < 0, 'lượt chạy bình thường mà vẫn in câu lỗi quyền');
+      b2.sim.thaoGo();
+      return 'ghi ' + kq.thongKe.donGhi + ' đơn · 0 lần in câu lỗi quyền';
+    });
+
+    // ================================================================ YC-28: CỬA CHUỖI BÍ MẬT
+    //
+    // D-43 sửa 13/9: chuỗi bí mật KHÔNG bị bỏ. Cái bỏ là việc bắt user gõ tay — gói giao user mang sẵn
+    // chuỗi trong CAU_HINH_VAN_HANH.json. Link Web App để `Anyone`, nên chuỗi này là thứ duy nhất ngăn
+    // người dò trúng link ghi thẳng vào sổ tiền của shop.
+    console.log('\n--- YC-28: cửa chuỗi bí mật (C-6.2 so bằng SHA-256) ---');
+
+    await test('T-WA-29 chuỗi ĐÚNG qua cửa; sai / rỗng / thiếu hẳn đều bị TỪ CHỐI, không ghi ô nào', async () => {
+      const b2 = dungBoi();
+      const ok = await b2.tao().ghi('2026-09', lenhMau(2));
+      bang(ok.thongKe.donGhi, 2, 'chuỗi đúng phải ghi được');
+      const daGhi = soDongCua(b2.thang9);
+
+      const ca = [
+        ['sai một ký tự cuối', b2.sim.biMat.slice(0, -1) + 'X'],
+        ['sai hoa/thường', b2.sim.biMat.toLowerCase()],
+        ['thiếu một ký tự', b2.sim.biMat.slice(0, -1)],
+        ['thừa một ký tự', b2.sim.biMat + 'x']
+      ];
+      for (const [ten, chuoi] of ca) {
+        const cau = await batLoi(() => b2.tao({ chuoi_bi_mat: chuoi }).ghi('2026-09', lenhMau(2)), ten);
+        dung(/SAI_BI_MAT/.test(cau), ten + ': phải mang mã SAI_BI_MAT, nhận: ' + cau.slice(0, 160));
+        dung(cau.indexOf(b2.sim.biMat) < 0, ten + ': câu lỗi KHÔNG được in lại chuỗi thật');
+        dung(cau.indexOf(chuoi) < 0, ten + ': câu lỗi KHÔNG được in lại chuỗi vừa gửi');
+      }
+      bang(soDongCua(b2.thang9), daGhi, 'mọi lượt sai chuỗi cộng lại phải ghi thêm 0 dòng');
+
+      // Rỗng và thiếu hẳn: chặn NGAY TRÊN MÁY, chưa gọi mạng — lỗi cấu hình thì không cần hỏi Google.
+      for (const co of [{ chuoi_bi_mat: '' }, { chuoi_bi_mat: undefined }]) {
+        let cau = '';
+        try { b2.tao(co); } catch (e) { cau = String(e.message); }
+        dung(/thiếu chuoi_bi_mat/.test(cau), 'thiếu chuỗi phải dừng ngay lúc dựng, nhận: ' + cau);
+      }
+      b2.sim.thaoGo();
+      return ca.length + ' ca sai đều bị chặn · 2 ca thiếu chặn ngay trên máy · 0 dòng lọt';
+    });
+
+    await test('T-WA-30 ĐỐI CHỨNG ÂM: gỡ cửa bí mật khỏi doPost → cả bốn ca sai PHẢI TRƯỢT', async () => {
+      // Dựng lại đúng khuyết tật (cửa bị gỡ) rồi chạy lại chính bốn ca của T-WA-29. Chúng phải ĐƯỢC CHẤP
+      // NHẬN — chứng minh T-WA-29 đang canh cái cửa, không phải canh một thứ khác tình cờ cũng chặn.
+      const CU = "    if (!biMatDung_(body.token)) {";
+      const suaNguon = (src) => {
+        const n = src.split(CU).length - 1;
+        if (n !== 1) {
+          throw new Error('ĐỐI CHỨNG ÂM HỎNG: cần đúng 1 chỗ gọi biMatDung_ trong doPost, tìm được ' + n +
+            '. Mã đã đổi — sửa lại chuỗi mốc, ĐỪNG bỏ qua bài này.');
+        }
+        return src.split(CU).join('    if (false) {');
+      };
+      const sim2 = gl.taoGiaLap({ ngay: NGAY_MAY_CHU, suaNguon: suaNguon });
+      napFileThang(sim2.khaiThang('2026-09', 'THÁNG-9-2026-KINH-DOANH'), []);
+      const web = new WebAppGoogleSheet(sim2.cauHinhMay({
+        duong: 'ghi', cotPII: cfg.cotPII, chuoi_bi_mat: sim2.biMat.slice(0, -1) + 'X'
+      }));
+      const kq = await web.ghi('2026-09', lenhMau(2));
+      const soDong = soDongCua(sim2.soLinkThang['2026-09']);
+      sim2.thaoGo();
+      bang(kq.thongKe.donGhi, 2, 'cửa đã gỡ mà vẫn chặn — phép chấm T-WA-29 đang canh nhầm chỗ');
+      dung(soDong > 0, 'cửa đã gỡ thì chuỗi sai lẽ ra phải ghi lọt — nhận 0 dòng');
+      return 'cửa gỡ → chuỗi sai ghi lọt ' + kq.thongKe.donGhi + ' đơn (đúng như phải), nên T-WA-29 có mắt';
+    });
+
+    await test('T-WA-31 C-6.1: phản hồi SAI_BI_MAT không mang phienBan lẫn banDung', async () => {
+      const b2 = dungBoi();
+      const kq = b2.sim.vo.doPost({ postData: { contents: JSON.stringify({ hanhDong: 'ping', token: 'SAI' }) } });
+      const o = JSON.parse(kq.getContent());
+      bang(o.loi, 'SAI_BI_MAT');
+      bang(o.phienBan, undefined, 'nhánh chưa qua cửa KHÔNG được lộ số phiên bản');
+      bang(o.banDung, undefined, 'nhánh chưa qua cửa KHÔNG được lộ dấu vân tay bản dựng');
+      // Và chiều ngược lại: qua cửa rồi thì PHẢI có, nếu không máy mất chỗ so bản dựng.
+      const ok = JSON.parse(b2.sim.vo.doPost({
+        postData: { contents: JSON.stringify({ hanhDong: 'ping', token: b2.sim.biMat }) }
+      }).getContent());
+      bang(ok.phienBan, b2.sim.vo.PHIEN_BAN, 'qua cửa rồi thì phải trả phienBan');
+      dung(!!ok.banDung, 'qua cửa rồi thì phải trả banDung');
+      b2.sim.thaoGo();
+      return 'sai chuỗi: 0 thông tin bản dựng · đúng chuỗi: đủ phienBan + banDung';
     });
   }
 

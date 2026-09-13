@@ -27,12 +27,14 @@
  * việc của vỏ máy vẫn giữ nguyên: GOM câu trùng giữa các lô (`gomCanhBaoVungCongThuc`) và IN ra màn
  * hình ngay tại chỗ chạy (`inCanhBaoVungCongThuc`).
  *
- * File tháng nào là đích thì do chính Web App quyết, tra bảng link trong sheet `Thông tin shop `
- * của file mỏ neo (GV-v2.3 mục 1). Máy này KHÔNG giữ id file tháng nào cả — 2-3 máy user mà
- * mỗi máy giữ một id là sớm muộn có máy ghi vào file tháng cũ.
+ * FILE THÁNG DO MÁY CHỈ ĐỊNH (D-42, 12/9/2026): máy tra `link_thang["yyyy-MM"]` trong
+ * CAU_HINH_VAN_HANH.json theo tháng của ngày chạy (hàm `idFileThang` của gsheet-web-app.js) và gửi
+ * `spreadsheetId` trong gói; Web App mở đúng file đó và kiểm chéo tên file với tháng. Không có link
+ * tháng đang chạy → dừng ngay trên máy, không ghi lùi. Không còn bảng link trên Google, không mỏ neo,
+ * không chuỗi bí mật (D-43).
  *
- * CHƯA CHẠY THẬT (08/9/2026): chưa có link Web App và chuỗi bí mật của chủ dự án. Toàn bộ đường đi
- * đã kiểm bằng `node/test-xu-ly-tren-google.js` (Web App giả chạy chính mã thật của ShellAppsScript.gs).
+ * Đã chạy thật lần đầu 09/9/2026 (12 đơn lên file DEMO, tiền khớp 12/12); bản 2.5.0 đổi cách nhận file
+ * tháng nên chủ dự án phải Deploy lại rồi chạy lại một lượt trên DEMO (BAO_CAO_DEV.md mục 11).
  */
 const fs = require('fs');
 const path = require('path');
@@ -149,13 +151,6 @@ function inCanhBaoVungCongThuc(lop, ds, in_) {
 }
 
 /**
- * In cảnh báo BẢNG LINK ra màn hình ngay khi chạy (GV-v2.5 mục 1, việc kèm theo số 2).
- *
- * TRIỆU CHỨNG THẬT ĐANG CHỐNG: bảng link thiếu dòng cho tháng sau thì đến ngày 1 của tháng sau tool
- * TẮC HẲN — "Chưa có file cho tháng N". Câu này báo trước cả tháng, nhưng nó chỉ có tác dụng nếu
- * user NHÌN THẤY; nằm im trong mảng canhBao của phản hồi thì không ai đọc.
- */
-/**
  * In cảnh báo LỆCH BẢN DỰNG. Chỉ nói, không chặn — theo chốt của BA, để không tắc buổi chạy thử.
  * Đặt ở cả hai đường ('xuLy' và 'ghi'): bản `.gs` trên Google cũ hơn thì hai đường sai như nhau.
  */
@@ -166,16 +161,12 @@ function inCanhBaoBanDung(web, in_) {
   ds.forEach((c) => in_('    ! ' + c));
 }
 
-function inCanhBaoBangLink(ds, in_) {
-  (ds || []).filter((c) => String(c).indexOf('Bảng link mới khai tới') === 0)
-    .forEach((c) => in_('  ! ' + c));
-}
-
 // ==================================================================== chạy thật
 
 /**
  * Chạy thật: chọn đường theo cấu hình, gửi lệnh, trả về đúng một bộ thống kê cho cả hai đường.
  * @param {Object} tuyChon { cauHinhGoogle, cacFile, cfg, lop, thoiDiem, ngayGhi, thang, in }
+ *   cauHinhGoogle: { web_app_url, bat, duong?, link_thang (D-42), spreadsheetId?, choPhepThangKhac? }
  */
 async function chayLenGoogleSheet(tuyChon) {
   const { lop, cfg } = tuyChon;
@@ -235,7 +226,6 @@ async function duongXuLy(web, tuyChon, thang, ngayGhi, in_) {
   in_('File tháng: ' + (kq.tenFile || '(không rõ tên)') + ' · ' + kq.soLo + ' lô · ' + kq.soLanGoi + ' lượt gọi');
   const canhBaoLo = gomCanhBaoVungCongThuc(tuyChon.lop, kq.canhBao);
   inCanhBaoBanDung(web, in_);
-  inCanhBaoBangLink(canhBaoLo, in_);
   inCanhBaoVungCongThuc(tuyChon.lop, canhBaoLo, in_);
   return {
     thongKe: kq.thongKe,
@@ -276,7 +266,6 @@ async function duongGhiCu(web, tuyChon, thang, ngayGhi, in_) {
   const kq = await web.ghi(thang, goi.lenh, goi.mappingThem);
   const canhBaoLo = gomCanhBaoVungCongThuc(lop, goi.canhBao.concat(kq.canhBao || []));
   inCanhBaoBanDung(web, in_);
-  inCanhBaoBangLink(canhBaoLo, in_);
   inCanhBaoVungCongThuc(lop, canhBaoLo, in_);
   return {
     thongKe: Object.assign({}, goi.thongKe, { donDaCoTuXa: kq.thongKe.donDaCo, mappingThem: kq.thongKe.mappingThem }),
@@ -301,5 +290,5 @@ function demDong(cacFile) {
 module.exports = {
   chayLenGoogleSheet, dungGoiGhi, bangCuaSheet, thangCua, ngayCua,
   napVoGoogle, chuanDuong, demDon, demDong,
-  gomCanhBaoVungCongThuc, inCanhBaoVungCongThuc, inCanhBaoBangLink, inCanhBaoBanDung
+  gomCanhBaoVungCongThuc, inCanhBaoVungCongThuc, inCanhBaoBanDung
 };

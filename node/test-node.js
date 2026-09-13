@@ -241,7 +241,7 @@ test('N-07', 'GỘP Ô trên file thật: đơn nhiều mặt hàng gộp đúng
   return kq.donGopO + ' đơn nhiều mặt hàng → ' + (kq.donGopO * 6) + ' ô gộp mới (' + Object.keys(cot).sort().join(',') + ')';
 });
 
-test('N-08', 'Chế độ SHEET (Google Sheet): CHỈ kéo cột L, tuyệt đối không ghi vào E,F,M,N (ARRAYFORMULA một ô)', async () => {
+test('N-08', 'Chế độ SHEET (Google Sheet): vỏ Excel CHỈ kéo cột L, không ghi giá trị vào E,F,M,N — công thức từng dòng, KHÔNG phải ARRAYFORMULA một ô', async () => {
   const mt = moiTruong('n08');
   const cfg = lop.Config.tao({ chung: { che_do_cong_thuc: 'SHEET' } });
   const { out } = await chayThat(mt, mt.tracking, { cfg });
@@ -520,10 +520,16 @@ test('N-16', 'D-04: file xuất của gian khác thả nhầm thư mục → D�
   const r1 = mt.chay('08:00');
   const ra1 = (r1.stdout || '') + (r1.stderr || '');
   bang(r1.status, 1, 'thả nhầm gian phải thoát mã 1 (hỏng ồn ào): ' + ra1);
-  phai(/thả nhầm thư mục gian hàng/.test(ra1), 'nói thẳng "thả nhầm thư mục gian hàng": ' + ra1);
-  phai(/SP_OFFOOD/.test(ra1) && /Shopee mall/.test(ra1), 'nêu cả thư mục đang nằm lẫn gian thật của tên hàng: ' + ra1);
+  // Câu chuẩn của YC-36, nguyên văn. Đề bài chốt từng chữ vì đây là câu người vận hành đọc lúc đang vội:
+  // nó phải nói được BA thứ trong một dòng — file giống gian nào, đang nằm ở gian nào, và tool chưa ghi.
+  // Tên gian ĐANG THẢ lấy theo cấu hình của bộ vận hành giả (`thu_muc_gian_hang`), không viết cứng ở
+  // đây — viết cứng thì đổi tên hiển thị một gian là bài test hỏng trong khi mã vẫn đúng.
+  const mD04 = ra1.match(/FILE NÀY GIỐNG GIAN (.+?), ĐANG THẢ VÀO (.+?) — tool không ghi\. Kéo file sang đúng thư mục rồi bấm lại\./);
+  phai(mD04, 'phải in đúng nguyên văn câu D-04 của YC-36: ' + ra1);
+  bang(mD04[1], 'Shopee mall', 'câu phải nêu đúng gian THẬT của các tên hàng trong file');
+  phai(mD04[2] !== 'Shopee mall', 'gian đang thả phải khác gian thật, nếu không câu này vô nghĩa: ' + mD04[2]);
   phai(/Tool chưa ghi gì cả/.test(ra1), 'khẳng định chưa ghi gì: ' + ra1);
-  phai(/chuyển file sang đúng thư mục/.test(ra1), 'nói việc người vận hành phải làm: ' + ra1);
+  phai(/tên hàng đã khai ở gian kia/.test(ra1), 'phải có dòng chi tiết nêu số liệu, không chỉ một câu suông: ' + ra1);
 
   // hành vi thật, không phải câu chữ: không có file kết quả nào có dữ liệu
   bang(mt.fileKetQuaThat().length, 0, 'không sinh file kết quả nào có dữ liệu: ' + mt.ketQua().join(', '));

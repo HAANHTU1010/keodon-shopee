@@ -14,11 +14,19 @@
  * DỮ LIỆU NGƯỜI MUA (INV-4): gói `xuLy` mang dòng thô của file xuất đi qua mạng, nên trước khi gửi
  * `kiemPII()` soát lại toàn bộ gói — tên trường và giá trị. Có mùi PII là NÉM LỖI, không gửi.
  *
- * CHƯA CHẠY THẬT (07/9/2026): chủ dự án chưa gửi link Web App và chuỗi bí mật. Toàn bộ đường đi
- * đã viết xong và bật được bằng cách điền hai dòng trong `03_VAN_HANH/CAU_HINH_VAN_HANH.json`.
+ * CHUỖI BÍ MẬT VẪN CÒN (D-43 sửa 13/9/2026): mỗi gói POST mang `token` = `google_sheet.chuoi_bi_mat`.
+ * Điều đổi ngày 13/9 là user KHÔNG phải điền tay nữa — gói giao user đã có sẵn chuỗi trong
+ * `CAU_HINH_VAN_HANH.json`. Link Web App để `Anyone` nên chuỗi này là thứ duy nhất ngăn người dò trúng
+ * link ghi thẳng vào sổ tiền. INV-7: KHÔNG in chuỗi bí mật, link Web App, link file tháng hay ID file ra
+ * màn hình / nhật ký — `chePhu()` che cả bốn thứ đó trong mọi câu lỗi trước khi in.
  *
- * BÍ MẬT: chuỗi bí mật chỉ đi trong thân gói POST. Không ghi ra log, không đưa vào thông báo lỗi,
- * không đưa vào tên file. Hàm `chePhuBiMat()` dọn mọi chuỗi trông giống bí mật trước khi in.
+ * FILE THÁNG DO MÁY CHỈ ĐỊNH (D-42): `idFileThang(link_thang, thang)` tra link của tháng rồi rút ID, và
+ * `_goi()` gắn `spreadsheetId` vào mọi gói doc/ghi/xuLy. Không có link tháng đang chạy → dừng NGAY TRÊN
+ * MÁY với câu chuẩn D-42, chưa gọi mạng, không ghi lùi vào tháng trước.
+ *
+ * LỖI QUYỀN NÓI TIẾNG NGƯỜI (D-46): 401/403, trang HTML hoặc trang đăng nhập thay vì JSON, và Web App báo
+ * không mở / không ghi được file — cả ba gom về MỘT câu `cauLoiQuyen(thang)` rồi dừng; mã HTTP thật và
+ * câu chi tiết của Apps Script đi ở dòng dưới, để người sửa còn manh mối.
  *
  * ĐỐI CHIẾU PHIÊN BẢN (GV-v2.3 mục 2.3): Google KHÔNG tự đồng bộ mã. Sửa `.gs` mà quên
  * Deploy → Manage deployments → New version thì link /exec vẫn chạy bản cũ, KHÔNG báo lỗi gì —
@@ -30,7 +38,7 @@ const https = require('https');
 const { URL } = require('url');
 
 /** Phải khớp `var PHIEN_BAN` trong `src/ShellAppsScript.gs`. Đổi hợp đồng gói JSON thì đổi cả hai. */
-const PHIEN_BAN = '2.4.0';
+const PHIEN_BAN = '2.5.0';
 
 const TOI_DA_DON_MOT_LO = 200;      // Apps Script chỉ có 6 phút một lần chạy; chia lô cho chắc
 
@@ -51,6 +59,12 @@ const TOI_DA_DON_MOT_LO_XU_LY = 200;
 const SO_LAN_GOI_TIEP_TOI_DA = 12;
 
 const TIMEOUT_MS = 180000;
+
+/** 'yyyy-MM' theo giờ máy — chỉ dùng để điền vào câu lỗi khi gói không mang `thang` (ví dụ lượt ping). */
+function thangHienTaiMay() {
+  const d = new Date();
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+}
 
 /** Nguyên văn câu báo lệch phiên bản. Bản Apps Script (`thongBaoLechPhienBan_`) phải giống hệt từng chữ. */
 function thongBaoLechPhienBan(banThuc, banCan) {
@@ -73,9 +87,10 @@ function thongBaoLechPhienBan(banThuc, banCan) {
 function soDauVanTay(pingKq) {
   const ra = [];
   if (!pingKq || typeof pingKq !== 'object') return ra;
-  // Nhánh sai bí mật CỐ Ý không mang `banDung` (xem `traLoi_`). Không có nghĩa là bản cũ — kêu ở
-  // đây là kêu oan, và tệ hơn: nó chen một câu sai vào đúng lúc người ta chỉ gõ nhầm chuỗi bí mật.
-  if (pingKq.loi === 'SAI_BI_MAT') return ra;
+  // C-6.1: phản hồi SAI_BI_MAT / CHUA_CAI_DAT cố ý KHÔNG mang `banDung` lẫn `phienBan`. Không loại trừ ở
+  // đây thì mọi lượt sai chuỗi lại kèm thêm câu "bản trên Google là bản cũ" — sai hẳn nguyên nhân, và
+  // người ta sẽ đi Deploy lại trong khi việc phải làm là dùng đúng gói được giao.
+  if (pingKq.loi === 'SAI_BI_MAT' || pingKq.loi === 'CHUA_CAI_DAT') return ra;
 
   const hl = pingKq.hamLoi;
   if (hl && Array.isArray(hl.thieu) && hl.thieu.length) {
@@ -117,6 +132,97 @@ function kiemPhienBan(banThuc, banCan) {
   const thuc = String(banThuc == null ? '' : banThuc).trim();
   if (thuc === can) return true;
   throw new Error(thongBaoLechPhienBan(thuc || '(không rõ — bản cũ chưa trả phienBan)', can));
+}
+
+// ==================================================================== LINK THÁNG TRÊN MÁY (D-42)
+
+/** Câu chuẩn D-42 (02_GIAO_VIEC_DEV.md YC-31 điểm 2) khi cấu hình chưa có link của tháng đang chạy. */
+function cauThieuLinkThang(thang) {
+  return 'CHƯA CÓ LINK FILE THÁNG ' + thang + ' trong CAU_HINH_VAN_HANH.json — bấm 3_TAO_FILE_THANG_MOI.bat ' +
+    'để khai báo (chế độ 2) hoặc chuyển sổ (chế độ 1). Tool không ghi gì.';
+}
+
+const RE_LINK_SHEET = /^https:\/\/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]{20,})/;
+
+/**
+ * Tra link file tháng trong `link_thang` (object "yyyy-MM" → link) — HÀM THUẦN, không chạm mạng.
+ * `trim()` vì user dán link hay dính khoảng trắng đầu/cuối (chủ dự án nêu 12/9).
+ * @returns {{id:string, link:string}}
+ * @throws {Error} có `maKeodon`: `CHUA_CO_LINK_THANG` (không có khóa, hoặc khóa rỗng) ·
+ *                 `LINK_THANG_HONG` (có khóa nhưng không phải link Google Sheet)
+ */
+function idFileThang(linkThang, thang) {
+  const th = String(thang == null ? '' : thang).trim();
+  const bang = (linkThang && typeof linkThang === 'object') ? linkThang : {};
+  const tho = Object.prototype.hasOwnProperty.call(bang, th) ? bang[th] : '';
+  const link = String(tho == null ? '' : tho).trim();
+  if (!link) {
+    const e = new Error(cauThieuLinkThang(th));
+    e.maKeodon = 'CHUA_CO_LINK_THANG';
+    throw e;
+  }
+  const m = link.match(RE_LINK_SHEET);
+  if (!m) {
+    // INV-7: KHÔNG in lại giá trị đang có trong ô — nó có thể là một link thật của tháng khác.
+    const e = new Error('link_thang["' + th + '"] trong CAU_HINH_VAN_HANH.json không phải link Google Sheet ' +
+      '(phải bắt đầu bằng https://docs.google.com/spreadsheets/d/<ID>). Sửa dòng đó bằng Notepad, hoặc bấm ' +
+      '3_TAO_FILE_THANG_MOI.bat chế độ 2, rồi chạy lại. Tool không ghi gì.');
+    e.maKeodon = 'LINK_THANG_HONG';
+    throw e;
+  }
+  return { id: m[1], link: link };
+}
+
+/** 'yyyy-MM' → tháng liền sau ('2026-12' → '2027-01'). Không đọc được → ''. */
+function thangSau(thang) {
+  const m = String(thang || '').match(/^(\d{4})-(\d{2})$/);
+  if (!m) return '';
+  let nam = Number(m[1]), th = Number(m[2]) + 1;
+  if (th > 12) { th = 1; nam++; }
+  return nam + '-' + ('0' + th).slice(-2);
+}
+
+/**
+ * CẢNH BÁO SỚM — thay cho câu "Bảng link mới khai tới…" của bản 2.4.0 (bảng link nay nằm trên máy).
+ * `link_thang` chưa có THÁNG SAU thì nhắc ngay hôm nay, vì đến ngày 1 tháng sau nút 4 sẽ dừng hẳn ở
+ * `cauThieuLinkThang` — báo trước cả tháng thì còn kịp làm, báo đúng hôm đó là tắc cả buổi.
+ * @returns {string|null}
+ */
+function canhBaoThangSau(linkThang, thang) {
+  const sau = thangSau(thang);
+  if (!sau) return null;
+  const co = linkThang && typeof linkThang === 'object' && String(linkThang[sau] == null ? '' : linkThang[sau]).trim();
+  if (co) return null;
+  return 'link_thang chưa có tháng ' + sau + '. Trước ngày 1 tháng sau: tạo bản sao file tháng trên Google ' +
+    '(File → Make a copy) rồi bấm 3_TAO_FILE_THANG_MOI.bat để khai link — không thì nút 4 sẽ dừng ngay ngày đầu tháng.';
+}
+
+// ==================================================================== LỖI QUYỀN NÓI TIẾNG NGƯỜI (D-46)
+
+/**
+ * Nguyên văn câu chuẩn D-46 — MỘT câu cho cả ba ca (401/403 · HTML đăng nhập · Web App không mở/ghi được
+ * file). Ba ca đó có cùng một cách chữa, nên tách thành ba câu chỉ làm người đọc phải đoán xem mình
+ * đang ở ca nào. Chi tiết kỹ thuật (mã HTTP, câu của Apps Script) đi ở dòng dưới, không trộn vào câu này.
+ */
+function cauLoiQuyen(thang) {
+  return 'LỖI QUYỀN TRUY CẬP — kiểm tra: (1) Web App đã Deploy bản mới, Who has access = Anyone; ' +
+    '(2) file Google Sheet tháng ' + thang + ' phải do tài khoản đã deploy Web App sở hữu hoặc được chia sẻ quyền Chỉnh sửa.';
+}
+
+function loiQuyen(thang, chiTiet, maHttp) {
+  const e = new Error(cauLoiQuyen(thang) +
+    (chiTiet ? '\n  Chi tiết' + (maHttp ? ' (HTTP ' + maHttp + ')' : '') + ': ' + chiTiet : ''));
+  e.maKeodon = 'LOI_QUYEN';
+  e.maHttp = maHttp || null;
+  throw e;
+}
+
+/** Mã lỗi Web App trả về mà bản chất là quyền / đường vào file (xem `moBangTinh_`, `thuGhiDauTien_`). */
+const MA_LOI_QUYEN_WEBAPP = ['KHONG_CO_QUYEN', 'KHONG_THAY_FILE', 'KHONG_MO_DUOC_FILE', 'CHI_CO_QUYEN_XEM'];
+
+/** Dấu hiệu Google trả trang HTML / trang đăng nhập thay vì JSON. */
+function laTrangHtml(buf) {
+  return /<!doctype html|<html|accounts\.google\.com|ServiceLogin|Đăng nhập|Sign in/i.test(String(buf || '').slice(0, 2000));
 }
 
 // ==================================================================== CỔNG CHẶN PII (INV-4)
@@ -196,7 +302,9 @@ function kiemPII(goi, cotPII) {
     duyet({ maGianHang: f.maGianHang, tenFile: f.tenFile }, 'cacFile[' + i + ']', false);
     (f.dong || []).forEach((d, j) => duyet(d, 'cacFile[' + i + '].dong[' + j + ']', true));
   });
-  Object.keys(goi).forEach((k) => { if (k !== 'cacFile' && k !== 'token') duyet(goi[k], k, false); });
+  Object.keys(goi).forEach((k) => {
+    if (k !== 'cacFile' && k !== 'spreadsheetId' && k !== 'token') duyet(goi[k], k, false);
+  });
 
   if (viPham.length) {
     throw new Error('TỪ CHỐI GỬI — gói có dữ liệu người mua (INV-4), ' + viPham.length + ' chỗ:\n  · ' +
@@ -209,9 +317,12 @@ function kiemPII(goi, cotPII) {
 
 class WebAppGoogleSheet {
   /**
-   * @param {Object} cauHinh { web_app_url, chuoi_bi_mat, bat, duong, cotPII }
-   *   duong  'xuLy' (mặc định — Web App tự chạy lớp 2, lớp 3) | 'ghi' (đường cũ, máy tự chạy lớp 2, lớp 3)
-   *   cotPII danh sách 9 cột thông tin người mua, lấy từ `cfg.cotPII`; thiếu là từ chối gửi
+   * @param {Object} cauHinh { web_app_url, bat, duong, cotPII, link_thang, spreadsheetId?, choPhepThangKhac? }
+   *   duong             'xuLy' (mặc định — Web App tự chạy lớp 2, lớp 3) | 'ghi' (đường lùi, máy tự chạy)
+   *   cotPII            danh sách 9 cột thông tin người mua, lấy từ `cfg.cotPII`; thiếu là từ chối gửi
+   *   link_thang        object "yyyy-MM" → link file tháng (D-42) — tra theo `thang` của từng lượt gọi
+   *   spreadsheetId     chỉ định thẳng ID (chạy tay / test); có thì bỏ qua link_thang
+   *   choPhepThangKhac  true CHỈ khi chạy tay `--thang` (D-21b); nút 4 không bao giờ bật
    */
   constructor(cauHinh) {
     const c = cauHinh || {};
@@ -220,21 +331,50 @@ class WebAppGoogleSheet {
     this.bat = c.bat === true;
     this.duong = chuanDuong(c.duong);
     this.cotPII = c.cotPII || null;
+    this.linkThang = (c.link_thang && typeof c.link_thang === 'object') ? c.link_thang : null;
+    this.spreadsheetId = String(c.spreadsheetId || '').trim() || null;
+    this.choPhepThangKhac = c.choPhepThangKhac === true;
     this.phienBanWebApp = null;      // điền từ phản hồi đầu tiên; null = chưa nói chuyện lần nào
     this.canhBaoBanDung = [];        // câu cảnh báo lệch dấu vân tay bản dựng, điền sau lượt ping
     if (this.bat) {
       if (!this.url) throw new Error('Bật ghi Google Sheet nhưng thiếu web_app_url trong CAU_HINH_VAN_HANH.json');
+      // Gói giao user đã có sẵn chuỗi (YC-32), nên thiếu ở đây nghĩa là cấu hình bị sửa tay hoặc gói
+      // lấy từ kho GitHub công khai — nơi chuỗi cố ý để rỗng.
       if (!this.biMat) throw new Error('Bật ghi Google Sheet nhưng thiếu chuoi_bi_mat trong CAU_HINH_VAN_HANH.json');
+      // INV-7: không in lại link ra màn hình, kể cả khi nó sai — câu báo lỗi chỉ nói HÌNH DẠNG đúng.
       if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(this.url))
-        throw new Error('web_app_url phải là link /exec của Apps Script, đang là: ' + this.url);
+        throw new Error('web_app_url trong CAU_HINH_VAN_HANH.json phải là link /exec của Apps Script ' +
+          '(bắt đầu bằng https://script.google.com/ và kết thúc bằng /exec). Mở file bằng Notepad rồi dán lại đúng link.');
     }
   }
 
-  /** Xóa dấu vết chuỗi bí mật khỏi một đoạn văn bản trước khi in ra màn hình hay ghi log. */
-  chePhuBiMat(text) {
+  /** ID file tháng cho một lượt gọi: chỉ định thẳng, hoặc tra `link_thang` theo tháng (ném lỗi D-42 nếu thiếu). */
+  idCuaThang(thang) {
+    if (this.spreadsheetId) return this.spreadsheetId;
+    return idFileThang(this.linkThang, thang).id;
+  }
+
+  /**
+   * INV-7: che link Web App, link file tháng và ID file khỏi một đoạn văn bản trước khi in hay ghi nhật ký.
+   * Che theo HAI đường: giá trị thật đang cầm trên tay, và mẫu chung — chuỗi lạ Google ném ra cũng bị che.
+   */
+  chePhu(text) {
     let s = String(text == null ? '' : text);
+    // Chuỗi bí mật che TRƯỚC hết: nó có thể nằm lẫn trong thân gói mà câu lỗi trích lại.
     if (this.biMat) s = s.split(this.biMat).join('***');
-    return s.replace(/"token"\s*:\s*"[^"]*"/g, '"token":"***"');
+    if (this.url) s = s.split(this.url).join('<link Web App>');
+    if (this.spreadsheetId) s = s.split(this.spreadsheetId).join('<ID file tháng>');
+    Object.keys(this.linkThang || {}).forEach((k) => {
+      const l = String(this.linkThang[k] || '').trim();
+      if (l) s = s.split(l).join('<link tháng ' + k + '>');
+      const m = l.match(RE_LINK_SHEET);
+      if (m) s = s.split(m[1]).join('<ID file tháng>');
+    });
+    return s
+      .replace(/"token"\s*:\s*"[^"]*"/g, '"token":"***"')
+      .replace(/https:\/\/script\.google(usercontent)?\.com\/[^\s"']*/g, '<link Web App>')
+      .replace(/https:\/\/docs\.google\.com\/spreadsheets\/d\/[a-zA-Z0-9_-]+[^\s"']*/g, '<link file tháng>')
+      .replace(/"spreadsheetId"\s*:\s*"[^"]*"/g, '"spreadsheetId":"<ID>"');
   }
 
   /** Gửi một gói JSON và trả về đối tượng đã phân tích. Ném lỗi với thông báo đã che bí mật. */
@@ -243,7 +383,15 @@ class WebAppGoogleSheet {
     // Lô cuối mới dính dữ liệu bẩn là ca hoàn toàn có thật (một file xuất lạ trong lượt nhiều file).
     const hd = String(body && body.hanhDong || '').toLowerCase();
     if (hd === 'ghi' || hd === 'xuly') kiemPII(body, this.cotPII);
-    const than = JSON.stringify(Object.assign({ token: this.biMat, phienBanMongDoi: PHIEN_BAN }, body));
+    const goi = Object.assign({ token: this.biMat, phienBanMongDoi: PHIEN_BAN }, body);
+    // D-42: file tháng do MÁY chỉ định. Tra TRƯỚC khi gọi mạng — thiếu link tháng là dừng ngay tại đây,
+    // chưa một byte nào rời khỏi máy, và chắc chắn không ghi lùi vào file tháng trước.
+    if (hd === 'doc' || hd === 'ghi' || hd === 'xuly') {
+      goi.spreadsheetId = this.idCuaThang(body.thang);
+      if (this.choPhepThangKhac) goi.choPhepThangKhac = true;
+    }
+    const thangGoi = String(body && body.thang || '') || thangHienTaiMay();
+    const than = JSON.stringify(goi);
     const u = new URL(this.url);
     const opt = {
       method: 'POST', hostname: u.hostname, path: u.pathname + u.search,
@@ -265,7 +413,7 @@ class WebAppGoogleSheet {
       // hoang mang nhất: chuyện gì xảy ra, dữ liệu có sao không, và bấm gì tiếp.
       // Cố ý KHÔNG khẳng định "chưa ghi gì": Apps Script có thể đã ghi xong rồi mới rớt phản hồi
       // (đo được ở bài T-WA-05: 0 lên 9 dòng trong khi máy vẫn báo lỗi). Nói chắc là nói sai.
-      req.on('error', (e) => tuChoi(new Error('Không gọi được Web App (' + this.chePhuBiMat(e.message) + '). ' +
+      req.on('error', (e) => tuChoi(new Error('Không gọi được Web App (' + this.chePhu(e.message) + '). ' +
         'Gói này CHƯA GHI ĐƯỢC, hoặc chưa biết đã ghi hay chưa. Kiểm tra mạng rồi chạy lại tool: ' +
         'phần đã ghi vẫn giữ nguyên và sẽ không bị ghi trùng.')));
       req.write(than);
@@ -276,11 +424,16 @@ class WebAppGoogleSheet {
         res.setEncoding('utf8');
         res.on('data', (d) => { buf += d; });
         res.on('end', () => {
+          // D-46 ca (1): 401/403 là quyền truy cập — một câu chuẩn, mã HTTP thật ở dòng chi tiết.
+          if (res.statusCode === 401 || res.statusCode === 403) {
+            try { loiQuyen(thangGoi, 'Google từ chối lời gọi tới Web App', res.statusCode); }
+            catch (eq) { return tuChoi(eq); }
+          }
           if (res.statusCode >= 400) {
             // Lỗi phía Apps Script (bài D-13). Trước đây chỉ đổ 500 ký tự HTML thô của Google;
             // người vận hành đọc `Sorry, unable to open the file at this time` bằng tiếng Anh
             // rồi không biết làm gì. Phải phân biệt được ca quá 6 phút, vì việc phải làm khác hẳn.
-            const noiDung = this.chePhuBiMat(buf);
+            const noiDung = this.chePhu(buf);
             const quaGio = /Exceeded maximum execution time|thời gian thực thi/i.test(noiDung);
             return tuChoi(new Error('Web App trả mã ' + res.statusCode +
               ' (lỗi phía Apps Script, không phải lỗi cấu hình máy này). ' +
@@ -292,8 +445,14 @@ class WebAppGoogleSheet {
           }
           let kq;
           try { kq = JSON.parse(buf); } catch (e) {
-            return tuChoi(new Error('Web App trả về không phải JSON. Thường là do chưa Deploy bản mới, ' +
-              'hoặc quyền truy cập chưa để "Anyone". Nội dung: ' + this.chePhuBiMat(buf).slice(0, 300)));
+            // D-46 ca (2): Google trả trang HTML / trang đăng nhập (mã 200, hoặc 200 sau khi đi theo 302)
+            // thay vì JSON — dấu hiệu Deploy sai "Who has access", hoặc chưa Deploy bản mới. Một câu
+            // chuẩn, không đổ nguyên trang HTML tiếng Anh ra cửa sổ đen của người không đọc tiếng Anh.
+            try {
+              loiQuyen(thangGoi, 'Web App trả về không phải JSON' +
+                (laTrangHtml(buf) ? ' (trang HTML/đăng nhập của Google)' : '') +
+                '. Nội dung: ' + this.chePhu(buf).replace(/\s+/g, ' ').slice(0, 160), res.statusCode);
+            } catch (eh) { return tuChoi(eh); }
           }
           // Nhớ lại bản THẬT của Web App ngay cả khi phản hồi là lỗi — nhờ vậy `ghi()` chặn được
           // trước khi gửi lô đầu tiên, không phải chờ tới lúc Google trả lời.
@@ -304,16 +463,25 @@ class WebAppGoogleSheet {
           if (!kq.ok) {
             // Câu báo lệch phiên bản phải tới tay người dùng NGUYÊN VĂN, không bọc thêm tiền tố
             // "Web App từ chối [...]" — đây là câu duy nhất nói thẳng việc phải làm.
-            if (kq.loi === 'LECH_PHIEN_BAN') return tuChoi(new Error(this.chePhuBiMat(kq.thongBao || '')));
+            if (kq.loi === 'LECH_PHIEN_BAN') return tuChoi(new Error(this.chePhu(kq.thongBao || '')));
+            // D-46 ca (3): Web App không mở / không ghi được file theo ID → cũng gom về câu chuẩn; câu
+            // chi tiết của Apps Script (đã tiếng Việt, xem `moBangTinh_`) giữ nguyên ở dòng dưới.
+            const tb = this.chePhu(kq.thongBao || '');
+            if (MA_LOI_QUYEN_WEBAPP.indexOf(kq.loi) >= 0 ||
+                (kq.loi === 'NGOAI_LE' && /không mở được|không ghi được|permission|quyền/i.test(tb))) {
+              try { loiQuyen(thangGoi, tb, res.statusCode); } catch (ew) { return tuChoi(ew); }
+            }
             const GOI_Y = {
-              SAI_BI_MAT: ' → chuỗi bí mật trong CAU_HINH_VAN_HANH.json khác chuỗi đã cài bằng caiDat() trên Apps Script',
-              CHUA_CAI_DAT: ' → mở dự án Apps Script, chạy tay caiDat(<chuỗi bí mật>, <link một file tháng đã có>) một lần rồi Deploy lại',
-              KHONG_CO_THANG: ' → thêm dòng cho tháng này vào sheet "Thông tin shop " (dòng 8 trở xuống) rồi chạy lại; tool KHÔNG ghi lùi vào file tháng trước',
-              TRUNG_NHIEU_DONG: ' → sheet "Thông tin shop " có hơn một dòng cho cùng một tháng; sửa cho còn đúng một dòng',
+              SAI_GIAN_HANG: ' → kéo file sang đúng thư mục gian hàng rồi bấm lại; tool CHƯA ghi ô nào',
+              SAI_BI_MAT: ' → chuoi_bi_mat trong CAU_HINH_VAN_HANH.json khác chuỗi đã cài bằng caiDat() ' +
+                'trên Apps Script. Dùng đúng gói được giao, đừng sửa tay dòng đó',
+              CHUA_CAI_DAT: ' → mở dự án Apps Script, chạy tay caiDat(<chuỗi bí mật>) một lần rồi Deploy lại',
+              SAI_THANG_FILE: ' → link_thang trong CAU_HINH_VAN_HANH.json đang trỏ nhầm file của tháng khác; tool KHÔNG ghi ô nào',
+              THIEU_ID_FILE: ' → bản Node trên máy cũ hơn Web App: bấm 2_CAP_NHAT.bat rồi chạy lại',
               HANH_DONG_LA: ' → phía máy tính và Web App lệch phiên bản; Deploy lại bản mới của ShellAppsScript.gs'
             };
             const goiY = GOI_Y[kq.loi] || '';
-            return tuChoi(new Error('Web App từ chối [' + (kq.loi || '?') + ']: ' + this.chePhuBiMat(kq.thongBao || '') + goiY));
+            return tuChoi(new Error('Web App từ chối [' + (kq.loi || '?') + ']: ' + tb + goiY));
           }
           giaiQuyet(kq);
         });
@@ -322,8 +490,8 @@ class WebAppGoogleSheet {
   }
 
   /**
-   * Thử cửa: đúng chuỗi bí mật chưa, đã cài file mỏ neo chưa, máy chủ Google đang là tháng nào,
-   * và Web App đang chạy BẢN NÀO (`phienBan`) — số này là thứ để biết đã Deploy lại hay chưa.
+   * Thử cửa: máy chủ Google đang ở tháng nào, và Web App đang chạy BẢN NÀO (`phienBan` + `banDung`) —
+   * hai số đó là thứ duy nhất trả lời được câu "đã Deploy lại chưa". Không mở file tháng nào.
    */
   ping() { return this._goi({ hanhDong: 'ping' }); }
 
@@ -351,10 +519,14 @@ class WebAppGoogleSheet {
    * @param {Array}  mappingThem  các dòng tên hàng mới cần nối vào sheet Mapping
    */
   async ghi(thang, lenh, mappingThem, cauHinhGhiDe) {
+    // D-42 TRƯỚC TIÊN, trước cả `ping` chốt phiên bản: thiếu link tháng thì chắc chắn không ghi được ô
+    // nào, nên đừng tốn một lượt gọi mạng để biết điều đó. Máy mất mạng mà chưa khai link vẫn phải nhận
+    // đúng câu "chưa có link tháng", không phải câu "không gọi được Web App".
+    this.idCuaThang(thang);
     await this.chotPhienBan();      // lệch bản là dừng TRƯỚC lô đầu tiên, chưa ghi ô nào
     const cacLo = chiaLo(lenh, TOI_DA_DON_MOT_LO);
     const gop = {
-      thongKe: { donGhi: 0, donDaCo: 0, dongGhi: 0, dongVang: 0, donGopO: 0, mappingThem: 0 },
+      thongKe: { donGhi: 0, donDaCo: 0, dongGhi: 0, dongVang: 0, donGopO: 0, mappingThem: 0, mappingToLai: 0 },
       viTri: {}, canhBao: [], thongBao: [], soLo: cacLo.length, tenFile: '', thang: thang
     };
     for (let i = 0; i < cacLo.length; i++) {
@@ -383,12 +555,13 @@ class WebAppGoogleSheet {
    */
   async xuLy(thang, cacFile, tuyChon) {
     const tc = tuyChon || {};
+    this.idCuaThang(thang);         // D-42: thiếu link tháng thì dừng ngay, không tốn lượt gọi mạng nào
     await this.chotPhienBan();      // lệch bản là dừng TRƯỚC lô đầu tiên, chưa ghi ô nào
     const cacLo = chiaLoTheoDon(cacFile, tc.toiDaDonMotLo || TOI_DA_DON_MOT_LO_XU_LY, tc.sheetCuaGian);
     const gop = {
       thongKe: {
         donGhi: 0, donDaCo: 0, dongGhi: 0, dongVang: 0, donGopO: 0,
-        tenMoi: 0, mappingThem: 0, donTrungTrongGoi: 0
+        tenMoi: 0, mappingThem: 0, mappingToLai: 0, donTrungTrongGoi: 0
       },
       viTri: {}, canhBao: [], thongBao: [], soLo: cacLo.length, soLanGoi: 0,
       tenFile: '', thang: thang, mapTomTat: null
@@ -563,5 +736,7 @@ module.exports = {
   WebAppGoogleSheet, chiaLo, chiaLoTheoDon, lenhTuDon, chuanDuong,
   TOI_DA_DON_MOT_LO, TOI_DA_DON_MOT_LO_XU_LY, SO_LAN_GOI_TIEP_TOI_DA,
   PHIEN_BAN, kiemPhienBan, thongBaoLechPhienBan, soDauVanTay,
-  kiemPII, TRUONG_DONG_LOP_1, RE_DIEN_THOAI
+  kiemPII, TRUONG_DONG_LOP_1, RE_DIEN_THOAI,
+  idFileThang, cauThieuLinkThang, thangSau, canhBaoThangSau, RE_LINK_SHEET, thangHienTaiMay,
+  cauLoiQuyen, loiQuyen, MA_LOI_QUYEN_WEBAPP, laTrangHtml
 };

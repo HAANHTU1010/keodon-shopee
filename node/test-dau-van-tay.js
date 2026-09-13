@@ -141,11 +141,15 @@ test('DV-06', 'Máy phát hiện Google THIẾU HÀM LÕI và CÒN HÀM ĐÃ B�
   return 'bắt cả hai chiều · ' + dc;
 });
 
-test('DV-07', 'Bản KHỚP thì IM LẶNG — không kêu oan', () => {
+test('DV-07', 'Bản KHỚP thì IM LẶNG — không kêu oan, kể cả trên phản hồi LỖI', () => {
   bang(soDauVanTay(pingKhop()).length, 0, 'số câu cảnh báo khi khớp hoàn toàn');
   bang(soDauVanTay(null).length, 0, 'phản hồi rỗng thì im');
-  bang(soDauVanTay({ ok: false, loi: 'SAI_BI_MAT' }).length, 0, 'nhánh sai bí mật không mang banDung, phải im');
-  return 'khớp → 0 câu · rỗng → 0 câu · sai bí mật → 0 câu';
+  // D-43 bỏ chuỗi bí mật nên không còn nhánh phản hồi nào bị cắt `banDung`: MỌI phản hồi đều mang, kể cả
+  // phản hồi lỗi. Nhờ vậy một lượt chạy bị từ chối vì lý do khác (ví dụ link tháng trỏ nhầm file) vẫn so
+  // được dấu vân tay — trước đây nhánh sai bí mật là một lỗ mù đúng lúc người ta đang loay hoay nhất.
+  const loiNhungKhop = Object.assign({}, pingKhop(), { ok: false, loi: 'SAI_THANG_FILE' });
+  bang(soDauVanTay(loiNhungKhop).length, 0, 'phản hồi LỖI mà bản dựng vẫn khớp thì không được kêu');
+  return 'khớp → 0 câu · rỗng → 0 câu · phản hồi lỗi nhưng khớp bản dựng → 0 câu';
 });
 
 test('DV-08', 'ShellAppsScript.gs khai đủ hằng và hàm mà máy trông đợi', () => {
@@ -156,9 +160,25 @@ test('DV-08', 'ShellAppsScript.gs khai đủ hằng và hàm mà máy trông đ�
   // 11 hằng dấu vân tay phải được vanTayBanDung_ đọc hết, nếu không có file rơi ra ngoài phép so.
   const thieu = Object.keys(DVT.TEN_HANG).filter((t) => s.indexOf(DVT.TEN_HANG[t]) < 0);
   bang(thieu.join(','), '', 'hằng dấu vân tay chưa được vanTayBanDung_ đọc');
-  // banDung KHÔNG được gắn vào nhánh sai bí mật.
-  dung(/o\.loi !== 'SAI_BI_MAT'/.test(s), 'traLoi_ phải chặn banDung ở nhánh sai bí mật');
-  return Object.keys(DVT.TEN_HANG).length + '/11 hằng được đọc · banDung không lọt nhánh sai bí mật';
+  // C-6.1 (YC-28, D-43 sửa 13/9): `banDung` gắn vào mọi phản hồi ĐÃ QUA CỬA bí mật, và CỐ Ý không gắn
+  // vào hai nhánh SAI_BI_MAT / CHUA_CAI_DAT — kể cả `phienBan`. Bài này canh đúng cái mệnh đề đó còn
+  // nguyên trong mã: gỡ điều kiện `chuaQuaCua` đi là lại rò như trước 13/9.
+  dung(/var chuaQuaCua = \(o\.loi === 'SAI_BI_MAT' \|\| o\.loi === 'CHUA_CAI_DAT'\);/.test(s),
+    'traLoi_ phải loại trừ hai nhánh chưa qua cửa bí mật');
+  dung(/if \(!chuaQuaCua\) \{/.test(s), 'traLoi_ phải bọc cả phienBan lẫn banDung trong nhánh đã qua cửa');
+  for (const t of ['TT_BI_MAT', 'function caiDat', 'function biMatDung_', 'function bam256_', 'SAI_BI_MAT', 'CHUA_CAI_DAT']) {
+    dung(s.indexOf(t) >= 0, 'ShellAppsScript.gs thiếu ' + t + ' — YC-28 GIỮ cơ chế chuỗi bí mật');
+  }
+  // C-6.2: so bằng SHA-256, không còn vòng so từng ký tự (thời gian chạy phụ thuộc độ dài chuỗi thật).
+  dung(/Utilities\.computeDigest\(Utilities\.DigestAlgorithm\.SHA_256/.test(s),
+    'biMatDung_ phải so bằng SHA-256 (C-6.2)');
+  dung(!/for \(var i = 0; i < n; i\+\+\) if \(a\.charCodeAt/.test(s),
+    'còn vòng so từng ký tự của bản cũ — C-6.2 thay bằng SHA-256');
+  // Hai hàm mới của D-42/D-47 phải có mặt, vì `hamLoiCoMat_` báo chúng cho máy so.
+  for (const t of ['moFileTheoId_', 'kiemTenFileKhopThang_', 'toLaiMapping_']) {
+    dung(s.indexOf('function ' + t) >= 0, 'ShellAppsScript.gs thiếu ' + t);
+  }
+  return Object.keys(DVT.TEN_HANG).length + '/11 hằng được đọc · banDung gắn vào mọi phản hồi · 0 dấu vết SAI_BI_MAT';
 });
 
 for (const [tt, ma, ten, chuThich, loi] of KQ) {

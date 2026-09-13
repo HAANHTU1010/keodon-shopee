@@ -37,14 +37,20 @@ var CaiDat = (function () {
     return {
       chung: {
         ten_sheet_du_lieu: 'orders',            // Context 5.3: sheet đầu `Advance Fulfilment` rỗng — phải tìm theo TÊN
-        che_do_cong_thuc: 'EXCEL',              // EXCEL: kéo E,F,L,M,N | SHEET: E,F,M,N là ARRAYFORMULA, chỉ kéo L
+        che_do_cong_thuc: 'EXCEL',              // EXCEL: vỏ Excel kéo dài công thức E,F,L,M,N theo TỪNG DÒNG (KeyIn.gs).
+                                                // SHEET: vỏ Google tự chép công thức TỪNG DÒNG (bọc ARRAY_CONSTRAIN — KHÔNG phải
+                                                // ARRAYFORMULA một ô) của dòng trên xuống cho cả E,F,L,M,N: ShellAppsScript.chepCongThucXuong_
         thue_gtgt_pct: 1,                       // Nghị định 117/2025 — sàn khấu trừ 1% GTGT
         thue_tncn_pct: 0.5,                     // + 0,5% TNCN
         thue_cach_tinh: 'TACH_ROI_CONG',        // làm tròn từng sắc thuế rồi cộng (khớp 713/719 dòng tháng 8)
         thue_theo_dong: true,                   // đơn nhiều dòng: làm tròn theo TỪNG DÒNG rồi cộng (khớp 392/393 đơn user gõ);
                                                 // false = làm tròn một lần trên cả đơn theo câu chữ Context 5.2 (khớp 391/393)
         bo_don_huy_hoan: true,                  // file tab "Tất cả" → bỏ đơn hủy/hoàn trước khi xử lý (GV-v2.2 mục 1.1)
-        canh_bao_gian_hang_la: true             // file thả nhầm thư mục gian hàng → dừng và báo (Context 9.3)
+        // D-04 / YC-36: file thả nhầm thư mục gian hàng → DỪNG và báo (Context 9.3).
+        // `MapListing.soatThaNhamGian` đọc khóa này; đặt false là tắt hẳn phép kiểm — chỉ làm khi
+        // Mapping đang khai sai gian hàng hàng loạt và cần chạy gấp, rồi bật lại ngay.
+        // Từ 08/9 đến 13/9 khóa này được khai mà KHÔNG chỗ nào đọc: đặt false cũng chẳng tắt được gì.
+        canh_bao_gian_hang_la: true
       },
 
       /** Mã gian hàng ↔ tên sheet trong file tracking (Context 4.1). Tên hiển thị dùng khi ghi cột B (mặc định tắt). */
@@ -61,7 +67,8 @@ var CaiDat = (function () {
         cot_ngay: 'A', cot_nguon_don: 'B', cot_ma_don: 'C', cot_ten_viet_tat: 'D',
         cot_so_luong: 'G', cot_tong_tien_sp: 'H', cot_mgg_shop: 'I', cot_chi_phi: 'J', cot_thue: 'K',
         cot_doanh_thu: 'L',
-        cot_cong_thuc: 'E,F,L,M,N',             // chỉ dùng ở chế độ EXCEL
+        cot_cong_thuc: 'E,F,L,M,N',             // năm cột CÔNG THỨC TỪNG DÒNG của chủ shop (đo 08/9: E 414 ô, M/N 399 ô ở Shopee mall).
+                                                // Cả hai vỏ dùng: Excel kéo dài, Google chép dòng trên xuống. KHÔNG phải ARRAYFORMULA một ô
         cot_note: '',                           // trống = tự dò cột trống đầu tiên sau tiêu đề cuối (Shopee mall → P, Offood → S)
         tieu_de_note: 'Note',
         ghi_nguon_don: false,                   // Context 4.1: cột B đang trống 747/747 dòng → tool cũng để trống
@@ -148,4 +155,4 @@ var CaiDat = (function () {
   return { cauHinhMacDinh: cauHinhMacDinh };
 })();
 
-var VAN_TAY_CAIDAT = 'bac6d960';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_CAIDAT = '57fd71f2';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

@@ -429,4 +429,4 @@ var KeyIn = (function () {
   };
 })();
 
-var VAN_TAY_KEYIN = '68af1739';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_KEYIN = '9e219506';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

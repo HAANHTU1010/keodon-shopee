@@ -1,10 +1,25 @@
 /**
- * ĐÓNG GÓI `Tool_nhập_liệu` — bản giao cho máy user.
+ * ĐÓNG GÓI `Tool_nhap_lieu` — bản giao cho máy user, GIẢI NÉN LÀ CHẠY (D-44).
  *
- *   node node/dong-goi.js                      → dựng gói vào out/Tool_nhập_liệu rồi tự kiểm
- *   node node/dong-goi.js --ra <thư mục>       → dựng vào chỗ khác
- *   node node/dong-goi.js --node-portable <d>  → kèm bản Node xách tay ở đường dẫn đó
- *   node node/dong-goi.js --kiem <thư mục>     → CHỈ kiểm một gói đã có, không dựng lại
+ *   node node/dong-goi.js                      → dựng thẳng ra 04_BAN_GIAO/Tool_nhap_lieu.zip rồi tự kiểm
+ *   node node/dong-goi.js --ra <thư mục>       → dựng ra THƯ MỤC (không nén) để soi bằng mắt
+ *   node node/dong-goi.js --zip <đường dẫn>    → đổi chỗ đặt file zip
+ *   node node/dong-goi.js --node-portable <d>  → lấy bản Node xách tay ở đường dẫn khác
+ *   node node/dong-goi.js --kiem <thư mục>     → CHỈ kiểm một gói đã giải nén, không dựng lại
+ *   node node/dong-goi.js --dong-bo-van-hanh   → chép bat/ (bản gốc) đè lên 03_VAN_HANH
+ *
+ * GIẢI NÉN LÀ CHẠY (D-44, 13/9/2026). Bản trước ép rỗng `web_app_url` và `chuoi_bi_mat` rồi bắt từng máy
+ * tự điền — mà điền tay thì có máy điền sai, có máy điền nhầm dòng, và không ai kiểm được. Nay gói mang
+ * SẴN cấu hình đầy đủ lấy từ máy chủ dự án: `web_app_url`, `chuoi_bi_mat`, `link_thang` (40 kỳ) và
+ * `cap_nhat`. Đổi lại, GÓI TRỞ THÀNH THỨ PHẢI GIỮ: ai có gói là ghi được vào sổ tiền. Gói chỉ đi kênh
+ * nội bộ, và `HUONG_DAN_1_TRANG` nói thẳng điều đó ngay dòng đầu.
+ *
+ * KHO GITHUB VẪN KHÔNG CHỨA GÌ: `bat/CAU_HINH_VAN_HANH.mau.json` để rỗng như cũ, và INV-7 trong
+ * `test-bat-bien.js` quét cả kho mỗi lượt chạy test.
+ *
+ * TÊN THƯ MỤC TRONG ZIP KHÔNG DẤU (`Tool_nhap_lieu`): thư mục có dấu đi qua trình giải nén lạ, qua
+ * OneDrive, qua email hay bị vỡ mã ký tự rồi hỏng cả đường dẫn. Bên trong vẫn giữ tên có dấu vì đó là
+ * thứ user đọc hằng ngày (`Cấu hình`, `đã xử lý`).
  *
  * VÌ SAO GÓI KHÔNG CHỨA `src/` VÀ `node/` (09_GIAO_VIEC_DEV_DONG_GOI.md mục 1).
  * Không phải để gói nhẹ. Trước đây mã tới máy user bằng HAI đường — chép tay lúc
@@ -22,7 +37,10 @@ const path = require('path');
 
 const GOC_DU_AN = path.resolve(__dirname, '..', '..', '..');
 const NGUON = path.join(GOC_DU_AN, '03_VAN_HANH');
-const TEN_GOI = 'Tool_nhập_liệu'.normalize('NFC');
+/** Bốn nút lấy TỪ KHO MÃ (`bat/`), không lấy từ `03_VAN_HANH` — xem chú thích THU_MUC_BAT_KHO. */
+const NGUON_NUT = path.join(__dirname, '..', 'bat');
+const THU_MUC_BAN_GIAO = path.join(GOC_DU_AN, '04_BAN_GIAO');
+const TEN_GOI = 'Tool_nhap_lieu';
 const TEN_CAU_HINH = 'Cấu hình'.normalize('NFC');
 const TEN_NHAT_KY = 'nhật ký'.normalize('NFC');
 const TEN_THA = '1_THA_FILE_XUAT';
@@ -40,8 +58,23 @@ const KHOA_CHI_CHO_EXCEL = [
   'file_mapping_mau', 'thu_muc_file_tracking', 'thu_muc_ket_qua'
 ];
 
-/** Hai dòng bí mật: gói giao đi phải để RỖNG, từng máy tự điền. */
+/**
+ * Hai dòng trong `google_sheet` phải CÓ GIÁ TRỊ THẬT trong gói (D-44 đảo chiều luật cũ).
+ * Tên hằng giữ nguyên để không phải sửa chỗ gọi, nhưng NGHĨA đã lật: trước là "phải rỗng", nay là
+ * "phải có". `kiemGoi()` kiểm đúng chiều mới.
+ */
 const HAI_DONG_BI_MAT = ['web_app_url', 'chuoi_bi_mat'];
+
+/**
+ * C-3: DANH SÁCH TRẮNG cho tài liệu trong gói. `DUOI_CAM` chặn mọi `.md` vì tài liệu nội bộ mang số
+ * doanh thu thật; hai file này là ngoại lệ DUY NHẤT, và phải kê đích danh chứ không nới luật theo đuôi.
+ */
+const TRANG_HUONG_DAN = ['HUONG_DAN_1_TRANG.md', 'HUONG_DAN_1_TRANG.txt'];
+
+/** C-5: file giữ chỗ trong từng thư mục thả — không có nó thì giải nén xong mất luôn thư mục rỗng. */
+const TEN_GIU_CHO = '.keep';
+const NOI_DUNG_GIU_CHO =
+  'File nay chi de giu thu muc. Tha file xuat Shopee cua gian hang nay vao day roi bam 4_CHAY_TOOL.bat.\r\n';
 
 const DUOI_CAM = ['.xlsx', '.xls', '.csv', '.docx', '.md', '.log'];
 const TEN_CAM = ['moc-nghiem-thu.json', '.clasp.json'];
@@ -105,19 +138,51 @@ function chepCay(tu, vao) {
 
 // ==================================================================== DỰNG GÓI
 
+/**
+ * @param {string|boolean} [nodePortable] đường dẫn bản Node xách tay; `false` = CỐ Ý không kèm (bộ test
+ *   dùng, để khỏi nén 36 MB ba lần); bỏ trống = lấy bản đang dùng trên máy chủ dự án.
+ */
 function dungGoi(dich, nodePortable) {
   const canhBao = [];
   xoaCay(dich);
   fs.mkdirSync(dich, { recursive: true });
 
-  // --- cấu hình: dựng TỪ BẢN MẪU, không bao giờ từ file thật của máy này ---
-  const mauTep = path.join(NGUON, TEN_CAU_HINH, 'CAU_HINH_VAN_HANH.mau.json');
+  // --- cấu hình: LẤY BẢN THẬT của máy chủ dự án, đắp lên khung của bản mẫu (D-44) ---
+  //
+  // Vì sao vẫn phải đi qua bản mẫu chứ không chép thẳng file thật: bản mẫu là nơi giữ các dòng chú thích
+  // `_…` mới nhất và danh sách khóa đúng của bản này. File thật trên máy chủ dự án thì tích tụ theo thời
+  // gian — có thể còn khóa của chế độ Excel, còn chú thích của bản cũ. Lấy KHUNG từ mẫu, lấy GIÁ TRỊ từ
+  // file thật, thì gói vừa có số đúng vừa có chữ đúng.
+  const mauTep = path.join(NGUON_NUT, 'CAU_HINH_VAN_HANH.mau.json');
   if (!fs.existsSync(mauTep)) throw new Error('không thấy bản mẫu cấu hình: ' + mauTep);
   const cfg = JSON.parse(doc(mauTep));
 
+  const thatTep = path.join(NGUON, TEN_CAU_HINH, 'CAU_HINH_VAN_HANH.json');
+  if (!fs.existsSync(thatTep)) {
+    throw new Error('không thấy cấu hình THẬT của máy chủ dự án: ' + thatTep +
+      '\n  Gói giao user phải mang sẵn web_app_url, chuoi_bi_mat và link_thang (D-44) — không dựng gói rỗng nữa.');
+  }
+  const that = JSON.parse(doc(thatTep));
+  cfg.google_sheet = Object.assign({}, cfg.google_sheet, {
+    bat: true,
+    web_app_url: String((that.google_sheet || {}).web_app_url || '').trim(),
+    chuoi_bi_mat: String((that.google_sheet || {}).chuoi_bi_mat || '')
+  });
+  cfg.link_thang = Object.assign({}, that.link_thang || {});
+  cfg.cap_nhat = Object.assign({}, cfg.cap_nhat, that.cap_nhat || {});
+
   for (const k of KHOA_CHI_CHO_EXCEL) { delete cfg[k]; delete cfg['_' + k]; }
-  cfg.google_sheet = cfg.google_sheet || {};
-  for (const k of HAI_DONG_BI_MAT) cfg.google_sheet[k] = '';
+
+  // Dừng NGAY nếu ba thứ này thiếu: dựng ra một gói câm rồi mới phát hiện lúc user bấm nút là muộn.
+  for (const k of HAI_DONG_BI_MAT) {
+    if (!String(cfg.google_sheet[k] || '').trim()) {
+      throw new Error('cấu hình thật của máy chủ dự án thiếu google_sheet.' + k +
+        ' — gói giao user phải mang sẵn giá trị này (D-44)');
+    }
+  }
+  if (Object.keys(cfg.link_thang).length === 0) {
+    throw new Error('cấu hình thật thiếu link_thang — không có link tháng nào thì user bấm nút 4 là tắc ngay');
+  }
 
   const thuMucCauHinh = path.join(dich, TEN_CAU_HINH);
   fs.mkdirSync(thuMucCauHinh, { recursive: true });
@@ -130,17 +195,36 @@ function dungGoi(dich, nodePortable) {
   if (dsGian.length === 0) throw new Error('bản mẫu cấu hình không khai thu_muc_gian_hang');
   const daXuLy = (cfg.ten_thu_muc_da_xu_ly || 'đã xử lý').normalize('NFC');
   for (const g of dsGian) {
-    fs.mkdirSync(path.join(dich, TEN_THA, g.normalize('NFC'), daXuLy), { recursive: true });
+    const thuMucGian = path.join(dich, TEN_THA, g.normalize('NFC'));
+    fs.mkdirSync(path.join(thuMucGian, daXuLy), { recursive: true });
+    // C-5: thư mục RỖNG không tồn tại trong file .zip. Không có file giữ chỗ thì user giải nén xong
+    // thấy trống trơn, không biết thả file vào đâu, và nút 4 báo "thiếu thư mục gian hàng".
+    fs.writeFileSync(path.join(thuMucGian, TEN_GIU_CHO), NOI_DUNG_GIU_CHO, 'utf8');
   }
 
-  // --- bốn nút ---
+  // --- bốn nút: lấy từ KHO MÃ (`bat/`) ---
+  // `bat/` là bản đem xuất bản, cũng chính là bản `2_CAP_NHAT.bat` tải về máy user. Lấy nút từ
+  // `03_VAN_HANH` thì gói giao đi và bản cập nhật về sau có thể là hai bản khác nhau — đúng cái bệnh
+  // "máy này một bản, máy kia một bản" mà cả đợt này sinh ra để diệt.
   for (const t of BON_NUT) {
-    const tu = path.join(NGUON, t);
-    if (!fs.existsSync(tu)) throw new Error('thiếu nút ' + t + ' trong ' + NGUON);
+    const tu = path.join(NGUON_NUT, t);
+    if (!fs.existsSync(tu)) throw new Error('thiếu nút ' + t + ' trong ' + NGUON_NUT);
     fs.copyFileSync(tu, path.join(dich, t));
   }
 
+  // --- hai file hướng dẫn, qua DANH SÁCH TRẮNG (C-3) ---
+  for (const t of TRANG_HUONG_DAN) {
+    const tu = path.join(NGUON, TEN_CAU_HINH, t);
+    if (!fs.existsSync(tu)) { canhBao.push('thiếu ' + t + ' trong ' + path.join(NGUON, TEN_CAU_HINH)); continue; }
+    fs.copyFileSync(tu, path.join(thuMucCauHinh, t));
+  }
+
   // --- Node xách tay: không dựng ra được, chỉ chép nếu có ---
+  // Mặc định lấy bản đang dùng trên máy chủ dự án; không có thì gói vẫn dựng được nhưng KÊU LÊN.
+  if (nodePortable == null) {
+    const macDinh = path.join(NGUON, TEN_CAU_HINH, TEN_NODE_PORTABLE);
+    if (fs.existsSync(path.join(macDinh, 'node.exe'))) nodePortable = macDinh;
+  }
   if (nodePortable) {
     if (!fs.existsSync(path.join(nodePortable, 'node.exe'))) {
       throw new Error('đường dẫn --node-portable không có node.exe: ' + nodePortable);
@@ -151,7 +235,7 @@ function dungGoi(dich, nodePortable) {
       'của 1_CAI_DAT_LAN_DAU.bat. Chạy lại với  --node-portable <thư mục có node.exe>  để kèm vào.');
   }
 
-  return { dich, soGian: dsGian.length, canhBao };
+  return { dich, soGian: dsGian.length, soKyThang: Object.keys(cfg.link_thang).length, canhBao };
 }
 
 // ============================================== THƯ MỤC `bat/` CỦA KHO GITHUB
@@ -161,11 +245,15 @@ function dungGoi(dich, nodePortable) {
  * `bat/` để sửa nút bấm cũng tới được máy user — trước đây sửa `.bat` thì phải
  * gửi lại cả gói.
  *
- * NGUY CƠ ĐI KÈM, và cách bịt. Nút bấm nay nằm ở HAI chỗ: `03_VAN_HANH/` là bản đang
- * dùng, `bat/` là bản đem xuất bản. Hai bản lệch nhau thì máy user nhận đúng cái
+ * NGUY CƠ ĐI KÈM, và cách bịt. Nút bấm nay nằm ở HAI chỗ: `bat/` trong kho mã và
+ * `03_VAN_HANH/` trên máy chủ dự án. Hai bản lệch nhau thì máy user nhận đúng cái
  * bản chưa ai chạy thử — tức là đẻ lại đúng cái bệnh "máy này một bản, máy kia một bản"
- * mà cả đợt này sinh ra để diệt. Nên `bat/` KHÔNG được sửa tay: nó do `--dong-bo-bat`
- * chép ra, và `kiemDongBoBat` bắt mọi khác biệt dù chỉ một byte.
+ * mà cả đợt này sinh ra để diệt.
+ *
+ * CHIỀU SỰ THẬT ĐẢO NGÀY 13/9 (YC-32 điểm 5). Trước đây `03_VAN_HANH/` là bản gốc và `bat/` chép ra từ
+ * nó. Nhưng `bat/` mới là thứ đi tới máy user qua HAI đường — gói zip và `2_CAP_NHAT.bat` — nên nó phải
+ * là bản gốc, còn `03_VAN_HANH/` là một bản cài đặt như mọi máy khác. Nay `--dong-bo-van-hanh` chép
+ * `bat/` ĐÈ LÊN `03_VAN_HANH/`, và `kiemDongBoBat` vẫn bắt mọi khác biệt dù chỉ một byte.
  *
  * Chép cả BỐN nút, nhưng lúc cập nhật chỉ ghi đè BA — `2_CAP_NHAT.bat` không tự ghi đè
  * chính nó (Windows khóa file .bat đang chạy). Bản thứ tư nằm đó để so và nhắc.
@@ -178,31 +266,33 @@ function dsFileBat() {
     .concat(KEM_THEO_BAT.map((t) => ({ ten: t, tu: path.join(NGUON, TEN_CAU_HINH, t) })));
 }
 
-function dongBoBat() {
-  fs.mkdirSync(THU_MUC_BAT_KHO, { recursive: true });
+/** Chép `bat/` (bản gốc) ĐÈ LÊN `03_VAN_HANH/` của máy chủ dự án. Trả danh sách file đã đổi. */
+function dongBoVanHanh() {
   const daChep = [];
   for (const x of dsFileBat()) {
-    if (!fs.existsSync(x.tu)) throw new Error('không thấy nguồn để đồng bộ: ' + x.tu);
-    fs.copyFileSync(x.tu, path.join(THU_MUC_BAT_KHO, x.ten));
-    daChep.push(x.ten);
+    const goc = path.join(THU_MUC_BAT_KHO, x.ten);
+    if (!fs.existsSync(goc)) throw new Error('không thấy bản gốc trong bat/: ' + goc);
+    fs.mkdirSync(path.dirname(x.tu), { recursive: true });
+    const cu = fs.existsSync(x.tu) ? fs.readFileSync(x.tu) : null;
+    const moi = fs.readFileSync(goc);
+    if (cu && cu.equals(moi)) continue;                       // đã khớp thì không đụng vào
+    // Ghi file tạm rồi đổi tên: đứt giữa chừng thì bản cũ còn nguyên, không thành file .bat cụt.
+    const tam = x.tu + '.__moi';
+    fs.writeFileSync(tam, moi);
+    fs.renameSync(tam, x.tu);
+    daChep.push(x.ten + (cu ? ' (' + cu.length + ' → ' + moi.length + ' byte)' : ' (mới)'));
   }
-  // Thứ gì lạ nằm trong bat/ thì bỏ đi: kho chỉ được mang đúng danh sách trên.
-  const chinhChu = dsFileBat().map((x) => x.ten);
-  const bo = [];
-  for (const t of fs.readdirSync(THU_MUC_BAT_KHO)) {
-    if (chinhChu.indexOf(t) < 0) { fs.rmSync(path.join(THU_MUC_BAT_KHO, t), { recursive: true, force: true }); bo.push(t); }
-  }
-  return { daChep, bo };
+  return { daChep };
 }
 
-/** Trả danh sách chỗ lệch giữa `03_VAN_HANH/` và `bat/`; rỗng nghĩa là khớp từng byte. */
+/** Trả danh sách chỗ lệch giữa `bat/` (gốc) và `03_VAN_HANH/` (bản cài); rỗng nghĩa là khớp từng byte. */
 function kiemDongBoBat() {
   const lech = [];
   if (!fs.existsSync(THU_MUC_BAT_KHO)) return ['chưa có thư mục bat/ trong kho mã'];
   for (const x of dsFileBat()) {
     const kho = path.join(THU_MUC_BAT_KHO, x.ten);
     if (!fs.existsSync(kho)) { lech.push('bat/ thiếu ' + x.ten); continue; }
-    if (!fs.existsSync(x.tu)) { lech.push('không thấy bản gốc của ' + x.ten); continue; }
+    if (!fs.existsSync(x.tu)) { lech.push('03_VAN_HANH thiếu ' + x.ten); continue; }
     const a = fs.readFileSync(x.tu), b = fs.readFileSync(kho);
     if (!a.equals(b)) lech.push(x.ten + ' lệch (' + a.length + ' byte ở 03_VAN_HANH, ' + b.length + ' byte ở bat/)');
   }
@@ -242,7 +332,11 @@ function kiemGoi(dich) {
       continue;
     }
     const duoi = path.extname(ten).toLowerCase();
-    if (!mienTru && DUOI_CAM.indexOf(duoi) >= 0) pham.push('có file đuôi cấm  ' + x.duong);
+    // C-3: hai file hướng dẫn là ngoại lệ KÊ ĐÍCH DANH, không phải nới luật theo đuôi. Và chúng chỉ được
+    // nằm đúng trong thư mục `Cấu hình`; một `HUONG_DAN_1_TRANG.md` mọc ở chỗ khác vẫn là vi phạm.
+    const laTrangTrang = TRANG_HUONG_DAN.indexOf(ten) >= 0 &&
+      path.dirname(x.duong).normalize('NFC') === TEN_CAU_HINH;
+    if (!mienTru && !laTrangTrang && DUOI_CAM.indexOf(duoi) >= 0) pham.push('có file đuôi cấm  ' + x.duong);
     if (TEN_CAM.indexOf(ten) >= 0) pham.push('có file cấm  ' + x.duong);   // KHÔNG miễn trừ
   }
 
@@ -264,7 +358,10 @@ function kiemGoi(dich) {
     pham.push('thư mục nhật ký không rỗng: ' + fs.readdirSync(nk).join(', '));
   }
 
-  // 3. hai dòng bí mật phải RỖNG trong gói
+  // 3. cấu hình phải ĐẦY ĐỦ (D-44 — đảo chiều luật cũ "phải rỗng")
+  //
+  // Luật cũ ép rỗng rồi bắt từng máy điền tay. Đảo chiều không phải nới lỏng: phép kiểm nay KHÓ QUA HƠN,
+  // vì một gói thiếu giá trị là gói câm — user bấm nút 4 và chỉ nhận được câu "thiếu web_app_url".
   const cfgTep = path.join(dich, TEN_CAU_HINH, 'CAU_HINH_VAN_HANH.json');
   let cfg = null;
   if (!fs.existsSync(cfgTep)) pham.push('thiếu CAU_HINH_VAN_HANH.json');
@@ -273,7 +370,21 @@ function kiemGoi(dich) {
       cfg = JSON.parse(doc(cfgTep));
       for (const k of HAI_DONG_BI_MAT) {
         const v = String(((cfg.google_sheet || {})[k]) || '').trim();
-        if (v !== '') pham.push('cấu hình trong gói còn giá trị thật ở  google_sheet.' + k);
+        if (v === '') pham.push('cấu hình trong gói còn RỖNG ở  google_sheet.' + k + '  (D-44: gói phải điền sẵn)');
+      }
+      if ((cfg.google_sheet || {}).bat !== true) pham.push('cấu hình trong gói có google_sheet.bat khác true');
+      const lt = cfg.link_thang;
+      if (!lt || typeof lt !== 'object' || Object.keys(lt).length === 0) {
+        pham.push('cấu hình trong gói thiếu link_thang (D-42: không có link tháng thì nút 4 tắc ngay)');
+      } else {
+        // Tháng CỦA NGÀY ĐÓNG GÓI phải có mặt — đó là tháng user sẽ chạy ngay hôm nhận gói.
+        const nay = new Date();
+        const kyNay = nay.getFullYear() + '-' + ('0' + (nay.getMonth() + 1)).slice(-2);
+        const v = String(lt[kyNay] || '').trim();
+        if (!v) pham.push('link_thang thiếu khóa của tháng hiện tại (' + kyNay + ')');
+        else if (!/^https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,}/.test(v)) {
+          pham.push('link_thang["' + kyNay + '"] không phải link Google Sheet hợp lệ');
+        }
       }
       for (const k of KHOA_CHI_CHO_EXCEL) {
         if (Object.prototype.hasOwnProperty.call(cfg, k)) pham.push('cấu hình còn khóa chỉ dùng cho Excel: ' + k);
@@ -281,12 +392,34 @@ function kiemGoi(dich) {
     } catch (e) { pham.push('CAU_HINH_VAN_HANH.json trong gói sai định dạng: ' + e.message); }
   }
 
-  // 4. không file nào trong gói được mang bí mật THẬT của máy đang đóng gói
-  const that = path.join(NGUON, TEN_CAU_HINH, 'CAU_HINH_VAN_HANH.json');
+  // 4. C-5: đủ bốn file giữ chỗ, mỗi thư mục gian hàng một cái
+  const thaGoc = path.join(dich, TEN_THA);
+  if (!fs.existsSync(thaGoc)) pham.push('thiếu thư mục ' + TEN_THA);
+  else {
+    const gian = fs.readdirSync(thaGoc).filter((t) => fs.statSync(path.join(thaGoc, t)).isDirectory());
+    if (gian.length !== 4) pham.push('thư mục thả file có ' + gian.length + ' gian hàng, cần đúng 4');
+    for (const g of gian) {
+      if (!fs.existsSync(path.join(thaGoc, g, TEN_GIU_CHO))) {
+        pham.push('thư mục gian hàng  ' + g + '  thiếu ' + TEN_GIU_CHO + ' (giải nén xong sẽ mất thư mục)');
+      }
+    }
+  }
+
+  // 5. C-3: đủ hai file hướng dẫn, đúng chỗ
+  for (const t of TRANG_HUONG_DAN) {
+    if (!fs.existsSync(path.join(dich, TEN_CAU_HINH, t))) pham.push('thiếu ' + TEN_CAU_HINH + '/' + t);
+  }
+
+  // 6. cấu hình thật KHÔNG được rò sang file khác trong gói
+  //
+  // Gói cố ý mang chuỗi bí mật — nhưng chỉ ở ĐÚNG MỘT chỗ: `Cấu hình/CAU_HINH_VAN_HANH.json`. Nó lọt
+  // thêm vào một file nhật ký, một file .txt hướng dẫn hay một bản sao lưu nào đó là chuyện khác hẳn:
+  // đó là những file người ta hay mở ra xem, chụp màn hình, gửi qua chat.
+  const thatTep = path.join(NGUON, TEN_CAU_HINH, 'CAU_HINH_VAN_HANH.json');
   const moi = [];
-  if (fs.existsSync(that)) {
+  if (fs.existsSync(thatTep)) {
     try {
-      const c = JSON.parse(doc(that));
+      const c = JSON.parse(doc(thatTep));
       for (const k of HAI_DONG_BI_MAT) {
         const v = String(((c.google_sheet || {})[k]) || '').trim();
         if (v.length >= 8) moi.push({ ten: k, v });
@@ -294,30 +427,81 @@ function kiemGoi(dich) {
     } catch (e) { /* file thật hỏng thì thôi, không phải việc của phép kiểm này */ }
   }
   if (moi.length) {
+    const duocPhep = path.join(TEN_CAU_HINH, 'CAU_HINH_VAN_HANH.json').normalize('NFC');
     for (const x of ds) {
       if (x.laThuMuc || x.cỡ > 4 * 1024 * 1024) continue;
+      if (x.duong.normalize('NFC') === duocPhep) continue;
       let noi;
       try { noi = fs.readFileSync(x.that, 'latin1'); } catch (e) { continue; }
-      for (const m of moi) if (noi.indexOf(m.v) >= 0) pham.push('file  ' + x.duong + '  mang giá trị thật của ' + m.ten);
+      for (const m of moi) {
+        if (noi.indexOf(m.v) >= 0) pham.push('file  ' + x.duong + '  mang giá trị thật của ' + m.ten +
+          ' (chỉ Cấu hình/CAU_HINH_VAN_HANH.json được giữ)');
+      }
     }
   }
 
   return pham;
 }
 
+// ==================================================================== NÉN RA ZIP
+
+/**
+ * Nén cây `goc` thành một file .zip có ĐÚNG MỘT thư mục gốc `Tool_nhap_lieu` bên trong.
+ *
+ * Vì sao phải có thư mục gốc: user hay bấm "Extract Here" ngay trên Desktop. Zip không có thư mục gốc
+ * thì bốn nút và hai thư mục đổ thẳng ra Desktop lẫn với mọi thứ khác, và không cách nào gỡ lại.
+ *
+ * Ghi file tạm rồi đổi tên — cùng luật với mọi kịch bản sửa file của dự án: đứt giữa chừng thì file zip
+ * cũ vẫn nguyên vẹn chứ không thành một file hỏng nửa vời mà ai đó đem đi giao.
+ */
+async function nenZip(goc, tepZip, mucNen) {
+  const JSZip = require('jszip');
+  const zip = new JSZip();
+  const trong = zip.folder(TEN_GOI);
+  for (const x of moiFile(goc)) {
+    if (x.laThuMuc) { trong.folder(x.duong.split(path.sep).join('/')); continue; }
+    trong.file(x.duong.split(path.sep).join('/'), fs.readFileSync(x.that));
+  }
+  const buf = await zip.generateAsync({
+    type: 'nodebuffer', compression: 'DEFLATE', compressionOptions: { level: mucNen || 6 }
+  });
+  fs.mkdirSync(path.dirname(tepZip), { recursive: true });
+  const tam = tepZip + '.__moi';
+  fs.writeFileSync(tam, buf);
+  fs.renameSync(tam, tepZip);
+  return { tepZip, cỡ: buf.length };
+}
+
+/** Dựng gói vào thư mục tạm, tự kiểm, rồi nén ra zip. Gói bẩn thì KHÔNG nén — phủ quyết trước khi ra file. */
+async function dongGoiZip(tuyChon) {
+  const o = tuyChon || {};
+  const tepZip = o.zip || path.join(THU_MUC_BAN_GIAO, TEN_GOI + '.zip');
+  const tam = fs.mkdtempSync(path.join(require('os').tmpdir(), 'keodon-goi-'));
+  const dich = path.join(tam, TEN_GOI);
+  try {
+    const kq = dungGoi(dich, o.nodePortable === undefined ? null : o.nodePortable);
+    const pham = kiemGoi(dich);
+    if (pham.length) return { pham, canhBao: kq.canhBao };
+    const z = await nenZip(dich, tepZip, o.mucNen);
+    return { pham: [], canhBao: kq.canhBao, tepZip: z.tepZip, cỡ: z.cỡ, soGian: kq.soGian, soKyThang: kq.soKyThang };
+  } finally {
+    try { fs.rmSync(tam, { recursive: true, force: true }); } catch (e) { /* còn khóa thì thôi */ }
+  }
+}
+
 // ==================================================================== CHẠY
 
-function main() {
+async function main() {
   const tv = process.argv.slice(2);
   const lay = (c) => { const i = tv.indexOf(c); return i >= 0 ? tv[i + 1] : null; };
 
-  if (tv.indexOf('--dong-bo-bat') >= 0) {
-    const kq = dongBoBat();
-    console.log('Đã đồng bộ vào bat/ : ' + kq.daChep.join(', '));
-    if (kq.bo.length) console.log('Đã bỏ khỏi bat/     : ' + kq.bo.join(', '));
+  if (tv.indexOf('--dong-bo-van-hanh') >= 0) {
+    const kq = dongBoVanHanh();
+    if (kq.daChep.length) console.log('Đã chép bat/ → 03_VAN_HANH : ' + kq.daChep.join(', '));
+    else console.log('03_VAN_HANH đã khớp bat/, không phải chép gì.');
     const lech = kiemDongBoBat();
     if (lech.length) { console.log('VẪN LỆCH:'); lech.forEach((l) => console.log('  · ' + l)); process.exit(1); }
-    console.log('bat/ khớp từng byte với 03_VAN_HANH.');
+    console.log('03_VAN_HANH khớp từng byte với bat/.');
     process.exit(0);
   }
 
@@ -333,29 +517,48 @@ function main() {
     process.exit(0);
   }
 
-  const dich = path.resolve(lay('--ra') || path.join(GOC_DU_AN, 'out', TEN_GOI));
   const np = lay('--node-portable');
+  const nodePortable = np ? path.resolve(np) : null;
+  const raThuMuc = lay('--ra');
 
-  console.log('Dựng gói từ : ' + NGUON);
-  console.log('Dựng gói vào: ' + dich);
-  const kq = dungGoi(dich, np ? path.resolve(np) : null);
-  console.log('  · ' + kq.soGian + ' thư mục gian hàng, mỗi cái có thư mục "' + 'đã xử lý' + '"');
-  console.log('  · ' + BON_NUT.length + ' nút bấm');
-  console.log('  · cấu hình dựng từ bản mẫu, hai dòng bí mật để rỗng');
-
-  const pham = kiemGoi(dich);
-  console.log('');
-  if (pham.length) {
-    console.log('TỰ KIỂM: HỎNG — ' + pham.length + ' chỗ vi phạm, gói này KHÔNG được giao đi:');
-    pham.forEach((p) => console.log('  · ' + p));
-    process.exit(1);
+  // `--ra`: dựng ra thư mục để soi bằng mắt, KHÔNG nén. Mặc định thì đi thẳng ra zip.
+  if (raThuMuc) {
+    const dich = path.resolve(raThuMuc);
+    console.log('Dựng gói vào thư mục: ' + dich);
+    const kq = dungGoi(dich, nodePortable);
+    const pham = kiemGoi(dich);
+    inKetQua(kq, pham);
+    process.exit(pham.length ? 1 : 0);
   }
-  console.log('TỰ KIỂM: SẠCH — không .xlsx, không .md, không mã nguồn, không bí mật, nhật ký rỗng.');
-  kq.canhBao.forEach((c) => console.log('\nCHÚ Ý: ' + c));
+
+  const tepZip = path.resolve(lay('--zip') || path.join(THU_MUC_BAN_GIAO, TEN_GOI + '.zip'));
+  console.log('Đóng gói ra: ' + tepZip);
+  const kq = await dongGoiZip({ zip: tepZip, nodePortable: nodePortable });
+  inKetQua(kq, kq.pham);
+  if (kq.pham.length) process.exit(1);
+  console.log('  · ' + (kq.cỡ / 1024 / 1024).toFixed(1) + ' MB · thư mục gốc trong zip: ' + TEN_GOI);
   process.exit(0);
 }
 
-module.exports = { dungGoi, kiemGoi, dongBoBat, kiemDongBoBat, THU_MUC_BAT_KHO, dsFileBat,
-  TEN_NODE_PORTABLE, LOP_NGOAI_NODE_PORTABLE, trongCayNodePortable, BON_NUT, TEN_GOI, TEN_CAU_HINH, TEN_NHAT_KY, TEN_THA, KHOA_CHI_CHO_EXCEL, HAI_DONG_BI_MAT };
+function inKetQua(kq, pham) {
+  if (kq.soGian != null) console.log('  · ' + kq.soGian + ' thư mục gian hàng, mỗi cái một "đã xử lý" và một .keep');
+  console.log('  · ' + BON_NUT.length + ' nút bấm lấy từ bat/');
+  if (kq.soKyThang != null) console.log('  · cấu hình đầy đủ: web_app_url, chuoi_bi_mat, ' + kq.soKyThang + ' kỳ link_thang');
+  console.log('');
+  if (pham && pham.length) {
+    console.log('TỰ KIỂM: HỎNG — ' + pham.length + ' chỗ vi phạm, gói này KHÔNG được giao đi:');
+    pham.forEach((x) => console.log('  · ' + x));
+    return;
+  }
+  console.log('TỰ KIỂM: SẠCH — không .xlsx, không mã nguồn, nhật ký rỗng, cấu hình đủ, 4 file .keep, 2 file hướng dẫn.');
+  (kq.canhBao || []).forEach((c) => console.log('\nCHÚ Ý: ' + c));
+}
 
-if (require.main === module) main();
+module.exports = { dungGoi, kiemGoi, dongGoiZip, nenZip, dongBoVanHanh, kiemDongBoBat,
+  THU_MUC_BAT_KHO, THU_MUC_BAN_GIAO, NGUON_NUT, dsFileBat, TRANG_HUONG_DAN, TEN_GIU_CHO,
+  TEN_NODE_PORTABLE, LOP_NGOAI_NODE_PORTABLE, trongCayNodePortable, BON_NUT, TEN_GOI, TEN_CAU_HINH,
+  TEN_NHAT_KY, TEN_THA, KHOA_CHI_CHO_EXCEL, HAI_DONG_BI_MAT };
+
+if (require.main === module) {
+  main().catch((e) => { console.error('ĐÓNG GÓI HỎNG: ' + (e && e.stack ? e.stack : e)); process.exit(1); });
+}

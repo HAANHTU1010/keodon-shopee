@@ -29,15 +29,17 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+
+const BI_MAT = 'BI-MAT-TEST-QUYEN-MO-FILE-0123456789';
 
 const SRC = path.join(__dirname, '..', 'src');
 const FILE_SHELL = path.join(SRC, 'ShellAppsScript.gs');
 
-const TEN_SHEET_TT = 'Thông tin shop ';                        // CÓ dấu cách cuối — cố ý
-const ID_MO_NEO = '1AnChorAnChorAnChorAnChorAnChor00';
+// D-42: không còn file mỏ neo, không còn bảng link trên Google. Web App mở ĐÚNG file có ID máy gửi lên.
 const ID_T10 = '1Thang10Thang10Thang10Thang10T10';
 const THANG = '2026-10';
-const DONG_KHAI = 8;
+const TEN_FILE_T10 = 'THÁNG-10-2026-KINH-DOANH';
 
 /** Nguyên văn câu BA giao ở mục 6 — chép thẳng từ đề bài, KHÔNG sinh lại từ mã. */
 const CAU_BA_GIAO =
@@ -66,57 +68,22 @@ function bat(fn) {
 
 // ==================================================================== giả lập dịch vụ Google
 
-/** Sheet bảng link: chỉ dựng đúng vùng được phép đọc (A:C từ dòng 8). */
-function sheetBangLink(bang3Cot) {
-  return {
-    getName: () => TEN_SHEET_TT,
-    getLastRow: () => DONG_KHAI + bang3Cot.length - 1,
-    getLastColumn: () => 14,
-    getDataRange() { throw new Error('VI PHẠM: gọi getDataRange() trên sheet bảng link'); },
-    getRange(r, c, nr, nc) {
-      const soDong = nr == null ? 1 : nr, soCot = nc == null ? 1 : nc;
-      return {
-        getDisplayValues() {
-          const out = [];
-          for (let i = 0; i < soDong; i++) {
-            const dong = [];
-            for (let j = 0; j < soCot; j++) {
-              const rr = r + i, cc = c + j;
-              const d = rr >= DONG_KHAI ? bang3Cot[rr - DONG_KHAI] : null;
-              dong.push(d && cc >= 1 && cc <= 3 ? String(d[cc - 1]) : '');
-            }
-            out.push(dong);
-          }
-          return out;
-        },
-        getValue() { return ''; }
-      };
-    }
-  };
-}
-
-function link(id) { return 'https://docs.google.com/spreadsheets/d/' + id + '/edit#gid=0'; }
-
 /**
  * Nạp vỏ Google thật (src/*.gs) vào Node với dịch vụ Google giả.
- * `mt.loiMoFile` / `mt.loiMoNeo`: chuỗi Google sẽ ném khi mở file tháng / file mỏ neo. Rỗng = mở được.
+ * `mt.loiMoFile`: chuỗi Google sẽ ném khi mở file tháng. Rỗng = mở được.
+ *
+ * ĐỔI THEO D-42 (12/9/2026): bản trước còn dựng sheet `Thông tin shop ` và một "file mỏ neo" để Web App
+ * đọc bảng link. Nay máy gửi thẳng `spreadsheetId`, Web App không đọc bảng link nào — nên giả lập chỉ
+ * còn đúng một file tháng, và `mt.loiMoNeo` biến mất cùng với khái niệm mỏ neo.
  */
 function nap() {
-  const mt = { loiMoFile: '', loiMoNeo: '', thangGiaLap: THANG, thuocTinh: {}, daIn: [], moKhoa: 0 };
-
-  const shLink = sheetBangLink([[2026, 'Kinh Doanh T10', link(ID_T10)]]);
-  const fileMoNeo = { getName: () => 'THÁNG 10 - KINH DOANH', getSheetByName: (t) => (t === TEN_SHEET_TT ? shLink : null) };
-  const fileThang = { getName: () => 'THÁNG 10 - KINH DOANH', getSheetByName: () => null };
-
-  mt.thuocTinh['KEODON_BI_MAT'] = 'chuoi-bi-mat-du-dai-16';
-  mt.thuocTinh['KEODON_MO_NEO_ID'] = ID_MO_NEO;
+  const mt = { loiMoFile: '', thangGiaLap: THANG, thuocTinh: {}, daIn: [], moKhoa: 0 };
+  // Nhu the `caiDat(<chuoi>)` da chay mot lan tren du an Apps Script (YC-28).
+  mt.thuocTinh['KEODON_BI_MAT'] = BI_MAT;
+  const fileThang = { getName: () => TEN_FILE_T10, getSheetByName: () => null };
 
   const SpreadsheetApp = {
     openById(id) {
-      if (id === ID_MO_NEO) {
-        if (mt.loiMoNeo) throw new Error(mt.loiMoNeo);
-        return fileMoNeo;
-      }
       if (id === ID_T10) {
         if (mt.loiMoFile) throw new Error(mt.loiMoFile);
         return fileThang;
@@ -132,6 +99,12 @@ function nap() {
     })
   };
   const Utilities = {
+    DigestAlgorithm: { SHA_256: 'SHA_256' },
+    Charset: { UTF_8: 'UTF_8' },
+    computeDigest(thuat, chuoi) {
+      const b = crypto.createHash('sha256').update(String(chuoi), 'utf8').digest();
+      return Array.from(b).map((v) => (v > 127 ? v - 256 : v));
+    },
     formatDate(d, tz, mau) {
       if (mau === 'yyyy-MM') return mt.thangGiaLap;
       return '00:00:00 01/10/2026';
@@ -139,7 +112,7 @@ function nap() {
   };
   const ContentService = {
     MimeType: { JSON: 'application/json' },
-    createTextOutput(s) { mt.daIn.push(s); return { _text: s, setMimeType() { return this; } }; }
+    createTextOutput(s2) { mt.daIn.push(s2); return { _text: s2, setMimeType() { return this; } }; }
   };
   const LockService = {
     getScriptLock: () => ({ tryLock: () => { mt.moKhoa++; return true; }, releaseLock: () => { mt.moKhoa--; } })
@@ -157,7 +130,11 @@ function nap() {
   return g;
 }
 
-function goi(g, body) { return JSON.parse(g.doPost({ postData: { contents: JSON.stringify(body) } })._text); }
+/** Gọi doPost như Web App thật. Mọi gói đều mang `spreadsheetId` — đúng hợp đồng D-42. */
+function goi(g, body) {
+  const day = Object.assign({ token: BI_MAT, spreadsheetId: ID_T10 }, body);
+  return JSON.parse(g.doPost({ postData: { contents: JSON.stringify(day) } })._text);
+}
 
 // ==================================================================== 1. BẢNG CA ĐO
 
@@ -251,12 +228,11 @@ function chamCaBang(banCaiDat) {
 // ==================================================================== 3. BẢN THẬT
 
 const gChung = nap();
-const F_THANG = { fileId: ID_T10, thang: THANG, dong: 44 };
 
-/** Bản THẬT: gọi thẳng `moFileThang_` trong src/ShellAppsScript.gs. */
+/** Bản THẬT: gọi thẳng `moFileTheoId_` trong src/ShellAppsScript.gs (cửa duy nhất mở file tháng). */
 function banThat(ca) {
   gChung.__mt.loiMoFile = ca.chuoi;
-  return bat(() => gChung.moFileThang_(F_THANG));
+  return bat(() => gChung.moFileTheoId_({ spreadsheetId: ID_T10 }, THANG, []));
 }
 
 console.log('--- 1. Bản thật: từng ca Google ném ra ---');
@@ -286,7 +262,10 @@ test('T-QM-P2 mọi chỗ mở bảng tính đều đi qua moBangTinh_ (đếm t
   bang(soLan, 1, 'số lời gọi SpreadsheetApp.openById còn lại trong mã');
   const than = src.slice(src.indexOf('function moBangTinh_'), src.indexOf('function moFileThang_'));
   dung(than.indexOf('SpreadsheetApp.openById') >= 0, 'lời gọi duy nhất phải nằm trong moBangTinh_');
-  dung((src.match(/moFileThang_\(f\)/g) || []).length >= 4, 'bốn chỗ mở file tháng phải gọi moFileThang_');
+  // D-42: bốn chỗ mở file tháng ('doc', 'ghi', 'xuLy', và hàm chạy tay) đều phải đi qua `moFileTheoId_`,
+  // cửa duy nhất nhận ID từ gói rồi kiểm chéo tên file với tháng.
+  dung((src.match(/moFileTheoId_\(/g) || []).length >= 5,
+    'bốn chỗ mở file tháng phải gọi moFileTheoId_ (cộng chính định nghĩa hàm)');
 });
 
 console.log('--- 3. Đi trọn đường Web App (doPost) — mã lỗi phải sống sót ---');
@@ -294,7 +273,7 @@ console.log('--- 3. Đi trọn đường Web App (doPost) — mã lỗi phải s
 test('T-QM-E1 hanhDong "doc" → loi = KHONG_CO_QUYEN, thongBao đúng nguyên văn', () => {
   const g = nap();
   g.__mt.loiMoFile = CAC_CA[0].chuoi;
-  const kq = goi(g, { token: 'chuoi-bi-mat-du-dai-16', hanhDong: 'doc', thang: THANG });
+  const kq = goi(g, { hanhDong: 'doc', thang: THANG });
   bang(kq.ok, false);
   bang(kq.loi, 'KHONG_CO_QUYEN', 'mã lỗi bị doPost nuốt thành NGOAI_LE');
   bang(kq.thongBao, CAU_BA_GIAO);
@@ -303,7 +282,7 @@ test('T-QM-E1 hanhDong "doc" → loi = KHONG_CO_QUYEN, thongBao đúng nguyên v
 test('T-QM-E2 hanhDong "ghi" → cùng câu đó, và khóa ghi được trả lại', () => {
   const g = nap();
   g.__mt.loiMoFile = CAC_CA[0].chuoi;
-  const kq = goi(g, { token: 'chuoi-bi-mat-du-dai-16', hanhDong: 'ghi', thang: THANG, lenh: [] });
+  const kq = goi(g, { hanhDong: 'ghi', thang: THANG, lenh: [] });
   bang(kq.loi, 'KHONG_CO_QUYEN');
   bang(kq.thongBao, CAU_BA_GIAO);
   bang(g.__mt.moKhoa, 0, 'khóa ghi phải được trả lại dù mở file hỏng');
@@ -312,33 +291,60 @@ test('T-QM-E2 hanhDong "ghi" → cùng câu đó, và khóa ghi được trả l
 test('T-QM-E3 hanhDong "xuLy" → cùng câu đó', () => {
   const g = nap();
   g.__mt.loiMoFile = CAC_CA[0].chuoi;
-  const kq = goi(g, { token: 'chuoi-bi-mat-du-dai-16', hanhDong: 'xuLy', thang: THANG, cacFile: [] });
+  const kq = goi(g, { hanhDong: 'xuLy', thang: THANG, cacFile: [] });
   bang(kq.loi, 'KHONG_CO_QUYEN');
   bang(kq.thongBao, CAU_BA_GIAO);
 });
 
-test('T-QM-E4 thuDinhTuyenThang (chạy tay trong trình soạn thảo) → cùng câu đó', () => {
+test('T-QM-E4 thuMoFileThang (chạy tay trong trình soạn thảo) → cùng câu đó', () => {
   const g = nap();
   g.__mt.loiMoFile = CAC_CA[0].chuoi;
-  bang(bat(() => g.thuDinhTuyenThang()).message, CAU_BA_GIAO);
+  bang(bat(() => g.thuMoFileThang(ID_T10, THANG)).message, CAU_BA_GIAO);
 });
 
-test('T-QM-E5 file MỎ NEO không có quyền → câu riêng, KHÔNG mạo nhận là file tháng nào', () => {
+test('T-QM-E5 gói THIẾU spreadsheetId → mã riêng THIEU_ID_FILE, không đổ oan cho quyền', () => {
+  // D-42 bỏ file mỏ neo, nên ca "mỏ neo không mở được" biến mất. Ca THAY THẾ nó ở đúng vị trí này là gói
+  // lên mà không mang ID — nghĩa là bản Node trên máy cũ hơn Web App. Việc phải làm khác hẳn ca thiếu
+  // quyền (bấm nút cập nhật, không phải đi chia sẻ file), nên câu chữ và mã lỗi phải khác.
   const g = nap();
-  g.__mt.loiMoNeo = CAC_CA[0].chuoi;
-  const kq = goi(g, { token: 'chuoi-bi-mat-du-dai-16', hanhDong: 'doc', thang: THANG });
-  bang(kq.loi, 'KHONG_CO_QUYEN');
-  dung(kq.thongBao.indexOf('Không mở được file mỏ neo') === 0, 'phải nói rõ là file mỏ neo, được: ' + kq.thongBao);
-  dung(kq.thongBao.indexOf('bấm Chia sẻ') > 0, 'vẫn phải chỉ đúng việc phải làm');
-  dung(kq.thongBao.indexOf(ID_MO_NEO) < 0, 'không được lộ id mỏ neo');
-  const ping = goi(g, { token: 'chuoi-bi-mat-du-dai-16', hanhDong: 'ping' });
+  const kq = JSON.parse(g.doPost({ postData: { contents: JSON.stringify({ token: BI_MAT, hanhDong: 'doc', thang: THANG }) } })._text);
+  bang(kq.ok, false);
+  bang(kq.loi, 'THIEU_ID_FILE', 'mã lỗi phải riêng, không lẫn với nhóm quyền');
+  dung(/2_CAP_NHAT\.bat/.test(kq.thongBao), 'phải chỉ đúng nút phải bấm: ' + kq.thongBao);
+  dung(kq.thongBao.indexOf('bấm Chia sẻ') < 0, 'không được bảo đi chia sẻ file — sai đường');
+  const ping = JSON.parse(g.doPost({ postData: { contents: JSON.stringify({ token: BI_MAT, hanhDong: 'ping' }) } })._text);
   dung(ping.ok === true, 'ping phải vẫn trả lời được — nó chính là phép thử để tìm ra hỏng');
-  dung(String(ping.loiMoNeo || '').indexOf('Không mở được file mỏ neo') === 0, 'ping phải nêu đúng lý do, được: ' + ping.loiMoNeo);
 });
 
 test('T-QM-E6 mở được file bình thường thì không đổi gì', () => {
   const g = nap();
-  bang(g.moFileThang_(F_THANG).getName(), 'THÁNG 10 - KINH DOANH');
+  bang(g.moFileTheoId_({ spreadsheetId: ID_T10 }, THANG, []).ss.getName(), TEN_FILE_T10);
+});
+
+test('T-QM-E7 TÊN file không khớp tháng của gói → TỪ CHỐI SAI_THANG_FILE, không phải lỗi quyền', () => {
+  // Hàng rào D-42 thứ hai. Thiếu link thì tool tắc, ai cũng thấy; trỏ NHẦM link thì tool chạy êm và ghi
+  // vào sổ sai tháng, không ai thấy. Tên file là thứ duy nhất tố giác được, nên phải là một mã lỗi riêng.
+  const g = nap();
+  const kq = goi(g, { hanhDong: 'doc', thang: '2026-09' });
+  bang(kq.ok, false);
+  bang(kq.loi, 'SAI_THANG_FILE');
+  dung(kq.thongBao.indexOf(TEN_FILE_T10) > 0, 'phải nêu TÊN file đang bị trỏ tới: ' + kq.thongBao);
+  dung(kq.thongBao.indexOf(ID_T10) < 0, 'không được lộ ID file');
+});
+
+test('T-QM-E8 tên file KHÔNG theo mẫu nào → cảnh báo, KHÔNG chặn (tool không đoán)', () => {
+  const g = nap();
+  const canhBao = [];
+  const f = g.moFileTheoId_({ spreadsheetId: ID_T10 }, THANG, canhBao);
+  bang(f.ss.getName(), TEN_FILE_T10);
+  // đổi tên file sang một chuỗi không đọc được tháng
+  const g2 = nap();
+  g2.__mt.loiMoFile = '';
+  const cb2 = [];
+  const ssLa = { getName: () => 'So kinh doanh (ban moi)', getSheetByName: () => null };
+  bang(g2.kiemTenFileKhopThang_(ssLa, THANG, cb2), true, 'không đọc được tháng thì vẫn cho chạy');
+  bang(cb2.length, 1, 'nhưng phải để lại đúng một câu cảnh báo');
+  dung(/Không đọc được tháng\/năm trong tên file/.test(cb2[0]), cb2[0]);
 });
 
 // ==================================================================== 4. ĐỐI CHỨNG ÂM
@@ -359,7 +365,9 @@ function banQuaTay() {
 function banThieuKy(ca) {
   const e = banThat(ca);
   if (MA_MOI.indexOf(e.maKeodon) < 0) return e;                 // ca giữ nguyên: không đụng
-  const g = new Error(String(e.message).split('file tháng ' + THANG).join('file tháng này'));
+  // Cắt MỌI chỗ nhắc kỳ tháng, không chỉ cụm 'file tháng <kỳ>': câu thật nay nêu kỳ ở hai chỗ (đầu câu và
+  // trong lời chỉ khóa link_thang), nên chỉ cắt một chỗ thì bản SAI vẫn còn kỳ và đối chứng âm hóa mù.
+  const g = new Error(String(e.message).split('file tháng ' + THANG).join('file tháng này').split(THANG).join('kỳ đó'));
   g.maKeodon = e.maKeodon;
   return g;
 }

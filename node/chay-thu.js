@@ -2,7 +2,10 @@
  * chay-thu.js — vỏ Node: chạy luồng kéo đơn trên máy (GIAI ĐOẠN 1 — ghi ra bản sao file tracking .xlsx).
  *
  *   node node/chay-thu.js [--tracking <file>] [--mapping <file>] [--ngay YYYY-MM-DD] [--thoi-diem "YYYY-MM-DD HH:MM"]
- *   node node/chay-thu.js --van-hanh <thư mục 03_VAN_HANH>      ← chế độ VẬN HÀNH (CHAY_TOOL.bat gọi)
+ *   node node/chay-thu.js --van-hanh <thư mục 03_VAN_HANH>      ← chế độ VẬN HÀNH (4_CHAY_TOOL.bat gọi)
+ *   node node/chay-thu.js --van-hanh <thư mục> --thang 2026-08   ← CHẠY TAY: ghi vào file của tháng khác
+ *       (D-21b — rà soát bằng file tab "Tất cả" của tháng trước). Nút 4 KHÔNG bao giờ truyền `--thang`;
+ *       Web App vẫn kiểm chéo tên file với tháng nên không thể ghi nhầm sổ.
  *
  *   Chế độ DEV (mặc định): đọc `du-lieu-vao/<GIAN>/*.xlsx` → ghi `out/<tên gốc>_AUTO_<yyyymmdd_HHMM>.xlsx`,
  *       file đã đọc chuyển sang `da-xu-ly/<GIAN>/`.
@@ -16,7 +19,7 @@ const path = require('path');
 const { napLoi } = require('./nap-loi');
 const { NguonThuMuc } = require('./nguon-thu-muc');
 const { chayLenGoogleSheet, thangCua } = require('./chay-google-sheet');
-const { WebAppGoogleSheet } = require('./gsheet-web-app');
+const { WebAppGoogleSheet, idFileThang, canhBaoThangSau } = require('./gsheet-web-app');
 const { KhoTracking, duongDanOut, docBangXlsx, TEN_SHEET_MAPPING } = require('./kho-tracking');
 
 const ROOT = path.join(__dirname, '..');
@@ -81,68 +84,26 @@ function quetLop1(files, cfg) {
   return ds;
 }
 
-// D-04: ngưỡng cho chắc tay. Ít listing khớp được (Mapping còn trống) hoặc tỷ lệ chưa áp đảo thì im lặng,
-// thà bỏ sót còn hơn chặn oan một file thả đúng chỗ.
-const D04_TOI_THIEU = 5;
-const D04_TY_LE = 0.8;
-
 /**
- * Chỉ mục "tên listing → mã gian hàng" lấy từ sheet Mapping sản phẩm.
- * Listing từng khai ở NHIỀU gian (hàng bán chung, hoặc Mapping đã bị một lần chạy nhầm làm bẩn) thì bỏ,
- * vì không kết luận được gì. Không dòng nào khai gian hàng → trả null, vỏ bỏ qua phép kiểm.
- */
-function gianTheoListing(bangMap, cfg) {
-  if (!bangMap || !bangMap.length) return null;
-  const head = (bangMap[0] || []).map(h => lop.MapListing.tenCotChuan(h));
-  const iTen = head.indexOf('Tên trên Shopee'), iGian = head.indexOf('Gian hàng');
-  if (iTen < 0 || iGian < 0) return null;
-  const gianCua = {};
-  for (let r = 1; r < bangMap.length; r++) {
-    const ten = lop.Utils.chuanHoaChuoi((bangMap[r] || [])[iTen]);
-    const g = lop.MapListing.maGian(cfg, (bangMap[r] || [])[iGian]);
-    if (!ten || !cfg.gianHang[g]) continue;
-    (gianCua[ten] = gianCua[ten] || {})[g] = 1;
-  }
-  const idx = {};
-  Object.keys(gianCua).forEach(t => {
-    const g = Object.keys(gianCua[t]);
-    if (g.length === 1) idx[t] = g[0];
-  });
-  return Object.keys(idx).length ? idx : null;
-}
-
-/**
- * D-04: file xuất của gian hàng khác bị thả nhầm vào thư mục gian này. File xuất không có cột gian hàng,
- * nhưng sheet Mapping sản phẩm đã ghi mỗi tên listing thuộc gian nào; đa số áp đảo listing của file thuộc
- * một gian KHÁC thư mục người ta thả vào là dấu hiệu thả nhầm. Dừng trước khi ghi, không đoán, không ghi bừa.
+ * D-04 (YC-36): file xuất của gian hàng khác bị thả nhầm vào thư mục gian này.
+ *
+ * LUẬT NẰM Ở LÕI — `MapListing.soatThaNhamGian`. Trước 13/9 vỏ này giữ một bản chép tay riêng, và bản
+ * chép tay đó chỉ chạy trên đường Excel: đường Google (đường chạy hằng ngày từ bản 2.4.0) gọi nó với
+ * bảng Mapping mẫu, mà cấu hình thật không khai file mẫu nào, nên thực tế KHÔNG canh gì. Nay vỏ Google
+ * tự canh bằng chính luật này (`kiemGianHangCuaFile_` trong ShellAppsScript.gs), và vỏ Excel gọi lại
+ * đúng hàm đó — một luật, không phải hai bản dễ lệch nhau.
+ *
  * @param {Array} daDoc  kết quả quetLop1
  * @param {Array} bangMap  bảng Mapping (2 chiều) hoặc null nếu chưa có
  */
 function kiemTraGianQuaMapping(daDoc, bangMap, cfg) {
-  const idx = gianTheoListing(bangMap, cfg);
-  if (!idx) return;                                  // Mapping chưa khai gian hàng nào → không đoán bừa
-  const loi = [];
-  daDoc.forEach(x => {
-    const dem = {}, daXet = {};
-    let khop = 0;
-    (x.tenListing || []).forEach(t => {
-      const k = lop.Utils.chuanHoaChuoi(t);
-      if (!k || daXet[k] || !idx[k]) return;
-      daXet[k] = 1; khop++;
-      dem[idx[k]] = (dem[idx[k]] || 0) + 1;
-    });
-    const cuaThuMuc = dem[x.maGianHang] || 0;
-    if (khop < D04_TOI_THIEU || (khop - cuaThuMuc) / khop < D04_TY_LE) return;
-    const khac = Object.keys(dem).filter(g => g !== x.maGianHang).sort((a, b) => dem[b] - dem[a])[0];
-    loi.push('      · ' + x.tenFile + ' đang nằm trong thư mục ' + x.maGianHang + ' nhưng ' + dem[khac] + '/' + khop +
-      ' tên hàng của nó đã khai ở gian ' + cfg.gianHang[khac].ten + ' (' + khac + ')');
-  });
-  if (!loi.length) return;
+  const kq = lop.MapListing.soatThaNhamGian(daDoc, bangMap, cfg);
+  kq.canhBao.forEach((c) => console.log('  CHÚ Ý: ' + c));
+  if (!kq.chan.length) return;
   throw new Error(
-    'File xuất thả nhầm thư mục gian hàng (đối chiếu tên hàng với sheet Mapping sản phẩm):\n' +
-    loi.join('\n') + '\n' +
-    '  Ghi tiếp là đơn của gian này chui vào sheet gian khác.\n' +
-    '  Cách sửa: chuyển file sang đúng thư mục gian hàng của nó rồi bấm chạy lại.\n' +
+    kq.chan.map((x) => '  ' + x.cau + '\n' +
+      '      · ' + x.tenFile + ': ' + x.soKhac + '/' + x.khop + ' tên hàng đã khai ở gian kia, ' +
+      x.soMinh + '/' + x.khop + ' ở gian đang thả').join('\n') + '\n' +
     '  File đúng chỗ mà vẫn bị chặn: sheet Mapping sản phẩm đang khai sai gian cho các tên hàng đó\n' +
     '            (thường do một lần chạy nhầm trước để lại). Sửa cột "Gian hàng" của các dòng đó rồi chạy lại.\n' +
     '  Tool chưa ghi gì cả.');
@@ -522,95 +483,133 @@ async function chayVanHanh(thuMuc) {
   return kq.soFileLoi ? 1 : 0;
 }
 
+/** `--thang` chạy tay: nhận 'yyyy-MM' hoặc 'MM/yyyy'; sai thì ném lỗi rõ ràng chứ không đoán. */
+function chuanThangTay(x) {
+  const t = String(x == null ? '' : x).trim();
+  let m = t.match(/^(\d{4})-(\d{1,2})$/);
+  if (m) return m[1] + '-' + ('0' + m[2]).slice(-2);
+  m = t.match(/^(\d{1,2})\/(\d{4})$/);
+  if (m) return m[2] + '-' + ('0' + m[1]).slice(-2);
+  throw new Error('--thang phải có dạng yyyy-MM (ví dụ 2026-08), đang là: ' + t);
+}
+
 /**
- * Chế độ Google Sheet (GV-v2.2 mục 1.7). Máy tính chỉ đọc file xuất rồi gửi lệnh; file tháng nằm
- * trên Google, do Web App chọn theo sheet `SỔ LINK THÁNG`. Không sinh file .xlsx kết quả.
+ * Ghi nhật ký cho lượt Google — ghi CẢ KHI HỎNG. Câu lỗi (kèm mã HTTP thật ở ca lỗi quyền) là thứ duy
+ * nhất để dò lại sau, mà cửa sổ đen thì đóng là mất; trước bản này lượt hỏng không để lại dòng nào.
+ */
+function ghiLogGoogle(fileLog, tieuDe, dong, canhBao, loiFile, loiChung) {
+  const ds = [tieuDe, ''].concat(dong || []);
+  if (canhBao && canhBao.length) ds.push('', 'CẦN XEM:', ...canhBao.map((c) => '  · ' + c));
+  if (loiFile && loiFile.length) ds.push('', 'FILE LỖI:', ...loiFile.map((c) => '  · ' + c));
+  if (loiChung) ds.push('', 'LỖI — lượt này KHÔNG xong:', '  ' + String(loiChung).split('\n').join('\n  '));
+  try { fs.writeFileSync(fileLog, '\uFEFF' + ds.join('\r\n') + '\r\n', 'utf8'); }
+  catch (e) { /* không ghi được nhật ký thì thôi, đừng vì thế mà hỏng cả lượt chạy */ }
+}
+
+/**
+ * Chế độ Google Sheet (bản 2.5.0). Máy chỉ đọc file xuất rồi gửi lệnh; FILE THÁNG DO MÁY CHỈ ĐỊNH qua
+ * `link_thang` trong CAU_HINH_VAN_HANH.json (D-42), Web App mở theo ID và kiểm chéo tên file với tháng.
+ * Không sinh file `.xlsx` kết quả. Không có link tháng đang chạy → dừng ngay tại đây, chưa chạm file nào
+ * trong thư mục thả, và không bao giờ ghi lùi vào tháng trước.
  */
 async function chayVanHanhGoogle(cv, cfg, thoiDiem, ngayGhi) {
-  const thang = thangCua(thoiDiem);
+  const thangTay = thamSo('--thang') ? chuanThangTay(thamSo('--thang')) : null;
+  const thang = thangTay || thangCua(thoiDiem);
   const fileLog = path.join(cv.__ketQua, 'LOG_' + lop.Utils.nhanThoiDiem(thoiDiem) + '.txt');
+  const tieuDeLog = 'KÉO ĐƠN LÊN GOOGLE SHEET — ' + lop.Utils.dinhDangNgayGio(thoiDiem) + '\nTháng: ' + thang;
+  // `link_thang` đi kèm cấu hình Google; cờ `choPhepThangKhac` CHỈ bật ở lượt chạy tay có `--thang`.
+  const cauHinhGoogle = Object.assign({}, cv.google_sheet || {},
+    { link_thang: cv.link_thang || {}, choPhepThangKhac: !!thangTay });
   const nguon = taoNguon(cv, cfg);
   console.log('=== KÉO ĐƠN SHOPEE LÊN GOOGLE SHEET — ' + lop.Utils.dinhDangNgayGio(thoiDiem) + ' ===');
-  console.log('Đích ghi          : Google Sheet của tháng ' + thang + ' (qua Web App Apps Script)');
+  console.log('Đích ghi          : Google Sheet của tháng ' + thang +
+    (thangTay ? ' (chạy tay --thang)' : '') + ' (qua Web App Apps Script)');
   console.log('Thư mục thả file  : ' + cv.__thaFile);
   console.log('Đang chờ          : ' + nguon.dongDangCho(cfg));
 
-  // Kiểm cấu hình Web App TRƯỚC khi đụng tới file của người dùng: thiếu link hay chuỗi bí mật thì
-  // phải hỏng ngay lúc chưa di chuyển gì, để file xuất còn nguyên trong thư mục thả.
-  new WebAppGoogleSheet(Object.assign({ bat: true }, cv.google_sheet || {}));
+  try {
+    // D-42: tra link tháng NGAY ĐẦU. Thiếu là dừng với câu chuẩn, chưa di chuyển file nào, chưa gọi mạng.
+    idFileThang(cauHinhGoogle.link_thang, thang);
+    // Kiểm cấu hình Web App TRƯỚC khi đụng tới file của người dùng: thiếu link thì phải hỏng ngay lúc
+    // chưa di chuyển gì, để file xuất còn nguyên trong thư mục thả mà bấm lại.
+    new WebAppGoogleSheet(Object.assign({ bat: true }, cauHinhGoogle));
+    const nhacThangSau = canhBaoThangSau(cauHinhGoogle.link_thang, thang);
+    if (nhacThangSau) console.log('  ! ' + nhacThangSau);
 
-  // Thả sai chỗ: dừng trước cả lối ra "không có file mới" (xem chú thích ở chayVanHanh).
-  nguon.kiemTraThaSaiCho(cfg);
-  const boQua = nguon.fileBoQua(cfg);
-  if (boQua.length) console.log('Bỏ qua (chỉ nhận .xlsx): ' + boQua.join(', '));
-  const files = nguon.layFileMoi(cfg);
-  if (!files.length) {
-    console.log('\nKHÔNG CÓ FILE MỚI — không có gì để làm, tool chưa ghi gì cả.');
-    console.log('  Thả file xuất Shopee (.xlsx) vào ' + cv.__thaFile + ' rồi bấm lại.');
-    return 2;
-  }
-
-  // lớp 1: đọc từng file; một file hỏng không làm hỏng file khác
-  const cacFile = [], loi = [], fileOk = [], fileLoi = [];
-  let soDongDoc = 0, soDonDoc = 0, boHuyHoan = 0;
-  for (const f of files) {
-    try {
-      const a = lop.AdapterFileXuat.doc(f.docBang(), { san: f.san, maGianHang: f.maGianHang, tenFile: f.tenFile }, cfg);
-      cacFile.push({ maGianHang: f.maGianHang, tenFile: f.tenFile, dong: a.dong });
-      const ma = {};
-      a.dong.forEach((d) => { ma[d.maDonSan] = 1; });
-      soDongDoc += a.dong.length;
-      soDonDoc += Object.keys(ma).length;
-      boHuyHoan += a.soDonBoQua;
-      fileOk.push(f);
-    } catch (e) {
-      loi.push(f.tenFile + ': ' + e.message);
-      fileLoi.push(f);
+    // Thả sai chỗ: dừng trước cả lối ra "không có file mới" (xem chú thích ở chayVanHanh).
+    nguon.kiemTraThaSaiCho(cfg);
+    const boQua = nguon.fileBoQua(cfg);
+    if (boQua.length) console.log('Bỏ qua (chỉ nhận .xlsx): ' + boQua.join(', '));
+    const files = nguon.layFileMoi(cfg);
+    if (!files.length) {
+      console.log('\nKHÔNG CÓ FILE MỚI — không có gì để làm, tool chưa ghi gì cả.');
+      console.log('  Thả file xuất Shopee (.xlsx) vào ' + cv.__thaFile + ' rồi bấm lại.');
+      return 2;
     }
+
+    // lớp 1: đọc từng file; một file hỏng không làm hỏng file khác
+    const cacFile = [], loi = [], fileOk = [], fileLoi = [];
+    let soDongDoc = 0, soDonDoc = 0, boHuyHoan = 0;
+    for (const f of files) {
+      try {
+        const a = lop.AdapterFileXuat.doc(f.docBang(), { san: f.san, maGianHang: f.maGianHang, tenFile: f.tenFile }, cfg);
+        cacFile.push({ maGianHang: f.maGianHang, tenFile: f.tenFile, dong: a.dong });
+        const ma = {};
+        a.dong.forEach((d) => { ma[d.maDonSan] = 1; });
+        soDongDoc += a.dong.length;
+        soDonDoc += Object.keys(ma).length;
+        boHuyHoan += a.soDonBoQua;
+        fileOk.push(f);
+      } catch (e) {
+        loi.push(f.tenFile + ': ' + e.message);
+        fileLoi.push(f);
+      }
+    }
+
+    // Soát khi chưa gửi gì lên Google và chưa chuyển file nào đi.
+    const daDoc = cacFile.map((x) => ({
+      maGianHang: x.maGianHang, tenFile: x.tenFile,
+      maDon: x.dong.map((d) => d.maDonSan), tenListing: x.dong.map((d) => d.tenListing)
+    }));
+    NguonThuMuc.kiemTraTrungGianHang(daDoc);
+    // D-04: Mapping thật nằm trên Google Sheet, máy này không đọc được trước khi gọi Web App. Có file mẫu
+    // trong cấu hình thì đối chiếu tạm bằng file mẫu; không có thì thôi, không đoán bừa.
+    kiemTraGianQuaMapping(daDoc, await mappingKhoiTao(cv.file_mapping_mau ? path.resolve(cv.__thuMuc, cv.file_mapping_mau) : null), cfg);
+
+    const kq = await chayLenGoogleSheet({
+      lop, cfg, cacFile, thang, ngayGhi, thoiDiem,
+      cauHinhGoogle: cauHinhGoogle,
+      in: (t) => console.log(t)
+    });
+
+    // Ghi lên Google xong MỚI chuyển file nguồn đi (D-48). Gọi mạng hỏng thì file vẫn nằm nguyên chỗ cũ,
+    // người vận hành bấm lại là chạy tiếp, không phải đi tìm file trong thư mục đã xử lý.
+    fileOk.forEach((f) => nguon.danhDauDaXuLy(f));
+    fileLoi.forEach((f) => nguon.danhDauLoi(f));
+
+    const d = [];
+    d.push('Đọc ' + files.length + ' file (' + loi.length + ' lỗi) · ' + soDonDoc + ' đơn / ' + soDongDoc + ' dòng hàng');
+    if (boHuyHoan) d.push('Bỏ ' + boHuyHoan + ' đơn hủy/hoàn (file tab "Tất cả")');
+    d.push('GHI THÊM ' + kq.thongKe.donGhi + ' đơn (' + kq.thongKe.dongGhi + ' dòng) · bỏ qua ' + kq.thongKe.donDaCo + ' đơn đã có');
+    d.push('DÒNG VÀNG cần người xem: ' + kq.thongKe.dongVang);
+    if (kq.thongKe.tenMoi) d.push('Mapping sản phẩm: thêm ' + kq.thongKe.tenMoi + ' tên hàng mới chờ điền');
+    console.log('\n=== XONG ===');
+    d.forEach((x) => console.log('  ' + x));
+    // INV-7: chỉ in TÊN file, không in link, không in ID.
+    console.log('\nFile trên Google Sheet: ' + (kq.tenFile || '(không rõ tên)'));
+    console.log('Nhật ký               : ' + fileLog);
+    const canhBao = (nhacThangSau ? [nhacThangSau] : []).concat(kq.canhBao || []);
+    canhBao.slice(0, 30).forEach((c) => console.log('  ! ' + c));
+    loi.forEach((c) => console.log('  LỖI FILE: ' + c));
+
+    ghiLogGoogle(fileLog, tieuDeLog + ' · file: ' + (kq.tenFile || ''), d, canhBao, loi, null);
+    return loi.length ? 1 : 0;
+  } catch (e) {
+    // D-46: câu lỗi (kể cả mã HTTP thật) phải vào nhật ký, không chỉ trôi qua màn hình rồi mất.
+    ghiLogGoogle(fileLog, tieuDeLog, [], [], [], e && e.message ? e.message : String(e));
+    throw e;
   }
-
-  // Soát khi chưa gửi gì lên Google và chưa chuyển file nào đi.
-  const daDoc = cacFile.map(x => ({
-    maGianHang: x.maGianHang, tenFile: x.tenFile,
-    maDon: x.dong.map(d => d.maDonSan), tenListing: x.dong.map(d => d.tenListing)
-  }));
-  NguonThuMuc.kiemTraTrungGianHang(daDoc);
-  // D-04: Mapping thật nằm trên Google Sheet, máy này không đọc được trước khi gọi Web App. Có file mẫu
-  // trong cấu hình thì đối chiếu tạm bằng file mẫu; không có thì thôi, không đoán bừa.
-  kiemTraGianQuaMapping(daDoc, await mappingKhoiTao(cv.file_mapping_mau ? path.resolve(cv.__thuMuc, cv.file_mapping_mau) : null), cfg);
-
-  const kq = await chayLenGoogleSheet({
-    lop, cfg, cacFile, thang, ngayGhi, thoiDiem,
-    cauHinhGoogle: cv.google_sheet,
-    in: (t) => console.log(t)
-  });
-
-  // Ghi lên Google xong mới chuyển file nguồn đi. Gọi mạng hỏng thì file vẫn nằm nguyên chỗ cũ,
-  // người vận hành bấm lại là chạy tiếp, không phải đi tìm file trong 4_DA_XU_LY.
-  fileOk.forEach((f) => nguon.danhDauDaXuLy(f));
-  fileLoi.forEach((f) => nguon.danhDauLoi(f));
-
-  const d = [];
-  d.push('Đọc ' + files.length + ' file (' + loi.length + ' lỗi) · ' + soDonDoc + ' đơn / ' + soDongDoc + ' dòng hàng');
-  if (boHuyHoan) d.push('Bỏ ' + boHuyHoan + ' đơn hủy/hoàn (file tab "Tất cả")');
-  d.push('GHI THÊM ' + kq.thongKe.donGhi + ' đơn (' + kq.thongKe.dongGhi + ' dòng) · bỏ qua ' + kq.thongKe.donDaCo + ' đơn đã có');
-  d.push('DÒNG VÀNG cần người xem: ' + kq.thongKe.dongVang);
-  if (kq.thongKe.tenMoi) d.push('Mapping sản phẩm: thêm ' + kq.thongKe.tenMoi + ' tên hàng mới chờ điền');
-  console.log('\n=== XONG ===');
-  d.forEach((x) => console.log('  ' + x));
-  console.log('\nFile trên Google Sheet: ' + (kq.tenFile || '(không rõ tên)'));
-  console.log('Nhật ký               : ' + fileLog);
-  (kq.canhBao || []).slice(0, 30).forEach((c) => console.log('  ! ' + c));
-  loi.forEach((c) => console.log('  LỖI FILE: ' + c));
-
-  fs.writeFileSync(fileLog,
-    'KÉO ĐƠN LÊN GOOGLE SHEET — ' + lop.Utils.dinhDangNgayGio(thoiDiem) +
-    '\nTháng: ' + thang + ' · file: ' + (kq.tenFile || '') + '\n\n' + d.join('\n') +
-    '\n\nCẦN XEM:\n' + (kq.canhBao || []).map((c) => '  · ' + c).join('\n') +
-    (loi.length ? '\n\nFILE LỖI:\n' + loi.map((c) => '  · ' + c).join('\n') : '') + '\n', 'utf8');
-  return loi.length ? 1 : 0;
 }
-
 
 // ---------------------------------------------------------------- điểm vào
 

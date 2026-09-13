@@ -5,7 +5,7 @@
  *   1. `src/tests/TestBatBien.gs` — các bất biến kiểm được trong bộ nhớ, chạy cả trong Apps Script.
  *   2. Phần dưới đây — các bất biến BẮT BUỘC phải có file thật hoặc phải quét mã nguồn:
  *        INV-5  băm file gốc trước/sau một lần chạy thật
- *        INV-7  quét log và mã nguồn tìm chuỗi bí mật, URL Web App
+ *        INV-7  quét log và mã nguồn tìm chuỗi bí mật, URL Web App, link/ID file tháng
  *        INV-9  băm `src/tests/` trên đĩa so với băm đã commit, nêu đích danh file test đã đổi
  *        INV-10 không đọc quá cột C và không đọc trên dòng 8 của sheet `Thông tin shop `
  *
@@ -81,7 +81,10 @@ test('INV-5', 'Không ghi đè file gốc: băm và thời điểm sửa của f
 
 // ---------------------------------------------------------------- INV-7
 
-test('INV-7', 'Không in chuỗi bí mật hay URL Web App: mã nguồn không chứa link /exec, không chứa chuỗi bí mật viết cứng', async () => {
+test('INV-7', 'Không in chuỗi bí mật / link Web App / link file tháng / ID file: mã nguồn không chứa link /exec, không chứa link Google Sheet viết cứng, không gán chuỗi bí mật cứng; và không câu nào tool in ra mang chuỗi bí mật', async () => {
+  // PHẠM VI ĐẦY ĐỦ TRỞ LẠI (D-43 sửa 13/9): chuỗi bí mật KHÔNG bị bỏ — nó chỉ được nạp sẵn trong gói
+  // giao user thay vì bắt user gõ. Vì thế nó vẫn là thứ số một không được lọt ra màn hình hay nhật ký:
+  // ai có chuỗi + link là ghi thẳng vào sổ tiền được.
   const viPham = [];
   const duyet = (thuMuc) => {
     for (const t of fs.readdirSync(thuMuc)) {
@@ -93,9 +96,13 @@ test('INV-7', 'Không in chuỗi bí mật hay URL Web App: mã nguồn không c
         // link /exec thật của Apps Script (không tính chuỗi mẫu trong hướng dẫn)
         if (/https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{30,}/.test(dong))
           viPham.push(path.relative(ROOT, p) + ':' + (i + 1) + ' chứa link /exec thật');
-        // gán chuỗi bí mật cứng vào biến
+        // gán chuỗi bí mật cứng vào biến — D-43 đã bỏ cơ chế, nhưng giữ phép quét: ai đó cắm lại một
+        // chuỗi bí mật viết cứng thì đó là mã lạc hậu, phải hỏng ngay chứ không âm thầm sống tiếp.
         if (/(SECRET|chuoi_?[Bb]i[Mm]at|biMat)\s*[:=]\s*['"][^'"]{12,}['"]/.test(dong) && !/\bprocess\.env\b/.test(dong))
           viPham.push(path.relative(ROOT, p) + ':' + (i + 1) + ' gán chuỗi bí mật viết cứng');
+        // link file tháng thật viết cứng trong mã: đó là đường vào sổ tiền của shop.
+        if (/https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{25,}/.test(dong))
+          viPham.push(path.relative(ROOT, p) + ':' + (i + 1) + ' chứa link file Google Sheet thật');
       });
     }
   };
@@ -103,51 +110,111 @@ test('INV-7', 'Không in chuỗi bí mật hay URL Web App: mã nguồn không c
   duyet(path.join(ROOT, 'node'));
   phai(viPham.length === 0, 'VI PHẠM:\n      ' + viPham.join('\n      '));
 
-  // cấu hình vận hành: hai dòng bí mật phải RỖNG trong bản giao đi
-  const cfgVH = path.join(ROOT, '..', '..', '03_VAN_HANH', 'CAU_HINH_VAN_HANH.json');
-  if (fs.existsSync(cfgVH)) {
-    const g = JSON.parse(fs.readFileSync(cfgVH, 'utf8')).google_sheet || {};
-    phai(!g.web_app_url && !g.chuoi_bi_mat,
-      'CAU_HINH_VAN_HANH.json đang chứa link hoặc chuỗi bí mật — không được giao đi kèm bí mật');
+  // Cấu hình vận hành của MÁY CHỦ DỰ ÁN nay CÓ link Web App và link_thang thật (D-44: gói giao user
+  // mang sẵn cấu hình đầy đủ). Vì thế không kiểm "phải rỗng" nữa — kiểm đúng thứ còn đáng kiểm: file đó
+  // không được nằm trong kho mã. Phép kiểm "gói có mang link không" thuộc về `kiemGoi()` của dong-goi.js.
+  const cfgVH = path.join(ROOT, '..', '..', '03_VAN_HANH', 'Cấu hình', 'CAU_HINH_VAN_HANH.json');
+  const trongKho = path.join(ROOT, '03_VAN_HANH');
+  phai(!fs.existsSync(trongKho), 'thư mục vận hành (có link Web App) không được nằm trong kho mã');
+  const coCfg = fs.existsSync(cfgVH);
+
+  // ---- phần thứ hai: quét ĐẦU RA THẬT, không chỉ quét mã nguồn ----
+  // Quét mã nguồn chỉ bắt được chuỗi viết cứng. Chỗ rò nguy hiểm hơn là câu lỗi trích lại nguyên thân
+  // gói POST — mà thân gói thì LUÔN mang `token`. `chePhu()` phải che được cả hai đường.
+  const gl = require('./gia-lap-web-app');
+  const sim = gl.taoGiaLap({});
+  sim.khaiThang('2026-09', 'THÁNG-9-2026-KINH-DOANH');
+  const { WebAppGoogleSheet } = require('./gsheet-web-app');
+  const w = new WebAppGoogleSheet(sim.cauHinhMay());
+  const cauDaIn = [];
+  for (const hd of ['ping', 'doc', 'ghi', 'xuly']) {
+    try {
+      const r = await w._goi({ hanhDong: hd, thang: '2026-09', lenh: [] });
+      cauDaIn.push(JSON.stringify(r));
+    } catch (e) { cauDaIn.push(String(e && e.message ? e.message : e)); }
   }
-  return 'quét src/ và node/ · 0 chỗ lộ link /exec hoặc chuỗi bí mật · cấu hình vận hành để trống hai dòng bí mật';
+  // Thêm ca câu lỗi có trích lại nguyên thân gói — đây mới là chỗ `token` hay lọt ra.
+  cauDaIn.push(w.chePhu('Web App trả về không phải JSON. Nội dung: ' +
+    JSON.stringify({ token: sim.biMat, hanhDong: 'ghi', spreadsheetId: sim.idCua('2026-09') })));
+  cauDaIn.push(...sim.chuOiDaTraVe, ...sim.nhatKy);
+  sim.thaoGo();
+  const gop = cauDaIn.join('\n');
+  phai(gop.indexOf(sim.biMat) < 0, 'LỘ CHUỖI BÍ MẬT trong một câu tool in ra');
+  phai(gop.indexOf(sim.url) < 0, 'LỘ LINK WEB APP trong một câu tool in ra');
+  phai(gop.indexOf(sim.idCua('2026-09')) < 0, 'LỘ ID FILE THÁNG trong một câu tool in ra');
+
+  // ĐỐI CHỨNG ÂM: phép quét trên phải thật sự bắt được, nếu chuỗi có lọt ra thật.
+  const w2 = new WebAppGoogleSheet(Object.assign(sim.cauHinhMay(), { chuoi_bi_mat: '' , bat: false }));
+  const roRi = 'Nội dung: ' + JSON.stringify({ token: sim.biMat });
+  phai(w2.chePhu(roRi).indexOf(sim.biMat) < 0,
+    'chePhu phải che `token` theo MẪU, không chỉ theo giá trị đang cầm trên tay');
+  phai(roRi.indexOf(sim.biMat) >= 0, 'phép quét mù: chuỗi nằm sờ sờ mà câu chấm không thấy');
+
+  return 'quét src/ và node/ · 0 chỗ lộ link /exec, link file tháng hay chuỗi bí mật viết cứng · ' +
+    'quét ' + cauDaIn.length + ' câu đầu ra thật · 0 chỗ lộ chuỗi bí mật · ' +
+    'cấu hình vận hành ' + (coCfg ? 'nằm ngoài kho mã (đúng chỗ)' : 'không có trên máy này');
 });
 
 // ---------------------------------------------------------------- INV-10
 
-test('INV-10', 'Sheet `Thông tin shop ` chỉ được đọc cột A, B, C và chỉ từ dòng 8 trở xuống — vùng còn lại chứa tên đăng nhập và mật khẩu gian hàng', async () => {
+test('INV-10', 'Web App KHÔNG đụng sheet `Thông tin shop ` — sheet đó chứa tên đăng nhập và mật khẩu gian hàng', async () => {
+  // ĐỔI HỢP ĐỒNG (D-42, 12/9/2026). Bản trước cho phép Web App đọc sheet này, miễn là chỉ cột A, B, C và
+  // chỉ từ dòng 8 — vì bảng link các tháng nằm trong đó. Nay bảng link chuyển hẳn về máy (`link_thang`
+  // trong CAU_HINH_VAN_HANH.json), nên Web App KHÔNG còn lý do gì để mở sheet đó. Bất biến vì thế SIẾT
+  // CHẶT HƠN chứ không nới: từ "đọc có giới hạn" thành "không đọc một ô nào".
+  //
+  // Vì sao vẫn giữ mã INV-10 thay vì đánh số mới: thứ nó canh không đổi — 33 ô đăng nhập ở dòng 1-6 và
+  // tên đăng nhập thật ở cột C dòng 2-6 không được lọt ra ngoài. Chỉ có cách canh là chặt hơn.
   const p = path.join(SRC, 'ShellAppsScript.gs');
-  // Bỏ chú thích trước khi quét, giữ nguyên số dòng. Chính phần chú thích của file này viết
-  // 'Cấm getDataRange()' nên quét thô sẽ báo nhầm đúng câu văn đang cấm việc đó.
-  const KHOI = new RegExp(String.fromCharCode(47,92,42) + '[' + String.fromCharCode(92) + 's' + String.fromCharCode(92) + 'S]*?' + String.fromCharCode(92,42,47), 'g');
-  const DONG_CT = new RegExp('^([^' + String.fromCharCode(39,34,92) + 'n]*?)' + String.fromCharCode(47,47) + '.*$', 'gm');
+  // Bỏ chú thích trước khi quét, giữ nguyên số dòng: chính chú thích của file này nhắc tên sheet để
+  // giải thích vì sao không đụng, nên quét thô sẽ báo nhầm đúng câu văn đang cấm việc đó.
+  const KHOI = new RegExp(String.fromCharCode(47, 92, 42) + '[' + String.fromCharCode(92) + 's' + String.fromCharCode(92) + 'S]*?' + String.fromCharCode(92, 42, 47), 'g');
+  const DONG_CT = new RegExp('^([^' + String.fromCharCode(39, 34, 92) + 'n]*?)' + String.fromCharCode(47, 47) + '.*$', 'gm');
   const s = fs.readFileSync(p, 'utf8')
     .replace(KHOI, (m) => m.replace(new RegExp('[^' + String.fromCharCode(92) + 'n]', 'g'), ' '))
     .replace(DONG_CT, '$1');
   const dong = s.split('\n');
 
-  // 1. Không được nạp cả sheet
+  // 1. Không được nạp cả sheet ở bất cứ đâu — nạp cả sheet là kéo theo cả cột mật khẩu.
   const nap = [];
   dong.forEach((d, i) => { if (/getDataRange\s*\(/.test(d)) nap.push(i + 1); });
-  phai(nap.length === 0, 'getDataRange() ở dòng ' + nap.join(', ') + ' — nạp cả sheet là kéo theo cả cột mật khẩu');
+  phai(nap.length === 0, 'getDataRange() ở dòng ' + nap.join(', '));
 
-  // 2. Mọi getRange đọc sheet này phải bắt đầu ở dòng 8 và rộng tối đa 3 cột
-  const xau = [];
-  dong.forEach((d, i) => {
-    const m = d.match(/getRange\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*[^,]+,\s*(\d+)\s*\)/);
-    if (!m) return;
-    const ngu = dong.slice(Math.max(0, i - 12), i + 1).join('\n');
-    if (!/Thông tin shop|THONG_TIN_SHOP|DONG_DAU_BANG_LINK|bangLink|thongTinShop/i.test(ngu)) return;
-    const [, r, c, rong] = m.map(Number);
-    if (r < 8) xau.push('dòng ' + (i + 1) + ': đọc từ dòng ' + r + ', phải từ dòng 8');
-    if (c !== 1 || rong > 3) xau.push('dòng ' + (i + 1) + ': đọc ' + rong + ' cột từ cột ' + c + ', chỉ được A,B,C');
+  // 2. Tên sheet đó không được xuất hiện trong phần CHẠY ĐƯỢC của mã. Không tra tên thì không mở được.
+  const nhac = [];
+  dong.forEach((d, i) => { if (/Thông tin shop|THONG_TIN_SHOP|thongTinShop/.test(d)) nhac.push(i + 1); });
+  phai(nhac.length === 0, 'mã còn tra sheet "Thông tin shop " ở dòng ' + nhac.join(', ') +
+    ' — D-42 đã bỏ bảng link trên Google, Web App không được mở sheet có ô đăng nhập');
+
+  // 3. Không còn hằng/hàm nào của cơ chế bảng link cũ. Còn một cái là còn một đường đi tới sheet đó.
+  // Trừ thân `hamLoiCoMat_`: chỗ đó CỐ Ý nhắc tên các hàm đã bỏ, dưới dạng `typeof <tên> === 'function'`,
+  // để phát hiện bản Apps Script trên Google còn mã cũ. Quét cả chỗ đó là tự bắn vào chính hàng rào.
+  const iHL = s.indexOf('function hamLoiCoMat_');
+  const jHL = s.indexOf('function thuXuLyRong');
+  const maNgoaiHamLoi = (iHL >= 0 && jHL > iHL) ? (s.slice(0, iHL) + s.slice(jHL)) : s;
+  const CAM = ['DONG_DAU_BANG_LINK', 'SO_COT_DUOC_DOC', 'bangLinkThang_', 'sheetThongTinShop_',
+    'moNeo_', 'fileCuaThang_', 'chonDongDinhTuyen_', 'capNhatMoNeo_'];
+  const con = CAM.filter((t) => maNgoaiHamLoi.indexOf(t) >= 0);
+  phai(con.length === 0, 'còn mã của cơ chế bảng link cũ (ngoài hamLoiCoMat_): ' + con.join(', '));
+  // Chiều ngược: `hamLoiCoMat_` PHẢI còn nhắc chúng, nếu không thì bản cũ trên Google đi lọt không ai biết.
+  const thanHL = (iHL >= 0 && jHL > iHL) ? s.slice(iHL, jHL) : '';
+  ['moNeo_', 'fileCuaThang_', 'biMatDung_', 'caiDat'].forEach((t) => {
+    phai(thanHL.indexOf(t) >= 0, 'hamLoiCoMat_ phải canh hàm đã bỏ "' + t + '" để bắt bản Google cũ');
   });
-  phai(xau.length === 0, 'VÙNG ĐỌC SAI:\n      ' + xau.join('\n      '));
 
-  // 3. Phải có hằng số chốt dòng bắt đầu, và nó phải bằng 8
-  const hang = s.match(/DONG_DAU_BANG_LINK\s*=\s*(\d+)/);
-  phai(hang && Number(hang[1]) === 8, 'phải có hằng số chốt dòng bắt đầu bảng link và nó phải là 8, đang là: ' + (hang ? hang[1] : 'không có'));
-  return 'ShellAppsScript.gs: 0 getDataRange · mọi vùng đọc bắt đầu dòng 8, rộng 3 cột · hằng số chốt = 8';
+  // 4. Chiều ngược lại: phải có đường MỚI, nếu không thì "không đụng sheet nào" là do mã rỗng chứ không
+  //    phải do thiết kế. File tháng đến từ ID trong gói, và tên file phải được kiểm chéo với tháng.
+  for (const t of ['function moFileTheoId_', 'function kiemTenFileKhopThang_', 'SAI_THANG_FILE']) {
+    phai(s.indexOf(t) >= 0, 'thiếu đường mới: ' + t);
+  }
+
+  // 5. `openById` vẫn chỉ được gọi ĐÚNG MỘT chỗ (trong `moBangTinh_`), để mọi lỗi mở file đi qua một cửa.
+  const soLan = (s.match(/SpreadsheetApp\.openById\s*\(/g) || []).length;
+  phai(soLan === 1, 'có ' + soLan + ' lời gọi SpreadsheetApp.openById, phải đúng 1 (trong moBangTinh_)');
+
+  return 'ShellAppsScript.gs: 0 getDataRange · 0 chỗ tra sheet "Thông tin shop " · 0/' + CAM.length +
+    ' mã bảng link cũ ngoài hamLoiCoMat_ (và hamLoiCoMat_ vẫn canh đủ 4 hàm đã bỏ) · ' +
+    'có moFileTheoId_ + kiemTenFileKhopThang_ · 1 lời gọi openById';
 });
 
 // ---------------------------------------------------------------- INV-9

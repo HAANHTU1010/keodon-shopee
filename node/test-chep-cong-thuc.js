@@ -18,9 +18,14 @@
  */
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const SRC = path.join(__dirname, '..', 'src');
-const FILE_VO = ['Utils.gs', 'Schema.gs', 'CaiDat.gs', 'Config.gs', 'ShellAppsScript.gs'];
+// Tám file: `toLaiMapping_` (D-47) gọi `MapListing.laCo`, nên ba file lớp 2 phải có mặt.
+const BI_MAT = 'BI-MAT-TEST-CHEP-CONG-THUC-0123456789';
+
+const FILE_VO = ['Utils.gs', 'Schema.gs', 'CaiDat.gs', 'Config.gs',
+  'DanhMuc.gs', 'MapListing.gs', 'Normalize.gs', 'ShellAppsScript.gs'];
 
 // ==================================================================== khung chấm
 
@@ -201,6 +206,13 @@ function napVo(sim) {
       createTextOutput(s) { return { _s: String(s), setMimeType() { return this; }, getContent() { return this._s; } }; }
     },
     Utilities: {
+      DigestAlgorithm: { SHA_256: 'SHA_256' },
+      Charset: { UTF_8: 'UTF_8' },
+      // Byte CO DAU nhu Apps Script (-128..127) — tra khong dau thi `bam256_` ra hex khac ban chay that.
+      computeDigest(thuat, chuoi) {
+        const b = crypto.createHash('sha256').update(String(chuoi), 'utf8').digest();
+        return Array.from(b).map((v) => (v > 127 ? v - 256 : v));
+      },
       formatDate(d, tz, mau) {
         const t = new Date(d.getTime() + 7 * 3600 * 1000);          // Asia/Ho_Chi_Minh cố định
         const H = (n) => ('0' + n).slice(-2);
@@ -222,7 +234,6 @@ function napVo(sim) {
 
 // ==================================================================== dựng file tháng
 
-const BI_MAT = 'BI-MAT-TEST-CHEP-CONG-THUC-0123456789';
 const TIEU_DE = ['Ngày ', 'Nguồn đơn', 'Thông tin ĐH', 'Tên viết tắt', 'Tên sản phẩm', 'Đơn vị ', 'SL',
   'Tổng Tiền SP', 'MGG Shop', 'Chi phí', 'Thuế', 'Doanh Thu', 'Mã hàng', 'Check tồn', 'Còn Nợ'];
 
@@ -278,27 +289,18 @@ function dungSheetGian(ss, ten, tc) {
   return sh;
 }
 
-/** Bảng link trong sheet `Thông tin shop ` — MỖI FILE THÁNG MỘT BẢN RIÊNG, đúng như thực tế. */
-function dungBangLink(ss, vo, kyDS) {
-  const sh = ss.themSheet(vo.TEN_SHEET_THONG_TIN_SHOP);
-  for (let r = 1; r <= 6; r++) {
-    sh.dat(r, 3, { v: 'TEN-DANG-NHAP-THAT-' + r });
-    for (let c = 4; c <= 14; c++) sh.dat(r, c, { v: 'MAT-KHAU-GIAN-HANG-' + r });
-  }
-  kyDS.forEach((k, i) => {
-    const r = 8 + i;
-    sh.dat(r, 1, { v: Number(k.slice(0, 4)) });
-    sh.dat(r, 2, { v: 'Kinh Doanh T' + Number(k.slice(5)) });
-    sh.dat(r, 3, { v: 'https://docs.google.com/spreadsheets/d/ID_FILE_' + k.replace('-', '_') + '/edit#gid=0' });
-  });
-  return sh;
-}
-
 /**
- * @param {Object} tc { moc, kyDS, kyDSCuaFile, gian, thang }
- *   kyDS         các kỳ có trong bảng link của FILE MỎ NEO
- *   kyDSCuaFile  { 'yyyy-MM': [kỳ...] } — bảng link RIÊNG của từng file tháng (mặc định = kyDS)
+ * D-42 (12/9/2026): bản trước dựng sheet `Thông tin shop ` cho từng file tháng để Web App đọc bảng link.
+ * Nay MÁY gửi thẳng `spreadsheetId` trong gói, Web App không đọc bảng link nào — nên giả lập bỏ hẳn sheet
+ * đó. Mỗi tháng chỉ còn một file có ID riêng `ID_FILE_<yyyy>_<MM>`.
+ *
+ * @param {Object} tc { moc, kyDS, gian, gianTC, gianTC0, mapping }
+ *   kyDS     các tháng cần dựng file (mặc định ['2026-09'])
+ *   mapping  bảng Mapping dựng kèm; bỏ trống = một bảng tối thiểu đủ cho `toLaiMapping_` chạy
  */
+/** ID file thang trong gia lap — dai >= 20 ky tu de `bocIdTuLink_` ben Apps Script nhan ra. */
+function idCuaKy(ky) { return 'ID_FILE_' + String(ky).replace('-', '_') + '_GIA_LAP_KEODON'; }
+
 function dungSim(tc) {
   const o = tc || {};
   const sim = {
@@ -307,25 +309,38 @@ function dungSim(tc) {
   };
   const vo = napVo(sim);
   sim.vo = vo;
-  sim.thuocTinh[vo.TT_BI_MAT] = BI_MAT;
+
+  // Như thể `caiDat(<chuỗi>)` đã chạy một lần trên dự án Apps Script (YC-28).
+  sim.thuocTinh[vo.TT_BI_MAT || 'KEODON_BI_MAT'] = BI_MAT;
 
   const kyDS = o.kyDS || ['2026-09'];
   kyDS.forEach((ky) => {
-    const id = 'ID_FILE_' + ky.replace('-', '_');
-    const ss = new BangTinhGia('KINH DOANH T' + Number(ky.slice(5)) + '-' + ky.slice(0, 4), id, sim);
+    // ID >= 20 ky tu, dung bang chu Google cho phep — `bocIdTuLink_` tu choi chuoi ngan hon.
+    const id = idCuaKy(ky);
+    // Ten file theo mau THAT `THANG-<M>-<YYYY>-KINH-DOANH` de `kiemTenFileKhopThang_` doc duoc thang.
+    const ss = new BangTinhGia('THÁNG-' + Number(ky.slice(5)) + '-' + ky.slice(0, 4) + '-KINH-DOANH', id, sim);
     sim.file[id] = ss;
     (o.gian || ['Shopee mall']).forEach((g) => dungSheetGian(ss, g, (o.gianTC || {})[g] || o.gianTC0 || {}));
-    dungBangLink(ss, vo, (o.kyDSCuaFile && o.kyDSCuaFile[ky]) || kyDS);
+    // Sheet Mapping phải có: sau mỗi lượt ghi, `toLaiMapping_` (D-47) tô lại tab này.
+    const bangMap = o.mapping || [['Gian hàng', 'Tên trên Shopee', 'Phân loại', 'Tên viết tắt', 'Hệ số',
+      'Cấu phần', 'Xác nhận'], ['Shopee mall', 'Hàng mẫu của fixture', '', 'dt5', 1, '', 'CÓ']];
+    const shMap = ss.themSheet('Mapping_san_pham');
+    bangMap.forEach((hang, r) => hang.forEach((v, c) => {
+      if (v !== '' && v != null) shMap.dat(r + 1, c + 1, { v: v });
+    }));
   });
-  sim.thuocTinh[vo.TT_MO_NEO] = 'ID_FILE_' + (o.moNeo || kyDS[0]).replace('-', '_');
-  sim.sheet = (ky, ten) => sim.file['ID_FILE_' + ky.replace('-', '_')].getSheetByName(ten);
-  sim.goi = (goi) => JSON.parse(vo.doPost({ postData: { contents: JSON.stringify(goi) } }).getContent());
+  sim.sheet = (ky, ten) => sim.file[idCuaKy(ky)].getSheetByName(ten);
+  sim.goi = (goi) => JSON.parse(vo.doPost({
+    postData: { contents: JSON.stringify(Object.assign({ token: BI_MAT }, goi)) }
+  }).getContent());
   return sim;
 }
 
 function goiGhi(sim, thang, tenSheet, donDS, cauHinh) {
   return sim.goi({
-    token: BI_MAT, hanhDong: 'ghi', phienBanMongDoi: sim.vo.PHIEN_BAN, thang: thang,
+    // D-42: máy chỉ định file tháng bằng ID trong gói.
+    hanhDong: 'ghi', phienBanMongDoi: sim.vo.PHIEN_BAN, thang: thang,
+    spreadsheetId: idCuaKy(thang),
     cauHinh: cauHinh || undefined,
     lenh: [{ tenSheet: tenSheet, don: donDS }]
   });
@@ -626,86 +641,87 @@ test('T-CT-09', 'P1 đã có nội dung khác → lùi sang ô trống đầu ti
   }, 'đè dấu lên ô chủ shop đang dùng');
 });
 
-// ==================================================================== 5. mỏ neo
+// ==================================================================== 5. file tháng theo ID (D-42)
 
-console.log('\n--- 5. Bỏ cơ chế tự dời mỏ neo (GV-v2.5 §1) ---');
+console.log('\n--- 5. File tháng do MÁY chỉ định bằng ID trong gói (D-42) ---');
 
-/** Kịch bản 4 bước BA đã diễn lại: T10 là vỏ nhân bản, bảng link của nó DỪNG Ở T9. */
-function simBayMoNeo() {
-  return dungSim({
-    moc: '2026-10-05T03:00:00Z',
-    kyDS: ['2026-09', '2026-10'],
-    kyDSCuaFile: { '2026-10': ['2026-09'] },     // vỏ T10 mang bảng link chụp lúc nhân bản
-    moNeo: '2026-09',
-    gianTC0: { dong: 2 }
-  });
-}
-
-test('T-CT-10', 'định tuyến xong mỏ neo KHÔNG tự dời, và lần chạy THỨ HAI trong tháng vẫn chạy', () => {
-  const sim = simBayMoNeo();
-  const neoDau = sim.thuocTinh[sim.vo.TT_MO_NEO];
-  bang(neoDau, 'ID_FILE_2026_09', 'mỏ neo ban đầu là file T9');
-
+test('T-CT-10', 'chạy HAI LẦN trong cùng một tháng đều ghi được — cái bẫy mỏ neo đã bị gỡ tận gốc', () => {
+  // Bài này trước đây canh cơ chế "tự dời mỏ neo": tool dời mỏ neo sang file tháng vừa định tuyến, mà vỏ
+  // file tháng mới lại mang bảng link chụp lúc nhân bản (dừng ở tháng trước) — nên lần chạy THỨ HAI trong
+  // tháng là tắc `KHONG_CO_THANG`, trong khi file tháng đang mở ngay trước mặt.
+  //
+  // D-42 gỡ tận gốc: bảng link chuyển về máy, Web App nhận thẳng ID. Không còn mỏ neo thì không còn chỗ
+  // cho cái bẫy đó tồn tại. Bài vẫn giữ mã T-CT-10 vì thứ nó canh không đổi: LẦN CHẠY THỨ HAI PHẢI ĐƯỢC.
+  const sim = dungSim({ moc: '2026-10-05T03:00:00Z', kyDS: ['2026-09', '2026-10'], gianTC0: { dong: 2 } });
   const l1 = goiGhi(sim, '2026-10', 'Shopee mall', [don()]);
   dung(l1.ok, 'lần chạy 1 phải ghi được: ' + l1.thongBao);
-  bang(sim.thuocTinh[sim.vo.TT_MO_NEO], neoDau, 'mỏ neo KHÔNG được dời sau khi định tuyến');
-
   const l2 = goiGhi(sim, '2026-10', 'Shopee mall', [don()]);
   dung(l2.ok, 'lần chạy 2 phải ghi được, không được tắc: ' + l2.thongBao);
   bang(sim.sheet('2026-10', 'Shopee mall').o(7, 3).gt != null, true, 'đơn của lần 2 phải nằm trong file T10');
+  // File tháng 9 đứng ngay cạnh KHÔNG được nhận một dòng nào — đó mới là bằng chứng ID đi đúng địa chỉ.
+  bang(sim.sheet('2026-09', 'Shopee mall').o(6, 3).gt, null, 'file tháng 9 không được nhận đơn của tháng 10');
 
-  // ĐỐI CHỨNG ÂM: cắm lại đúng hành vi cũ (dời mỏ neo sang file vừa định tuyến) rồi chạy lần hai —
-  // phải TẮC với KHONG_CO_THANG. Không tái hiện được cái bẫy thì bài này không chứng minh được gì.
+  // ĐỐI CHỨNG ÂM: gửi ID của file tháng 9 kèm tháng 2026-10 — đúng cảnh link_thang dán nhầm dòng.
+  // Hàng rào tên file phải chặn, nếu không thì "ID đi đúng địa chỉ" ở trên chỉ là may mắn.
   return phaiLech(() => {
-    const s2 = simBayMoNeo();
-    const r1 = goiGhi(s2, '2026-10', 'Shopee mall', [don()]);
-    if (!r1.ok) throw new Error('lần 1 đã hỏng: ' + r1.thongBao);
-    s2.thuocTinh[s2.vo.TT_MO_NEO] = 'ID_FILE_2026_10';       // đúng việc capNhatMoNeo_ từng làm
-    const r2 = goiGhi(s2, '2026-10', 'Shopee mall', [don()]);
-    return r2.ok ? [] : [r2.loi + ': ' + String(r2.thongBao).slice(0, 60)];
-  }, 'cắm lại capNhatMoNeo_ rồi chạy lần hai');
+    const r = sim.goi({
+      hanhDong: 'ghi', phienBanMongDoi: sim.vo.PHIEN_BAN, thang: '2026-10',
+      spreadsheetId: idCuaKy('2026-09'),
+      lenh: [{ tenSheet: 'Shopee mall', don: [don()] }]
+    });
+    return r.ok ? [] : [r.loi + ': ' + String(r.thongBao).slice(0, 70)];
+  }, 'gửi ID file tháng 9 kèm tháng 2026-10');
 });
 
-test('T-CT-11', "ping trả TÊN file mỏ neo và KỲ CUỐI của bảng link, tuyệt đối không trả id", () => {
+test('T-CT-11', 'ping KHÔNG mở file nào và KHÔNG lộ id — nó chỉ trả lời "bản trên Google là bản nào"', () => {
   const sim = dungSim({ kyDS: ['2026-08', '2026-09'], gianTC0: { dong: 2 } });
-  const kq = sim.goi({ token: BI_MAT, hanhDong: 'ping' });
+  const kq = sim.goi({ hanhDong: 'ping' });
   dung(kq.ok, 'ping phải trả lời được');
-  dung(kq.moNeo, 'ping phải có khối moNeo: ' + JSON.stringify(kq));
-  bang(kq.moNeo.tenFile, 'KINH DOANH T8-2026', 'tên file mỏ neo');
-  bang(kq.moNeo.kyCuoi, '2026-09', 'kỳ cuối của bảng link');
-  bang(kq.moNeo.dongCuoi, 9, 'dòng của kỳ cuối');
-  dung(kq.moNeo.moTa.indexOf('kỳ cuối 2026-09 (dòng 9)') >= 0, 'câu mô tả: ' + kq.moNeo.moTa);
+  bang(kq.phienBan, sim.vo.PHIEN_BAN, 'ping phải nêu bản đang chạy');
+  dung(!!kq.banDung, 'ping phải trả dấu vân tay bản dựng: ' + JSON.stringify(kq).slice(0, 120));
+  dung(kq.vanTay && typeof kq.vanTay === 'object', 'ping phải trả dấu vân tay TỪNG FILE');
   const chuoi = JSON.stringify(kq);
-  dung(chuoi.indexOf('ID_FILE_2026_08') < 0, 'ping KHÔNG được lộ id file mỏ neo: ' + chuoi);
-  dung(chuoi.indexOf('ID_FILE_2026_09') < 0, 'ping KHÔNG được lộ id file tháng nào');
+  dung(chuoi.indexOf(idCuaKy('2026-08')) < 0, 'ping KHÔNG được lộ id file tháng: ' + chuoi);
+  dung(chuoi.indexOf(idCuaKy('2026-09')) < 0, 'ping KHÔNG được lộ id file tháng nào');
 
   // ĐỐI CHỨNG ÂM: phép quét id phải thật sự bắt được id — thử trên một phản hồi CÓ id.
   return phaiLech(() => {
-    const gia = JSON.stringify(Object.assign({}, kq, { fileId: 'ID_FILE_2026_08' }));
-    return gia.indexOf('ID_FILE_2026_08') >= 0 ? ['có id trong phản hồi'] : [];
+    const gia = JSON.stringify(Object.assign({}, kq, { fileId: idCuaKy('2026-08') }));
+    return gia.indexOf(idCuaKy('2026-08')) >= 0 ? ['có id trong phản hồi'] : [];
   }, 'phản hồi có kèm id');
 });
 
-test('T-CT-12', 'cảnh báo sớm khi bảng link chưa có dòng cho THÁNG SAU', () => {
-  const sim = dungSim({ kyDS: ['2026-09'], gianTC0: { dong: 2 } });
-  const kq = goiGhi(sim, '2026-09', 'Shopee mall', [don()]);
-  dung(kq.ok, kq.thongBao);
-  const cau = (kq.canhBao || []).filter((c) => c.indexOf('Bảng link mới khai tới') === 0);
-  bang(cau.length, 1, 'phải có đúng một câu cảnh báo sớm: ' + JSON.stringify(kq.canhBao));
-  dung(cau[0].indexOf('2026-09 (dòng 8)') >= 0, 'phải nêu kỳ cuối và dòng: ' + cau[0]);
-  dung(cau[0].indexOf('tháng này là 2026-09') >= 0, 'phải nêu tháng hiện tại: ' + cau[0]);
-  dung(cau[0].indexOf('2026-10') >= 0, 'phải nêu tháng sau cần thêm: ' + cau[0]);
+test('T-CT-12', 'cảnh báo sớm "chưa khai link tháng sau" — nay là phép thuần trên MÁY (D-42)', () => {
+  // Bản 2.4.0 để câu này trong phản hồi Web App, vì bảng link nằm trên Google. D-42 chuyển bảng link về
+  // máy, nên phép cảnh báo cũng về theo: `canhBaoThangSau` trong node/gsheet-web-app.js — hàm THUẦN,
+  // kiểm được không cần mạng, không cần Google.
+  //
+  // Thứ nó canh không đổi: bảng link thiếu dòng tháng sau thì tới ngày 1 tháng sau tool TẮC HẲN. Câu này
+  // báo trước cả tháng — nhưng chỉ có tác dụng nếu user NHÌN THẤY, nên nút 4 in nó ra màn hình.
+  const W = require('./gsheet-web-app');
+  const cau = W.canhBaoThangSau({ '2026-09': 'https://docs.google.com/spreadsheets/d/ID_FILE_2026_09_GIALAP/edit' }, '2026-09');
+  dung(cau, 'thiếu link tháng sau mà không kêu');
+  dung(cau.indexOf('2026-10') >= 0, 'phải nêu đúng tháng sau: ' + cau);
+  dung(/3_TAO_FILE_THANG_MOI\.bat/.test(cau), 'phải chỉ ra nút phải bấm: ' + cau);
+  dung(/ngày đầu tháng/.test(cau), 'phải nói rõ hậu quả nếu để nguyên: ' + cau);
+  bang(W.thangSau('2026-12'), '2027-01', 'sang năm phải nhảy đúng');
 
-  // ĐỐI CHỨNG ÂM: bảng ĐÃ CÓ dòng tháng sau thì tuyệt đối không được kêu.
+  // Chiều dương: bảng ĐÃ CÓ dòng tháng sau thì tuyệt đối không được kêu — kêu oan vài lần là user quen
+  // tay bỏ qua, rồi bỏ qua luôn câu thật.
+  const duLink = {
+    '2026-09': 'https://docs.google.com/spreadsheets/d/ID_FILE_2026_09_GIALAP/edit',
+    '2026-10': 'https://docs.google.com/spreadsheets/d/ID_FILE_2026_10_GIALAP/edit'
+  };
+  bang(W.canhBaoThangSau(duLink, '2026-09'), null, 'bảng đã đủ mà vẫn kêu là kêu oan');
+
+  // ĐỐI CHỨNG ÂM: dựng một bản cảnh báo HỎNG — không thèm tra bảng, tháng nào cũng kêu — rồi chứng minh
+  // phép chấm ở trên bắt được nó. Không có bước này thì dòng `bang(..., null, ...)` chỉ là một khẳng
+  // định chưa ai thử phá.
   return phaiLech(() => {
-    const s2 = dungSim({ kyDS: ['2026-09', '2026-10'], gianTC0: { dong: 2 } });
-    const r2 = goiGhi(s2, '2026-09', 'Shopee mall', [don()]);
-    const c2 = (r2.canhBao || []).filter((c) => c.indexOf('Bảng link mới khai tới') === 0);
-    if (c2.length) throw new Error('kêu oan khi bảng đã có dòng tháng sau');
-    const s3 = dungSim({ kyDS: ['2026-09'], gianTC0: { dong: 2 } });
-    const r3 = goiGhi(s3, '2026-09', 'Shopee mall', [don()]);
-    return (r3.canhBao || []).filter((c) => c.indexOf('Bảng link mới khai tới') === 0);
-  }, 'bảng thiếu dòng tháng sau mà không kêu');
+    const banSai = (bangLink, th) => 'link_thang chưa có tháng ' + W.thangSau(th) + '.';
+    const du = banSai(duLink, '2026-09');
+    return du ? ['kêu oan dù bảng đã có 2026-10: ' + du] : [];
+  }, 'phép cảnh báo bỏ qua bảng link, tháng nào cũng kêu');
 });
 
 // ==================================================================== tổng kết

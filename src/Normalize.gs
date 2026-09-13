@@ -173,4 +173,4 @@ var Normalize = (function () {
   return { tinhThue: tinhThue, tinhTienDon: tinhTienDon, dongGhiTuDongXuat: dongGhiTuDongXuat, xuLy: xuLy };
 })();
 
-var VAN_TAY_NORMALIZE = 'd9ce5e33';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_NORMALIZE = '051f641b';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

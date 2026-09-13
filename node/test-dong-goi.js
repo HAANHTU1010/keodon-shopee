@@ -1,7 +1,7 @@
 /**
  * ĐÓNG GÓI + CẬP NHẬT — chạy thật, không giả lập.
  *
- * Nhóm DG-*: soi gói `Tool_nhập_liệu` vừa dựng.
+ * Nhóm DG-*: soi gói `Tool_nhap_lieu` vừa dựng, và soi chính file .zip giao đi.
  * Nhóm CN-*: dựng hẳn một "máy user" giả trong thư mục tạm, dựng một file .zip
  *            giống hệt bản GitHub tải về, rồi CHẠY THẬT `2_CAP_NHAT.bat` bằng cmd.exe
  *            và soi lại từng thứ trên đĩa. Không mạng, không đụng máy thật.
@@ -34,8 +34,24 @@ const LINK_MOI = 'https://script.google.com/macros/s/MOI_LINK_CUA_MAY_NAY/exec';
 
 let dat = 0, hong = 0;
 const KQ = [];
+/** Bài bất đồng bộ: gom lại, chạy tuần tự trong khối async ở cuối file. */
+const DS_CHO = [];
 function test(ma, ten, fn) {
-  try { const t = fn(); dat++; KQ.push(['ĐẠT', ma, ten, t]); }
+  try {
+    const t = fn();
+    // Bẫy: `test()` vốn đồng bộ. Một bài `async` trả về Promise sẽ được ghi ĐẠT ngay lập tức, trước khi
+    // một phép chấm nào kịp chạy — bài xanh vĩnh viễn dù mã hỏng. Chặn thẳng ở đây thay vì nhắc bằng
+    // chú thích: ai viết bài async mà quên `await test` sẽ thấy nó HỎNG, không thấy nó xanh giả.
+    if (t && typeof t.then === 'function') {
+      throw new Error('bài async phải gọi bằng `await test(...)`, nếu không nó ĐẠT trước khi chấm');
+    }
+    dat++; KQ.push(['ĐẠT', ma, ten, t]);
+  } catch (e) { hong++; KQ.push(['HỎNG', ma, ten, null, e.message]); }
+}
+
+/** Bản `test()` cho bài bất đồng bộ: chờ xong rồi mới ghi kết quả. */
+async function testCho(ma, ten, fn) {
+  try { const t = await fn(); dat++; KQ.push(['ĐẠT', ma, ten, t]); }
   catch (e) { hong++; KQ.push(['HỎNG', ma, ten, null, e.message]); }
 }
 function bang(a, b, vi) {
@@ -62,8 +78,8 @@ const RAC = [];
 // ============================================================ NHÓM DG — cái gói
 
 const goiThu = tamMoi('goi');
-DG.dungGoi(path.join(goiThu, 'Tool_nhập_liệu'), null);
-const GOI = path.join(goiThu, 'Tool_nhập_liệu');
+DG.dungGoi(path.join(goiThu, DG.TEN_GOI), false);   // `false` = không kèm node-portable: DG-07/DG-08 canh cây đó riêng
+const GOI = path.join(goiThu, DG.TEN_GOI);
 RAC.push(goiThu);
 
 test('DG-01', 'Gói đúng cây thư mục mục 1: 4 nút + 2 thư mục, không mã nguồn, không .md', () => {
@@ -84,23 +100,40 @@ test('DG-01', 'Gói đúng cây thư mục mục 1: 4 nút + 2 thư mục, khôn
   return '5 file · ' + fs.readdirSync(path.join(GOI, '1_THA_FILE_XUAT')).length + ' gian hàng · ' + dc;
 });
 
-test('DG-02', 'Hai dòng bí mật trong gói phải RỖNG, và không file nào mang bí mật thật của máy', () => {
-  const c = JSON.parse(doc(path.join(GOI, CAU_HINH, 'CAU_HINH_VAN_HANH.json')));
-  bang(String(c.google_sheet.web_app_url || ''), '', 'web_app_url');
-  bang(String(c.google_sheet.chuoi_bi_mat || ''), '', 'chuoi_bi_mat');
+test('DG-02', 'Cấu hình trong gói phải ĐẦY ĐỦ: web_app_url, chuoi_bi_mat, link_thang có tháng chạy (D-44)', () => {
+  // ĐẢO CHIỀU ngày 13/9. Luật cũ ép rỗng hai dòng rồi bắt từng máy điền tay — có máy điền sai, có máy
+  // điền nhầm dòng, và không ai kiểm được. Nay gói mang sẵn, và phép kiểm khó qua HƠN chứ không dễ hơn:
+  // gói thiếu một giá trị là gói câm, user bấm nút 4 chỉ nhận được câu "thiếu web_app_url".
+  const cfgTep = path.join(GOI, CAU_HINH, 'CAU_HINH_VAN_HANH.json');
+  const c = JSON.parse(doc(cfgTep));
+  dung(String(c.google_sheet.web_app_url || '').trim().length > 0, 'gói phải có sẵn web_app_url');
+  dung(String(c.google_sheet.chuoi_bi_mat || '').trim().length > 0, 'gói phải có sẵn chuoi_bi_mat');
+  bang(c.google_sheet.bat, true, 'google_sheet.bat');
+  const nay = new Date();
+  const kyNay = nay.getFullYear() + '-' + ('0' + (nay.getMonth() + 1)).slice(-2);
+  dung(String((c.link_thang || {})[kyNay] || '').trim().length > 0,
+    'link_thang phải có khóa của tháng hiện tại (' + kyNay + ') — thiếu là user bấm nút 4 tắc ngay');
 
-  const dc = doiChungAm('gói dựng bằng cách chép file cấu hình THẬT của máy thay vì bản mẫu', () => {
-    const cfgTep = path.join(GOI, CAU_HINH, 'CAU_HINH_VAN_HANH.json');
-    const luu = fs.readFileSync(cfgTep);
-    const xau = JSON.parse(doc(cfgTep));
-    xau.google_sheet.chuoi_bi_mat = 'chuoi-bi-mat-that-cua-shop';
-    fs.writeFileSync(cfgTep, JSON.stringify(xau, null, 2));
-    try {
-      const p = DG.kiemGoi(GOI);
-      if (p.length) throw new Error(p[0]);
-    } finally { fs.writeFileSync(cfgTep, luu); }
-  });
-  return 'cả hai dòng rỗng · ' + dc;
+  // Ba đối chứng âm, mỗi cái dựng lại đúng một cách gói có thể câm.
+  const ds = [];
+  for (const [nhan, hong] of [
+    ['gói ép rỗng web_app_url như luật cũ', (x) => { x.google_sheet.web_app_url = ''; }],
+    ['gói ép rỗng chuoi_bi_mat như luật cũ', (x) => { x.google_sheet.chuoi_bi_mat = ''; }],
+    ['gói mất hẳn bảng link_thang', (x) => { x.link_thang = {}; }],
+    ['link_thang thiếu đúng tháng đang chạy', (x) => { delete x.link_thang[kyNay]; }]
+  ]) {
+    ds.push(doiChungAm(nhan, () => {
+      const luu = fs.readFileSync(cfgTep);
+      const xau = JSON.parse(doc(cfgTep));
+      hong(xau);
+      fs.writeFileSync(cfgTep, JSON.stringify(xau, null, 2));
+      try {
+        const p = DG.kiemGoi(GOI);
+        if (p.length) throw new Error(p[0]);
+      } finally { fs.writeFileSync(cfgTep, luu); }
+    }));
+  }
+  return Object.keys(c.link_thang).length + ' kỳ link_thang · ' + ds.length + ' đối chứng âm đều LỆCH đúng như phải';
 });
 
 test('DG-03', 'Bỏ hết khóa chỉ dùng ở chế độ Excel', () => {
@@ -139,15 +172,24 @@ test('DG-04', 'Thư mục nhật ký phải RỖNG — nhật ký cũ mang mã �
 });
 
 test('DG-05', 'Không mã nguồn, không tài liệu .md lọt vào gói', () => {
+  // Quét theo ĐƯỜNG DẪN TƯƠNG ĐỐI, không theo tên trần: cây `Cấu hình/node-portable` được miễn trừ đúng
+  // hai luật `.md` và `node_modules` (xem chú thích CAY_NODE_PORTABLE trong dong-goi.js) — bản Node.js
+  // chính thức có 198 file .md của npm và bắt buộc có node_modules, không cách nào tránh.
   const moi = [];
   (function di(d) {
     for (const t of fs.readdirSync(d)) {
       const x = path.join(d, t);
-      if (fs.statSync(x).isDirectory()) { moi.push(t); di(x); } else moi.push(t);
+      const tuongDoi = path.relative(GOI, x).normalize('NFC');
+      if (DG.trongCayNodePortable(tuongDoi)) continue;        // miễn trừ, đã có DG-07/DG-08 canh riêng
+      if (fs.statSync(x).isDirectory()) { moi.push(tuongDoi); di(x); } else moi.push(tuongDoi);
     }
   })(GOI);
-  bang(moi.filter((t) => t.toLowerCase().endsWith('.md')).length, 0, 'file .md');
-  bang(moi.filter((t) => t === 'src' || t === 'node' || t === 'node_modules').length, 0, 'thư mục mã nguồn');
+  // C-3: đúng MỘT file .md được phép ngoài cây miễn trừ, kê đích danh — không nới luật theo đuôi.
+  const md = moi.filter((t) => t.toLowerCase().endsWith('.md'));
+  bang(md.sort().join(','), path.join(CAU_HINH, 'HUONG_DAN_1_TRANG.md'),
+    'chỉ file hướng dẫn 1 trang được phép là .md');
+  bang(moi.filter((t) => ['src', 'node', 'node_modules'].indexOf(path.basename(t)) >= 0).length, 0,
+    'thư mục mã nguồn');
 
   const dc = doiChungAm('gói kèm thư mục src như bản đóng gói cũ', () => {
     const s = path.join(GOI, CAU_HINH, 'src');
@@ -160,6 +202,73 @@ test('DG-05', 'Không mã nguồn, không tài liệu .md lọt vào gói', () =
   });
   return moi.length + ' mục, 0 .md, 0 thư mục mã nguồn · ' + dc;
 });
+
+DS_CHO.push(() => testCho('DG-09', 'File .zip giao đi: ĐÚNG MỘT thư mục gốc không dấu, giải nén ra vẫn qua kiemGoi', async () => {
+  // Vì sao phải có đúng một thư mục gốc: user hay bấm "Extract Here" ngay trên Desktop. Zip không có thư
+  // mục gốc thì bốn nút và hai thư mục đổ thẳng ra Desktop lẫn với mọi thứ khác, không cách nào gỡ lại.
+  //
+  // Vì sao tên gốc KHÔNG DẤU: thư mục có dấu đi qua trình giải nén lạ, qua OneDrive hay qua email hay bị
+  // vỡ mã ký tự rồi hỏng cả đường dẫn. Bên trong vẫn giữ tên có dấu vì đó là thứ user đọc hằng ngày.
+  const tam = tamMoi('zip'); RAC.push(tam);
+  const tepZip = path.join(tam, 'Tool_nhap_lieu.zip');
+  const kq = await DG.dongGoiZip({ zip: tepZip, nodePortable: false, mucNen: 1 });
+  bang(kq.pham.length, 0, 'gói bẩn thì KHÔNG được nén ra file: ' + kq.pham.join(' | '));
+  dung(fs.existsSync(tepZip), 'phải sinh ra file zip');
+
+  const zip = await JSZip.loadAsync(fs.readFileSync(tepZip));
+  const goc = new Set(Object.keys(zip.files).map((k) => k.split('/')[0]));
+  bang([...goc].join(','), DG.TEN_GOI, 'đúng một thư mục gốc trong zip');
+  dung(!/[^\x20-\x7E]/.test(DG.TEN_GOI), 'tên thư mục gốc phải là ASCII thuần: ' + DG.TEN_GOI);
+
+  // Giải nén thật rồi chấm lại bằng chính kiemGoi — cái user nhận là cái này, không phải thư mục nguồn.
+  const ra = path.join(tam, 'giai_nen');
+  for (const [ten, f] of Object.entries(zip.files)) {
+    const dich = path.join(ra, ten);
+    if (f.dir) { fs.mkdirSync(dich, { recursive: true }); continue; }
+    fs.mkdirSync(path.dirname(dich), { recursive: true });
+    fs.writeFileSync(dich, await f.async('nodebuffer'));
+  }
+  const pham = DG.kiemGoi(path.join(ra, DG.TEN_GOI));
+  bang(pham.length, 0, 'gói sau khi giải nén phải sạch: ' + pham.join(' | '));
+  return (kq.cỡ / 1024 / 1024).toFixed(1) + ' MB · 1 thư mục gốc "' + DG.TEN_GOI + '" · giải nén ra 0 vi phạm';
+}));
+
+DS_CHO.push(() => testCho('DG-10', 'C-5: bốn thư mục gian hàng SỐNG SÓT qua vòng nén–giải nén nhờ file .keep', async () => {
+  // Thư mục RỖNG không tồn tại trong file .zip — đây là chỗ bản trước mất. User giải nén xong thấy
+  // 1_THA_FILE_XUAT trống trơn, không biết thả file vào đâu, và nút 4 báo "thiếu thư mục gian hàng".
+  const tam = tamMoi('keep'); RAC.push(tam);
+  const tepZip = path.join(tam, 'Tool_nhap_lieu.zip');
+  await DG.dongGoiZip({ zip: tepZip, nodePortable: false, mucNen: 1 });
+  const zip = await JSZip.loadAsync(fs.readFileSync(tepZip));
+  const keep = Object.keys(zip.files).filter((k) => k.endsWith('/' + DG.TEN_GIU_CHO));
+  bang(keep.length, 4, 'phải có đúng 4 file giữ chỗ trong zip: ' + keep.join(', '));
+  for (const k of keep) {
+    dung(k.indexOf('/1_THA_FILE_XUAT/') > 0, 'file giữ chỗ phải nằm trong thư mục thả: ' + k);
+  }
+
+  // ĐỐI CHỨNG ÂM: bỏ .keep đi thì thư mục gian hàng biến mất khỏi zip — chứng minh phép chấm có mắt và
+  // chứng minh luôn vì sao phải có .keep.
+  const tam2 = tamMoi('keep-am'); RAC.push(tam2);
+  const goiTran = path.join(tam2, DG.TEN_GOI);
+  DG.dungGoi(goiTran, false);
+  const thaGoc = path.join(goiTran, '1_THA_FILE_XUAT');
+  for (const g of fs.readdirSync(thaGoc)) {
+    const k = path.join(thaGoc, g, DG.TEN_GIU_CHO);
+    if (fs.existsSync(k)) fs.unlinkSync(k);
+    const dx = path.join(thaGoc, g, 'đã xử lý'.normalize('NFC'));
+    if (fs.existsSync(dx)) fs.rmSync(dx, { recursive: true, force: true });
+  }
+  const zip2Tep = path.join(tam2, 'tran.zip');
+  await DG.nenZip(goiTran, zip2Tep, 1);
+  const zip2 = await JSZip.loadAsync(fs.readFileSync(zip2Tep));
+  const conGian = Object.keys(zip2.files)
+    .filter((k) => k.indexOf('/1_THA_FILE_XUAT/') > 0 && !k.endsWith('/1_THA_FILE_XUAT/'));
+  // JSZip có ghi mục thư mục rỗng, nhưng nhiều trình giải nén Windows bỏ qua chúng — nên thứ thật sự
+  // bảo đảm thư mục còn sống là FILE nằm trong đó, không phải mục thư mục.
+  const coFile = conGian.filter((k) => !zip2.files[k].dir);
+  bang(coFile.length, 0, 'bỏ .keep rồi thì không còn FILE nào giữ bốn thư mục gian hàng — đúng như phải');
+  return '4 file .keep trong zip · đối chứng âm: bỏ .keep → 0 file giữ chỗ, thư mục chỉ còn là mục rỗng';
+}));
 
 test('DG-06', 'bat/ của kho GitHub khớp TỪNG BYTE với 03_VAN_HANH — không được có hai bản lệch nhau', () => {
   const lech = DG.kiemDongBoBat();
@@ -446,6 +555,9 @@ function chayNut(may, ten, themTv) {
     });
     return 'thoát mã ' + r.ma + ' · máy không bị đụng gì · ' + dc;
   });
+
+  // Bài bất đồng bộ (DG-09, DG-10) chạy ở đây, tuần tự, trước khi in kết quả.
+  for (const f of DS_CHO) await f();
 
   for (const [tt, ma, ten, chuThich, loi] of KQ) {
     console.log(tt + '   ' + ma + ' ' + ten);

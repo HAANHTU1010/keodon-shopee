@@ -210,4 +210,4 @@ function dongNhatKy(thoiDiem, tk, mac) {
   return Utils.doiTuongSangMang(LOG_COT, o);
 }
 
-var VAN_TAY_MAIN = 'e2196e33';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_MAIN = 'a61f1a5f';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

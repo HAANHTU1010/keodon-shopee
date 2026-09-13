@@ -253,4 +253,4 @@ var Utils = (function () {
   };
 })();
 
-var VAN_TAY_UTILS = 'a4f1d066';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_UTILS = '6d6d92e2';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

@@ -419,7 +419,8 @@ var TestSuite = (function () {
     var bc = boiCanh({ congThucToi: 7, cauHinh: { chung: { che_do_cong_thuc: 'SHEET' } } });
     chay(bc, [file(bc, [TestData.don({ maDon: 'SH00000000001' }), TestData.don({ maDon: 'SH00000000002' })])]);
     var k = bc.kho, T = 'Shopee mall';
-    // trên Google Sheet, E/F/M/N là ARRAYFORMULA một ô duy nhất — ghi vào là hỏng cả cột
+    // trên Google Sheet, E/F/M/N là công thức TỪNG DÒNG bọc ARRAY_CONSTRAIN (KHÔNG phải ARRAYFORMULA một ô).
+    // Vỏ Excel ở chế độ SHEET không chạm bốn cột này; việc chép công thức xuống là của vỏ Google (chepCongThucXuong_).
     ['E', 'F', 'M', 'N'].forEach(function (c) {
       var o8 = k.o(T, 8, Utils.chiSoCot(c));
       bang(o8.congThuc, null, c + '8 KHÔNG được chạm tới ở chế độ SHEET');
@@ -1025,7 +1026,7 @@ var TestSuite = (function () {
     ['TS-T-18', 'Không đụng ô người đã điền trong Mapping; cột Mã hàng do tool tra', T18_khongDungONguoiDaDien],
     ['TS-T-19', 'Đọc Mapping layout fixture 13 cột (tiêu đề xuống dòng, cột lô phụ)', T19_docMappingLayoutFixture],
     ['TS-T-20', 'Chế độ EXCEL: kéo dài E, F, L, M, N', T20_cheDoExcelKeoNamCot],
-    ['TS-T-21', 'Chế độ SHEET: chỉ kéo cột L, tuyệt đối không chạm E, F, M, N (ARRAYFORMULA)', T21_cheDoSheetChiKeoCotL],
+    ['TS-T-21', 'Chế độ SHEET (vỏ Excel mô phỏng Google): chỉ kéo cột L, không ghi giá trị vào E, F, M, N — bốn cột đó là công thức TỪNG DÒNG bọc ARRAY_CONSTRAIN (KHÔNG phải ARRAYFORMULA một ô), vỏ Google chép dòng trên xuống bằng chepCongThucXuong_', T21_cheDoSheetChiKeoCotL],
     ['TS-T-22', 'Ô L số gõ tay mồ côi ở dòng ghi đơn mới → trả lại công thức + nhật ký; dòng cũ giữ nguyên', T22_oLSoTayMoCoi],
     ['TS-T-23', 'Dịch công thức khi kéo dài', T23_dichCongThuc],
     ['TS-T-24', 'Cảnh báo khi ghi vượt vùng dòng tổng và vùng SUMIF của Tổng xuất', T24_canhBaoVungCongThuc],
