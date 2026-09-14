@@ -516,14 +516,90 @@ async function kichBanOLac() {
   return { dat };
 }
 
+/**
+ * TM-13 — kịch bản Z (YC-41 việc 4): thao tác `KEO_CT` của HAI VỎ cho CÙNG một cột.
+ *
+ * Cột E dòng 4→12 dựng sẵn: 4, 5 trống · 6 công thức · 7 số gõ tay · 8 trống · 9 công thức khác · 10, 11 trống · 12 chữ gõ tay.
+ * Đúng là: ô trống PHÍA TRÊN ô công thức đầu (4, 5) nhận công thức của ô đầu (dòng 6) dịch ngược lên; ô trống giữa nhận
+ * công thức gần nhất phía trên; ô gõ tay để yên. Vỏ Google (`keoCongThucTM_`, chạy thật trên Google) đã làm vậy; vỏ Excel
+ * (`keoCongThuc`) bản 2.6.1 bỏ qua dòng 4, 5 — hai vỏ ra hai file khác nhau. Chấm cả giá trị TUYỆT ĐỐI lẫn so hai vỏ từng ô.
+ */
+async function kichBanKeoHaiVo(tuyChon) {
+  const tc = tuyChon || {};
+  const Excel = tc.voExcel || require('./tao-thang-moi');
+  const gl = require('./gia-lap-web-app');
+  const C = 5, R1 = 4, R2 = 12;
+  const MONG = {
+    4: '=IF($H4="","",$H4*2)', 5: '=IF($H5="","",$H5*2)', 6: '=IF($H6="","",$H6*2)', 7: 123, 8: '=IF($H8="","",$H8*2)',
+    9: '=$G9*$H9', 10: '=$G10*$H10', 11: '=$G11*$H11', 12: 'ghi tay'
+  };
+  // Vỏ Excel
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Shopee mall');
+  ws.getCell(6, C).value = { formula: 'IF($H6="","",$H6*2)' };
+  ws.getCell(7, C).value = 123;
+  ws.getCell(9, C).value = { formula: '$G9*$H9' };
+  ws.getCell(12, C).value = 'ghi tay';
+  const demExcel = Excel.keoCongThuc(ws, C, R1, R2);
+  const excel = {};
+  for (let r = R1; r <= R2; r++) {
+    const f = congThucCua(ws.getCell(r, C));
+    excel[r] = f ? '=' + f.text : ws.getCell(r, C).value;
+  }
+  // Vỏ Google — mã .gs thật trên Web App giả
+  const sim = gl.taoGiaLap({ ngay: '2026-09-08T03:00:00Z' });
+  const sh = sim.khaiThang('2026-09', 'THÁNG-9-2026-KINH-DOANH').insertSheet('Shopee mall');
+  sh.getRange(6, C).setFormula('=IF($H6="","",$H6*2)');
+  sh.getRange(7, C).setValue(123);
+  sh.getRange(9, C).setFormula('=$G9*$H9');
+  sh.getRange(12, C).setValue('ghi tay');
+  const demGoogle = sim.vo.keoCongThucTM_(sh, C, R1, R2);
+  const google = {};
+  for (let r = R1; r <= R2; r++) google[r] = sh.getRange(r, C).getFormula() || sh.getRange(r, C).getValue();
+  sim.thaoGo();
+
+  const lech = [];
+  for (let r = R1; r <= R2; r++) {
+    if (excel[r] !== MONG[r]) lech.push('Excel E' + r + '=' + JSON.stringify(excel[r]) + ' (cần ' + JSON.stringify(MONG[r]) + ')');
+    if (google[r] !== MONG[r]) lech.push('Google E' + r + '=' + JSON.stringify(google[r]) + ' (cần ' + JSON.stringify(MONG[r]) + ')');
+    if (excel[r] !== google[r]) lech.push('hai vỏ khác nhau ở E' + r);
+  }
+  // Ô trống cần lấp: 4, 5 (phía trên ô đầu), 8, 10, 11 — năm ô.
+  if (demExcel !== 5 || demGoogle !== 5) lech.push('số ô kéo: Excel ' + demExcel + ', Google ' + demGoogle + ' (cần 5)');
+  return { lech, demExcel, demGoogle };
+}
+
+async function kiemTM13() {
+  console.log('\n--- TM-13 / KỊCH BẢN Z (YC-41 việc 4): `KEO_CT` hai vỏ, ô trống PHÍA TRÊN ô công thức đầu ---');
+  const kq = await kichBanKeoHaiVo();
+  console.log('  bản hiện hành: ' + (kq.lech.length ? 'LỆCH ' + kq.lech.join(' · ') : 'hai vỏ khớp 9/9 ô E4→E12, mỗi vỏ kéo ' + kq.demExcel + ' ô'));
+  // ĐỐI CHỨNG ÂM: vỏ Excel bản 2.6.1 — bỏ qua ô trống khi phía trên chưa có công thức nào.
+  const Module = require('module');
+  const tep = path.join(__dirname, 'tao-thang-moi.js');
+  const nguon = fs.readFileSync(tep, 'utf8');
+  const MOC = '    const nguon = mau || dau;';
+  if (nguon.split(MOC).length !== 2) throw new Error('mốc đối chứng âm TM-13 "' + MOC + '" phải có đúng 1 chỗ — sửa mốc, đừng bỏ bài');
+  const m = new Module(tep, module);
+  m.filename = tep;
+  m.paths = Module._nodeModulePaths(__dirname);
+  m._compile(nguon.split(MOC).join('    if (!mau) continue;\n    const nguon = mau;'), tep);
+  const cu = await kichBanKeoHaiVo({ voExcel: m.exports });
+  const dcDat = cu.lech.some((x) => /^Excel E4=/.test(x)) && cu.lech.some((x) => /^hai vỏ khác nhau ở E5/.test(x));
+  console.log('  đối chứng âm (vỏ Excel 2.6.1 bỏ qua ô phía trên): ' + (dcDat ? 'LỆCH (' + cu.lech[0] + ') ← đúng như phải thế' : 'KHÔNG LỆCH — phép chấm mù'));
+  const dat = kq.lech.length === 0 && dcDat;
+  console.log('=> TM-13: ' + (dat ? 'ĐẠT' : 'HỎNG'));
+  return { dat };
+}
+
 async function main() {
   const a = await chayNghiemThu();
   const x = await kichBanConDon();
   const y = await kichBanOLac();
   const d = await doiChungAm(a.demVo);
-  const hong = a.hongN + (x.dat ? 0 : 1) + (y.dat ? 0 : 1) + (d.dat ? 0 : 1);
+  const z = await kiemTM13();
+  const hong = a.hongN + (x.dat ? 0 : 1) + (y.dat ? 0 : 1) + (d.dat ? 0 : 1) + (z.dat ? 0 : 1);
   console.log('\n' + (hong === 0
-    ? 'TẤT CẢ ĐẠT — 12/12 chỉ tiêu TM-01…TM-12, kịch bản X, kịch bản Y và hai đối chứng âm TM-10.'
+    ? 'TẤT CẢ ĐẠT — 12/12 chỉ tiêu TM-01…TM-12, kịch bản X, kịch bản Y, hai đối chứng âm TM-10 và TM-13 (kéo công thức hai vỏ).'
     : hong + ' MỤC HỎNG.'));
   process.exit(hong === 0 ? 0 : 1);
 }

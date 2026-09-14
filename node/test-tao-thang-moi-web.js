@@ -14,6 +14,10 @@
  */
 'use strict';
 
+// YC-41 việc 2 — ghim TRƯỚC mọi thứ: mã `.gs` tự ghi giờ (cờ `DA_KHOI_TAO_<ngày giờ>`, TM-W-01) theo múi giờ dự án Apps Script,
+// không theo múi giờ máy đang chạy test. Xem chú thích `node/mui-gio-du-an.js`; bài TM-W-25 chứng minh dòng này có tác dụng.
+const MUI_GIO_DU_AN = require('./mui-gio-du-an').ghimMuiGioDuAn();
+
 const fs = require('fs');
 const path = require('path');
 const gl = require('./gia-lap-web-app');
@@ -670,7 +674,7 @@ function lechCongThuc2000(ssMoi) {
   /** Mọi thứ phía máy in ra + nhật ký: không ID, không link file tháng, không chuỗi bí mật, không link Web App. */
   function lotMay(X, chu) {
     return ['2026-08', '2026-09', '2026-10'].filter((k) => chu.indexOf(X.sim.idCua(k)) >= 0).map((k) => 'ID ' + k)
-      .concat(/docs\.google\.com\/spreadsheets\/d\/\w/.test(chu) ? ['link file tháng'] : [])
+      .concat(/docs\.google\.com\/spreadsheets\/(?:u\/\d+\/)?d\/\w/.test(chu) ? ['link file tháng'] : [])
       .concat(chu.indexOf(X.sim.biMat) >= 0 ? ['chuỗi bí mật'] : [])
       .concat(chu.indexOf(X.sim.url) >= 0 ? ['link Web App'] : []);
   }
@@ -699,7 +703,7 @@ function lechCongThuc2000(ssMoi) {
     try { return await fn(); } finally { httpsGia.request = goc; X.sim.xoaLoi(); }
   }
 
-  await test('TM-W-19', 'phía máy `WebAppGoogleSheet.taoThangMoi`: qua đường truyền 302, bước dài hơn ngưỡng thì gọi lại kèm `buocDungTruoc` tới khi xong 8/8, kết quả y hệt chạy một hơi; mỗi lượt chờ 400 giây, không 180', async () => {
+  await test('TM-W-19', 'phía máy `WebAppGoogleSheet.taoThangMoi`: qua đường truyền 302, bước dài hơn ngưỡng thì gọi lại kèm `buocDungTruoc` tới khi xong 8/8, kết quả y hệt chạy một hơi; mỗi lượt chờ 400 giây, không phải thời gian chờ kéo đơn', async () => {
     const chayMay = async (Lop, X) => {
       const web = new Lop.WebAppGoogleSheet(X.sim.cauHinhMay());
       const goiDi = [];
@@ -725,7 +729,7 @@ function lechCongThuc2000(ssMoi) {
     dung(tt.length >= 2 && kq.soLuot === tt.length, 'bước dài hơn ngưỡng phải gọi lại ≥ 2 lượt, được ' + tt.length);
     dung(tt[0].goi.buocDungTruoc === undefined && tt[1].goi.buocDungTruoc === 'B3', 'lượt 2 phải báo lại bước vừa dừng dở B3, được ' + tt[1].goi.buocDungTruoc);
     bang(tt.map((g) => g.cho).filter((c) => c !== gw.TIMEOUT_TAO_THANG_MS), [], 'thời gian chờ lượt taoThangMoi');
-    dung(gw.TIMEOUT_TAO_THANG_MS >= 370000 && goiDi[0].cho === gw.TIMEOUT_MS, 'chờ tạo tháng phải ≥ 6 phút 10 giây; ping giữ 180 giây');
+    dung(gw.TIMEOUT_TAO_THANG_MS >= 370000 && goiDi[0].cho === gw.TIMEOUT_MS, 'chờ tạo tháng phải ≥ 6 phút 10 giây; ping giữ thời gian chờ kéo đơn TIMEOUT_MS');
     bang(soOKhac(chupBoCo(A.ssMoi), chupBoCo(X.ssMoi)), 0, 'khác bản chạy một hơi');
     return tt.length + ' lượt · chờ ' + (gw.TIMEOUT_TAO_THANG_MS / 1000) + ' giây/lượt · ' + await doiChungAm(async () => {
       const Sai = napBanSua('gsheet-web-app.js', [['        buocDungTruoc: buocDungTruoc || undefined,\n', '        buocDungTruoc: undefined,\n']]);
@@ -736,7 +740,7 @@ function lechCongThuc2000(ssMoi) {
       const Y = dungMay({});
       const r = await chayMay(Sai, Y);
       return r.goiDi.filter((g) => g.goi && g.goi.hanhDong === 'taoThangMoi' && g.cho < 370000).map((g) => 'lượt tạo tháng chờ ' + g.cho / 1000 + ' giây');
-    }, 'chờ 180 giây như kéo đơn');
+    }, 'chờ như kéo đơn (TIMEOUT_MS)');
   });
 
   await test('TM-W-20', 'nút 3 chế độ 1 TRỌN ĐƯỜNG: 8/8 → ghi link_thang["2026-10"], file tháng mới y hệt chạy thẳng Web App, file tháng 9 không đổi ô nào; màn hình + nhật ký không lọt ID/link/chuỗi bí mật', async () => {
@@ -945,6 +949,39 @@ function lechCongThuc2000(ssMoi) {
       return (y.ma !== 0 || !y2 || !/\[DA_KHOI_TAO\]/.test(y2.ra))
         ? ['mã ' + y.ma + (y2 ? ', bấm lại ra ' + ((y2.ra.match(/\[[A-Z_]+\]/) || ['?'])[0]) : '') + ' — ' + ((y.ra.match(/\[[A-Z_]+\]/) || [''])[0])] : [];
     }, 'ghi O2 không ép văn bản và đọc cờ bằng String()');
+  });
+
+  await test('TM-W-25', 'YC-41 việc 2: bộ này chạy mã .gs theo múi giờ dự án (appsscript.json) dù máy test đặt UTC hay Los Angeles — ' +
+    'nhãn giờ của cờ DA_KHOI_TAO_ ra đúng giờ Việt Nam', async () => {
+    const { spawnSync } = require('child_process');
+    // Nhãn giờ của cờ do đúng dòng này của lõi sinh ra — dòng đổi thì bài phải được viết lại, không lặng lẽ chấm hàm khác.
+    dung(NGUON_GS.indexOf('var nhan = Utils.dinhDangNgayGio(thoiDiem).slice(0, 16);') >= 0, 'lõi không còn sinh nhãn giờ bằng Utils.dinhDangNgayGio — sửa bài');
+    bang(process.env.TZ, MUI_GIO_DU_AN, 'tiến trình bộ này phải đang ghim múi giờ dự án');
+    const THOI_DIEM = '2026-10-01T02:00:00Z';            // đúng mốc giả lập của TM-W-01: 09:00 ngày 1/10 giờ Việt Nam
+    const chayCon = (tz, ghim) => {
+      const ma = (ghim ? "require('./node/mui-gio-du-an').ghimMuiGioDuAn();" : '') +
+        "const L=require('./node/nap-loi').napLoi();" +
+        "console.log(new Date().getTimezoneOffset()+'|'+L.Utils.dinhDangNgayGio(new Date('" + THOI_DIEM + "')).slice(0,16));";
+      const env = Object.assign({}, process.env, { TZ: tz });
+      const r = spawnSync(process.execPath, ['-e', ma], { cwd: path.join(__dirname, '..'), encoding: 'utf8', env: env });
+      if (r.status !== 0) throw new Error('tiến trình con (' + tz + ') hỏng: ' + String(r.stderr || r.stdout).slice(0, 200));
+      const [lech, nhan] = String(r.stdout).trim().split('|');
+      return { lech: Number(lech), nhan: nhan };
+    };
+    const kq = [];
+    for (const tz of ['UTC', 'America/Los_Angeles']) {
+      const khong = chayCon(tz, false);
+      // Không có dòng này thì bài không chứng minh gì: tiến trình con phải THẬT SỰ lệch giờ Việt Nam trước khi ghim.
+      dung(khong.lech !== -420, 'tiến trình con ' + tz + ' không thật sự chạy khác giờ Việt Nam (lệch ' + khong.lech + ' phút)');
+      const co = chayCon(tz, true);
+      bang(co.nhan, '2026-10-01 09:00', 'máy ' + tz + ' đã ghim');
+      // ĐỐI CHỨNG ÂM: cùng máy, KHÔNG ghim → nhãn lệch → đúng câu chấm của TM-W-01 phải TRƯỢT.
+      if (/^DA_KHOI_TAO_2026-10-01 09:00$/.test('DA_KHOI_TAO_' + khong.nhan)) {
+        throw new Error('ĐỐI CHỨNG ÂM KHÔNG LỆCH: máy ' + tz + ' không ghim mà nhãn vẫn 09:00 — bài không phân biệt được');
+      }
+      kq.push(tz + ': ghim → ' + co.nhan + ' · không ghim → ' + khong.nhan + ' (câu chấm TM-W-01 LỆCH)');
+    }
+    return 'múi giờ dự án ' + MUI_GIO_DU_AN + ' · ' + kq.join(' · ') + ' ← đối chứng âm đúng như phải thế';
   });
 
   RAC_MAY.forEach((d) => { try { fs.rmSync(d, { recursive: true, force: true }); } catch (e) { /* thư mục tạm */ } });

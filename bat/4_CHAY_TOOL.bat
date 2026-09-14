@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-setlocal enabledelayedexpansion
+setlocal
 cd /d "%~dp0"
 title Keo don Shopee len Google Sheet
 
@@ -12,9 +12,14 @@ rem  Khong hoi gi. Chay xong, file xuat tu chuyen vao thu muc con
 rem  "da xu ly" cua chinh gian hang do.
 rem
 rem  CA FILE PHAI LA ASCII THUAN VA XUONG DONG CRLF - xem
-rem  NOTES_DEV.md muc 4.1. Vi vay moi cau tieng Viet o day deu
+rem  README.md muc 6.4. Vi vay moi cau tieng Viet o day deu
 rem  viet khong dau, va ten thu muc co dau thi PHAI DO chu khong
 rem  go thang duoc.
+rem
+rem  KHONG bat enabledelayedexpansion (YC-41 viec 5, giong nut 3): bat len thi cmd
+rem  nuot mat dau cham than trong duong dan cai dat, va tool bao khong tim thay
+rem  CAU_HINH_VAN_HANH.json du file nam ngay do. Vi vay ca file KHONG co dau
+rem  cham than nao.
 rem ============================================================
 
 set "TU_DONG="

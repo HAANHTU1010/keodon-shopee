@@ -378,17 +378,26 @@ function chenCot(ws, truoc) {
 /**
  * `KEO_CT` (D-57): mọi ô CHƯA có công thức trong `r1..r2` của cột `c` nhận công thức của ô có công thức gần nhất
  * phía trên, dịch dòng như kéo chuột. Ô có GIÁ TRỊ gõ tay thì để yên (không đè dữ liệu của người).
+ * Ô trống nằm PHÍA TRÊN ô công thức đầu tiên của đoạn nhận công thức của chính ô đầu tiên đó (dịch ngược lên) — CÙNG LUẬT
+ * với vỏ Google `keoCongThucTM_` (YC-41 việc 4). Bản cũ bỏ qua các ô đó, nên hai vỏ ra hai file khác nhau khi cột bị xóa
+ * công thức ở mấy dòng đầu (dòng 4…) mà phía dưới còn.
  */
 function keoCongThuc(ws, c, r1, r2) {
+  let dau = null;
+  for (let r = r1; r <= r2 && !dau; r++) {
+    const f = congThucCua(ws.getCell(r, c));
+    if (f) dau = { text: f.text, r, mang: f.mang };
+  }
+  if (!dau) return 0;
   let mau = null, dem = 0;
   for (let r = r1; r <= r2; r++) {
     const cell = ws.getCell(r, c);
     const f = congThucCua(cell);
     if (f) { mau = { text: f.text, r, mang: f.mang }; continue; }
     if (cell.value != null && cell.value !== '') continue;
-    if (!mau) continue;
-    const text = dichCT(mau.text, mau.r, r);
-    cell.value = mau.mang ? { formula: text, ref: cell.address, shareType: 'array' } : { formula: text };
+    const nguon = mau || dau;
+    const text = dichCT(nguon.text, nguon.r, r);
+    cell.value = nguon.mang ? { formula: text, ref: cell.address, shareType: 'array' } : { formula: text };
     dem++;
   }
   return dem;

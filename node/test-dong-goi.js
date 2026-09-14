@@ -317,6 +317,42 @@ test('DG-12', 'kiemGoi soát NỘI DUNG hướng dẫn: có câu "gói chứa kh
   return 'hướng dẫn trong gói sạch · ' + ds.length + ' đối chứng âm đều LỆCH đúng như phải';
 });
 
+test('DG-13', 'kiemGoi nhận link tháng dạng /spreadsheets/u/<số>/d/<ID> (YC-41 việc 1) — cùng luật RE_LINK_SHEET với nút 4, dạng giả vẫn chặn', () => {
+  const cfgTep = path.join(GOI, CAU_HINH, 'CAU_HINH_VAN_HANH.json');
+  const luu = fs.readFileSync(cfgTep);
+  const nay = new Date();
+  const kyNay = nay.getFullYear() + '-' + ('0' + (nay.getMonth() + 1)).slice(-2);
+  const gw = require('./gsheet-web-app');
+  const goc = JSON.parse(doc(cfgTep));
+  const id = gw.idTuLinkHoacId(goc.link_thang[kyNay]);
+  dung(id.length >= 20, 'link tháng hiện tại trong gói phải rút được mã file');
+  // Link dựng lại dạng u/<số> từ CHÍNH mã file của gói. Không in link hay mã ra đâu cả (INV-7) — chỉ in câu của kiemGoi.
+  const thu = (link) => {
+    const x = JSON.parse(doc(cfgTep));
+    x.link_thang[kyNay] = link;
+    fs.writeFileSync(cfgTep, JSON.stringify(x, null, 2));
+    try { return DG.kiemGoi(GOI); } finally { fs.writeFileSync(cfgTep, luu); }
+  };
+  const TIEN = 'https://docs.google.com/spreadsheets/';
+  for (const so of ['0', '1', '12']) bang(thu(TIEN + 'u/' + so + '/d/' + id + '/edit#gid=0'), [], 'gói có link u/' + so);
+  const dc1 = doiChungAm('link gia u/chu/d/', () => {
+    const p = thu(TIEN + 'u/abc/d/' + id + '/edit');
+    if (p.length) throw new Error(p[0]);
+  });
+  // Đối chứng âm: luật 2.6.1 (không nhánh u/<số>) — kiemGoi đọc RE_LINK_SHEET lúc chạy, nên thay tạm đúng hằng đó.
+  const NHANH = '(?:u\\/\\d+\\/)?';
+  const reGoc = gw.RE_LINK_SHEET;
+  const dc2 = doiChungAm('luat cu khong nhanh u/<so>', () => {
+    gw.RE_LINK_SHEET = new RegExp(reGoc.source.split(NHANH).join(''));
+    try {
+      const p = thu(TIEN + 'u/0/d/' + id + '/edit#gid=0');
+      if (p.length) throw new Error(p[0]);
+    } finally { gw.RE_LINK_SHEET = reGoc; }
+  });
+  dung(gw.RE_LINK_SHEET === reGoc && fs.readFileSync(cfgTep).equals(luu), 'phải trả lại hằng và file cấu hình như cũ');
+  return 'u/0 · u/1 · u/12 qua kiemGoi · ' + dc1 + ' · ' + dc2;
+});
+
 test('DG-06', 'bat/ của kho GitHub khớp TỪNG BYTE với 03_VAN_HANH — không được có hai bản lệch nhau', () => {
   const lech = DG.kiemDongBoBat();
   bang(lech.join(' | '), '', 'chỗ lệch');

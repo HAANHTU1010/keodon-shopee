@@ -92,7 +92,7 @@ function napFileThang(ss, dongCu) {
  */
 function dungBoi(tc) {
   const o = tc || {};
-  const sim = gl.taoGiaLap({ ngay: NGAY_MAY_CHU });
+  const sim = gl.taoGiaLap({ ngay: NGAY_MAY_CHU, suaNguon: o.suaNguon });   // `suaNguon`: chỉ cho đối chứng âm / Google bản khác
   const thang8 = napFileThang(sim.khaiThang('2026-08', 'THÁNG-8-2026-KINH-DOANH'),
     [{ ma: 'T8CU000001', tvt: 'dt5', sl: 1, h: 9000, i: 0, j: 0, k: 0 }]);
   // `khongKhaiLink` dựng file tháng 9 trên Google NHƯNG không ghi link vào link_thang: đúng cảnh
@@ -358,24 +358,23 @@ async function chay() {
       return 'lượt gọi mạng ' + luot.quyen403 + ' · dòng ghi ' + dong.quyen403 + '\n        ' + c.split('\n')[0];
     });
 
-    await test('T-WA-12 CHƯA TRIỂN KHAI LẠI (lệch phiên bản) → nguyên văn câu "Deploy → New version"', async () => {
-      // Vì sao bài này tồn tại: Google KHÔNG tự đồng bộ mã. Sửa .gs mà quên Deploy thì /exec vẫn chạy
-      // bản cũ và KHÔNG báo gì. Bản .gs cũ có thể ghi sai cột vào file tiền thật.
-      // Câu này phải tới tay người dùng NGUYÊN VĂN, không bọc thêm tiền tố "Web App từ chối [...]".
-      // Đây là câu duy nhất nói thẳng việc phải làm.
+    await test('T-WA-12 MÁY DƯỚI MỐC (YC-42) → Web App từ chối, câu nguyên văn nói máy cũ + "bấm 2_CAP_NHAT.bat" + chưa ghi gì', async () => {
+      // Viết lại 14/9 theo YC-42: tới 2.6.1 bài này gửi `phienBanMongDoi` khác bản Web App và đòi bị chặn ("lệch là chặn").
+      // Nay cửa là khoảng tương thích — khác bản trong khoảng thì PHỤC VỤ (T-WA-33) — nên ca bị chặn còn lại là máy DƯỚI MỐC
+      // `MAY_TOI_THIEU`. Câu phải tới tay người dùng NGUYÊN VĂN, không bọc tiền tố "Web App từ chối [...]": đó là câu duy nhất
+      // nói thẳng bên nào cũ và việc phải làm.
       const b = dungBoi();
       b.sim.demLai();
-      // Gửi thẳng một gói khai phiên bản mong đợi cũ → chạm ĐÚNG nhánh thật trong ShellAppsScript.gs,
-      // không dùng lỗi bơm sẵn của giả lập.
+      // Gửi thẳng một gói khai bản máy dưới mốc → chạm ĐÚNG nhánh thật trong ShellAppsScript.gs, không dùng lỗi bơm sẵn.
       cau.phienBan = await batLoi(() => b.web._goi({
-        hanhDong: 'ghi', thang: '2026-09', lenh: lenhMau(4), phienBanMongDoi: '2.3.0'
-      }), 'lệch phiên bản');
+        hanhDong: 'ghi', thang: '2026-09', lenh: lenhMau(4), banMay: '2.3.0', phienBanMongDoi: '2.3.0'
+      }), 'máy dưới mốc');
       luot.phienBan = b.sim.nhatKyGoi.length;
       dong.phienBan = soDongCua(b.thang9);
       const c = cau.phienBan;
-      dung(/Deploy/.test(c) && /New version/.test(c), 'không nói việc phải làm: ' + c);
+      bang(c, require('./gsheet-web-app').thongBaoMayQuaCu('2.3.0', b.sim.vo.MAY_TOI_THIEU), 'câu chặn nguyên văn');
+      dung(/2_CAP_NHAT\.bat/.test(c) && /CHƯA ghi gì/.test(c), 'không nói việc phải làm / không nói chưa ghi: ' + c);
       dung(c.indexOf('Web App từ chối') < 0, 'bị bọc tiền tố, mất câu nguyên văn: ' + c);
-      dung(c.indexOf(PHIEN_BAN) >= 0, 'không nêu số bản thật của Web App (' + PHIEN_BAN + '): ' + c);
       bang(dong.phienBan, 0, 'không được ghi dòng nào');
       return 'lượt gọi mạng ' + luot.phienBan + ' · dòng ghi ' + dong.phienBan + '\n        ' + c;
     });
@@ -437,7 +436,7 @@ async function chay() {
 
     await test('T-WA-17 lỗi KHÁC NGUYÊN NHÂN thì KHÁC CÂU; hai ca cùng nguyên nhân thì cố ý cùng câu', () => {
       // Ba nhóm, ba cách chữa khác hẳn nhau, nên phải khác câu ngay từ đầu dòng:
-      //   quyen403/htmlDangNhap → đi sửa quyền · phienBan → đi Deploy · ma500 → chạy lại / xem Executions.
+      //   quyen403/htmlDangNhap → đi sửa quyền · phienBan (máy dưới mốc, YC-42) → bấm nút 2 · ma500 → chạy lại / xem Executions.
       const ten = ['quyen403', 'phienBan', 'ma500'];
       for (let i = 0; i < ten.length; i++) {
         for (let j = i + 1; j < ten.length; j++) {
@@ -767,6 +766,196 @@ async function chay() {
       dung(!!ok.banDung, 'qua cửa rồi thì phải trả banDung');
       b2.sim.thaoGo();
       return 'sai chuỗi: 0 thông tin bản dựng · đúng chuỗi: đủ phienBan + banDung';
+    });
+  }
+
+  // ================================================================== YC-41 VIỆC 6: NÚT 4 CHỜ ĐỦ LÂU
+  //
+  // Đường `xuLy` phía Google tự dừng gọn ở NGUONG_GIAY_XU_LY (240 giây) rồi mới dựng phản hồi. Máy chờ 180 giây (bản
+  // 2.6.1) thì một lượt dài báo "Web App không trả lời" giữa lúc Google vẫn đang ghi. Chấm trên THỜI GIAN CHỜ THẬT mà
+  // máy đặt cho từng lệnh gửi đi (cả POST lẫn GET chuyển hướng 302), so với ngưỡng đọc thẳng từ `.gs`.
+  console.log('\n--- YC-41 việc 6: thời gian chờ mỗi lượt nút 4 ≥ ngưỡng xuLy của Google + 60 giây ---');
+  {
+    const Module = require('module');
+    const httpsGia = require('https');                 // bản giả `gia-lap-web-app` đã cắm vào require.cache
+    const NGUON_SHELL = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'ShellAppsScript.gs'), 'utf8');
+    const nguongGs = (src) => { const m = /^var NGUONG_GIAY_XU_LY = (\d+);/m.exec(src); if (!m) throw new Error('không đọc được NGUONG_GIAY_XU_LY'); return +m[1]; };
+
+    /** Chạy ping + ghi + xuLy bằng một bản `gsheet-web-app`, trả mọi thời gian chờ máy đã đặt. */
+    async function doCho(Lop) {
+      const b3 = dungBoi();
+      const cho = [];
+      const gocReq = httpsGia.request, gocGet = httpsGia.get;
+      httpsGia.request = function (opt, cb) { cho.push({ kieu: 'POST', ms: opt && opt.timeout }); return gocReq.call(this, opt, cb); };
+      httpsGia.get = function (u, opt, cb) { cho.push({ kieu: 'GET 302', ms: opt && opt.timeout }); return gocGet.call(this, u, opt, cb); };
+      try {
+        const web = new Lop.WebAppGoogleSheet(b3.sim.cauHinhMay({ duong: 'xuLy', cotPII: cfg.cotPII }));
+        await web.ping();
+        await web.ghi('2026-09', lenhMau(2));
+        await web.xuLy('2026-09', dongLop1(2), tuyChonXuLy);
+      } finally { httpsGia.request = gocReq; httpsGia.get = gocGet; b3.sim.thaoGo(); }
+      return cho;
+    }
+    /** Phép chấm: trả danh sách chỗ sai (rỗng = đạt). */
+    const cham = (cho, Lop, nguongGiay) => {
+      const loi = [];
+      const san = (nguongGiay + 60) * 1000;
+      if (!cho.length) loi.push('không bắt được lệnh gửi nào');
+      if (Lop.TIMEOUT_MS < san) loi.push('TIMEOUT_MS = ' + Lop.TIMEOUT_MS / 1000 + ' giây < ' + san / 1000 + ' giây');
+      cho.filter((x) => x.ms !== Lop.TIMEOUT_MS || x.ms < san).forEach((x) => loi.push(x.kieu + ' chờ ' + x.ms / 1000 + ' giây'));
+      return loi;
+    };
+
+    await test('T-WA-32 mọi lệnh nút 4 (ping, ghi, xuLy — POST và GET chuyển hướng) chờ 300 giây ≥ NGUONG_GIAY_XU_LY của .gs + 60', async () => {
+      const gw = require('./gsheet-web-app');
+      const nguong = nguongGs(NGUON_SHELL);
+      const cho = await doCho(gw);
+      bang(cham(cho, gw, nguong), [], 'bản hiện hành');
+      bang(gw.TIMEOUT_MS, 300000, 'đề bài YC-41 việc 6: 300 giây');
+      dung(gw.TIMEOUT_MS < gw.TIMEOUT_TAO_THANG_MS, 'kéo đơn phải chờ ngắn hơn một lượt tạo tháng');
+
+      // ĐỐI CHỨNG ÂM 1 — số của bản 2.6.1.
+      const tep = require('path').join(__dirname, 'gsheet-web-app.js');
+      const nguonGw = require('fs').readFileSync(tep, 'utf8');
+      const MOC = 'const TIMEOUT_MS = 300000;';
+      if (nguonGw.split(MOC).length !== 2) throw new Error('mốc đối chứng âm "' + MOC + '" phải có đúng 1 chỗ — sửa mốc, đừng bỏ bài');
+      const m = new Module(tep, module);
+      m.filename = tep;
+      m.paths = Module._nodeModulePaths(__dirname);
+      m._compile(nguonGw.split(MOC).join('const TIMEOUT_MS = 180000;'), tep);
+      const loiCu = cham(await doCho(m.exports), m.exports, nguong);
+      if (!loiCu.length) throw new Error('ĐỐI CHỨNG ÂM KHÔNG LỆCH: chờ 180 giây mà phép chấm vẫn đạt');
+      // ĐỐI CHỨNG ÂM 2 — ai nâng ngưỡng bên Google lên 280 giây mà quên máy: bản hiện hành phải bị chấm LỆCH.
+      const loiNguong = cham(cho, gw, nguongGs(NGUON_SHELL.replace(/^var NGUONG_GIAY_XU_LY = \d+;/m, 'var NGUONG_GIAY_XU_LY = 280;')));
+      if (!loiNguong.length) throw new Error('ĐỐI CHỨNG ÂM KHÔNG LỆCH: ngưỡng Google 280 giây mà máy 300 giây vẫn đạt');
+      const dem = {};
+      cho.forEach((x) => { dem[x.kieu] = (dem[x.kieu] || 0) + 1; });
+      return Object.keys(dem).map((k) => dem[k] + ' ' + k).join(' + ') + ' đều chờ ' + gw.TIMEOUT_MS / 1000 + ' giây (ngưỡng .gs ' + nguong +
+        ' + 60) · đối chứng âm "180 giây": LỆCH (' + loiCu[0] + ') · đối chứng âm "Google nâng ngưỡng lên 280": LỆCH (' + loiNguong[0] + ')';
+    });
+  }
+
+  // ================================================================== YC-42: CỬA PHIÊN BẢN THEO KHOẢNG TƯƠNG THÍCH
+  //
+  // Ma trận máy × Google chạy TRỌN đường nút 4 (`xuLy`, mã .gs thật trên Web App giả), đếm DÒNG THẬT trong sheet.
+  // "Máy 2.6.1" và "Google 2.6.1" dựng đúng hành vi CỬA BẰNG TUYỆT ĐỐI đang chạy ở production ngày 14/9 (máy chỉ gửi
+  // `phienBanMongDoi`, chặn khi `phienBan` khác bản mình; Google chặn khi `phienBanMongDoi` khác bản mình, không trả
+  // `banWebApp`) — bằng cách cắm lại đúng các dòng đó vào mã hiện hành. Đây là hai ca user sẽ gặp trong lúc lên 2.7.0.
+  console.log('\n--- YC-42: ma trận máy × Google trên đường xuLy (cửa theo khoảng tương thích) ---');
+  {
+    const Module = require('module');
+    const fs2 = require('fs'), path2 = require('path');
+    const tepGw = path2.join(__dirname, 'gsheet-web-app.js');
+    const NGUON_GW = fs2.readFileSync(tepGw, 'utf8');
+    const thay = (src, doi, ten) => doi.reduce((s, [moc, moi]) => {
+      const n = s.split(moc).length - 1;
+      if (n !== 1) throw new Error('KHÔNG CẮM ĐƯỢC vào ' + ten + ' — mốc cần 1 chỗ, tìm được ' + n + ': "' + moc.slice(0, 70) + '" (mã đã đổi: sửa mốc, đừng bỏ bài)');
+      return s.split(moc).join(moi);
+    }, src);
+    const napMay = (doi) => {
+      const m = new Module(tepGw, module);
+      m.filename = tepGw;
+      m.paths = Module._nodeModulePaths(__dirname);
+      m._compile(thay(NGUON_GW, doi, 'gsheet-web-app.js'), tepGw);
+      return m.exports;
+    };
+    const MOC_BAN_MAY = "const PHIEN_BAN = '2.7.0';";
+    const MOC_CUA_MAY = '  if (ss === null || ss < 0) throw hong(';
+    const MAY_BANG_TUYET_DOI = [MOC_CUA_MAY, '  if (ss === null || soSanhBan(thuc, banMay) !== 0) throw hong('];
+    const mayBan = (ban) => napMay([[MOC_BAN_MAY, "const PHIEN_BAN = '" + ban + "';"]]);
+    /** Máy tới 2.6.1: gửi mỗi `phienBanMongDoi` = bản mình, đọc `phienBan`, chặn khi khác. */
+    const mayCuaCu = (ban) => napMay([
+      [MOC_BAN_MAY, "const PHIEN_BAN = '" + ban + "';"],
+      ['phienBanMongDoi: this.banGuiDi(), banMay: PHIEN_BAN }', 'phienBanMongDoi: PHIEN_BAN }'],
+      ['          if (kq.banWebApp != null) {', '          if (false) {'],
+      ['          if (kq.mayToiThieu != null) this.mayToiThieuWebApp', '          if (false) this.mayToiThieuWebApp'],
+      MAY_BANG_TUYET_DOI
+    ]);
+    const MOC_BAN_GS = "var PHIEN_BAN = '2.7.0';";
+    const MOC_CUA_GS = 'banMay && !banDuTu_(banMay, MAY_TOI_THIEU)) {';
+    const GS_BANG_TUYET_DOI = [MOC_CUA_GS, 'banMay && banMay !== PHIEN_BAN) {'];
+    const MOC_TRA_SO = 'PHIEN_BAN_TRA_LOI_ = (!coBanMay && mongDoi && banDuTu_(mongDoi, MAY_TOI_THIEU)) ? mongDoi : PHIEN_BAN;';
+    /** Google tới 2.6.1: chặn khi `phienBanMongDoi` khác bản mình, trả `phienBan` thật, không `banWebApp`/`mayToiThieu`. */
+    const googleCuaCu = (ban) => (src) => thay(src, [
+      [MOC_BAN_GS, "var PHIEN_BAN = '" + ban + "';"],
+      [MOC_CUA_GS, 'mongDoi && mongDoi !== PHIEN_BAN) {'],
+      [MOC_TRA_SO, 'PHIEN_BAN_TRA_LOI_ = PHIEN_BAN;'],
+      ['    if (o.banWebApp == null) o.banWebApp = PHIEN_BAN;\n', ''],
+      ['    if (o.mayToiThieu == null) o.mayToiThieu = MAY_TOI_THIEU;\n', '']
+    ], 'ShellAppsScript.gs');
+    const googleBangTuyetDoi = (src) => thay(src, [GS_BANG_TUYET_DOI, [MOC_TRA_SO, 'PHIEN_BAN_TRA_LOI_ = PHIEN_BAN;']], 'ShellAppsScript.gs');
+
+    /**
+     * Một lượt ghi 3 đơn trên đường mặc định `xuLy` (nút 4) VÀ một lượt trên đường lùi `ghi` (máy tự dựng gói) — mỗi đường
+     * một Web App giả riêng. Trả số dòng ghi được, câu lỗi (nếu có), số gói ghi đã gửi, dòng nhắc — gộp hai đường: `ghi` là
+     * số dòng NHỎ HƠN của hai đường, `cau` là câu của đường nào bị chặn.
+     */
+    async function motLuot(Lop, suaNguon) {
+      const mot = async (duong) => {
+        const b = dungBoi({ suaNguon: suaNguon });
+        const truoc = soDongCua(b.thang9);
+        const web = new Lop.WebAppGoogleSheet(b.sim.cauHinhMay({ duong: duong, cotPII: cfg.cotPII }));
+        let cau = null;
+        try {
+          if (duong === 'xuLy') await web.xuLy('2026-09', dongLop1(3), tuyChonXuLy);
+          else await web.ghi('2026-09', lenhMau(3));
+        } catch (e) { cau = e.message; }
+        const kq = {
+          ghi: soDongCua(b.thang9) - truoc, cau: cau,
+          goiGhi: b.sim.nhatKyGoi.filter((g) => g.hanhDong === 'xuly' || g.hanhDong === 'ghi').length,
+          nhac: web.canhBaoBanDung.filter((c) => /^Nhắc: /.test(c))
+        };
+        b.sim.thaoGo();
+        return kq;
+      };
+      const x = await mot('xuLy'), g = await mot('ghi');
+      return {
+        ghi: Math.min(x.ghi, g.ghi), ghiNhieuNhat: Math.max(x.ghi, g.ghi), cau: x.cau || g.cau, chanCaHai: !!(x.cau && g.cau), goiXuLy: x.goiGhi + g.goiGhi,
+        nhac: x.nhac.length && g.nhac.length ? x.nhac : [], tungDuong: 'xuLy ' + x.ghi + ' dòng · ghi ' + g.ghi + ' dòng'
+      };
+    }
+    /** Chấm cả ma trận trên một bộ (máy, Google) cho từng ca — trả danh sách chỗ sai. */
+    async function chamMaTran(ca) {
+      const loi = [], so = {};
+      const t1 = await motLuot(ca.mayHienHanh, ca.googleHienHanh);
+      so.bangNhau = t1.ghi;
+      if (t1.cau || t1.ghi !== 3) loi.push('(1) bằng nhau 2.7.0·2.7.0: ghi ' + t1.ghi + (t1.cau ? ' — ' + t1.cau.slice(0, 70) : ''));
+      const t2 = await motLuot(ca.mayHienHanh, ca.google261);
+      so.mayMoiHon = t2.ghi;
+      if (t2.cau || t2.ghi !== 3) loi.push('(2) máy 2.7.0 · Google 2.6.1 cửa cũ: ghi ' + t2.ghi + (t2.cau ? ' — ' + t2.cau.slice(0, 70) : ''));
+      else if (!t2.nhac.some((c) => /Google bản 2\.6\.1/.test(c) && /chủ dự án Deploy/.test(c))) loi.push('(2) không in dòng nhắc Google cũ hơn');
+      const t3 = await motLuot(ca.may261, ca.googleHienHanh);
+      so.googleMoiHon = t3.ghi;
+      if (t3.cau || t3.ghi !== 3) loi.push('(3) máy 2.6.1 cửa cũ · Google 2.7.0: ghi ' + t3.ghi + (t3.cau ? ' — ' + t3.cau.slice(0, 70) : ''));
+      const t4a = await motLuot(ca.may240, ca.googleHienHanh);
+      if (!t4a.chanCaHai || !/^MÁY NÀY ĐANG CHẠY BẢN QUÁ CŨ/.test(t4a.cau) || !/2_CAP_NHAT\.bat/.test(t4a.cau) || t4a.ghiNhieuNhat !== 0) {
+        loi.push('(4a) máy 2.4.0 dưới mốc: ghi ' + t4a.ghiNhieuNhat + ' · ' + String(t4a.cau).slice(0, 70));
+      }
+      const t4b = await motLuot(ca.mayHienHanh, ca.google240);
+      if (!t4b.chanCaHai || !/^BẢN TRÊN GOOGLE QUÁ CŨ/.test(t4b.cau) || !/Deploy/.test(t4b.cau) || t4b.ghiNhieuNhat !== 0 || t4b.goiXuLy !== 0) {
+        loi.push('(4b) Google 2.4.0 dưới mốc: ghi ' + t4b.ghiNhieuNhat + ' · gói ghi/xuLy ' + t4b.goiXuLy + ' · ' + String(t4b.cau).slice(0, 70));
+      }
+      so.cau4a = t4a.cau; so.cau4b = t4b.cau; so.duong2 = t2.tungDuong; so.duong3 = t3.tungDuong;
+      return { loi, so };
+    }
+
+    await test('T-WA-33 YC-42 ma trận 4 ca máy × Google trên CẢ HAI đường xuLy và ghi: bằng nhau · máy mới hơn · Google mới hơn đều GHI ĐƯỢC; dưới mốc thì CHẶN, 0 dòng', async () => {
+      const hienHanh = {
+        mayHienHanh: require('./gsheet-web-app'), googleHienHanh: undefined,
+        google261: googleCuaCu('2.6.1'), may261: mayCuaCu('2.6.1'),
+        may240: mayBan('2.4.0'), google240: googleCuaCu('2.4.0')
+      };
+      const kq = await chamMaTran(hienHanh);
+      bang(kq.loi, [], 'bản hiện hành');
+      // ĐỐI CHỨNG ÂM — giữ so sánh BẰNG TUYỆT ĐỐI ở cả hai vỏ (đúng cửa tới 2.6.1): ca (2) và (3) phải bị chấm là tắc.
+      const sai = await chamMaTran(Object.assign({}, hienHanh, {
+        mayHienHanh: napMay([MAY_BANG_TUYET_DOI]), googleHienHanh: googleBangTuyetDoi
+      }));
+      dung(sai.loi.some((x) => /^\(2\)/.test(x)) && sai.loi.some((x) => /^\(3\)/.test(x)),
+        'ĐỐI CHỨNG ÂM KHÔNG LỆCH đủ hai ca: ' + sai.loi.join(' | '));
+      return '(1) ghi ' + kq.so.bangNhau + ' · (2) máy mới hơn: ' + kq.so.duong2 + ' + dòng nhắc · (3) Google mới hơn: ' + kq.so.duong3 +
+        ' · (4a) ' + kq.so.cau4a.slice(0, 60) + '… 0 dòng · (4b) ' + kq.so.cau4b.slice(0, 60) + '… 0 dòng, 0 gói ghi/xuLy · ' +
+        'đối chứng âm "giữ bằng tuyệt đối" -> LỆCH (' + sai.loi.filter((x) => /^\([23]\)/.test(x)).map((x) => x.slice(0, 60)).join(' | ') + ')';
     });
   }
 

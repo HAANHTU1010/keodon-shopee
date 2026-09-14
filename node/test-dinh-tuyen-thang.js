@@ -32,7 +32,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { kiemPhienBan, thongBaoLechPhienBan, PHIEN_BAN, idFileThang, canhBaoThangSau, thangSau } = require('./gsheet-web-app');
+const { kiemPhienBan, thongBaoMayQuaCu, thongBaoGoogleQuaCu, soSanhBan, WEB_APP_TOI_THIEU, PHIEN_BAN, idFileThang, canhBaoThangSau, thangSau } = require('./gsheet-web-app');
 
 const SRC = path.join(__dirname, '..', 'src');
 const FILE_SHELL = path.join(SRC, 'ShellAppsScript.gs');
@@ -49,7 +49,7 @@ const BI_MAT = 'BI-MAT-TEST-DINH-TUYEN-THANG-0123456789';
 let soDat = 0, soHong = 0;
 const hong = [];
 function test(ten, fn) {
-  try { fn(); soDat++; console.log('ĐẠT   ' + ten); }
+  try { const soThat = fn(); soDat++; console.log('ĐẠT   ' + ten + (typeof soThat === 'string' ? '\n        · ' + soThat : '')); }
   catch (e) { soHong++; hong.push(ten + ' -> ' + e.message); console.log('HỎNG  ' + ten + '\n   -> ' + e.message); }
 }
 function bang(thuc, mong, ghiChu) {
@@ -297,6 +297,7 @@ function nap(tuyChon) {
   let nguon = ['Utils.gs', 'Schema.gs', 'CaiDat.gs', 'Config.gs', 'MapListing.gs', 'DanhMuc.gs', 'ShellAppsScript.gs']
     .map((f) => fs.readFileSync(path.join(SRC, f), 'utf8')).join('\n;\n');
   if (t.goHangRaoTang2) nguon = goHangRaoTang2_(nguon);   // chỉ dùng cho đối chứng âm T-DT-42d
+  if (t.suaNguon) nguon = doiMoc_(nguon, t.suaNguon, 'src/*.gs');   // chỉ dùng cho đối chứng âm (T-DT-48)
   const ten = new Set();
   for (const m of nguon.matchAll(/^(?:var|function)\s+([A-Za-z_$][\w$]*)/gm)) ten.add(m[1]);
   const than = nguon + '\nreturn {' + [...ten].map((n) => `${n}: ${n}`).join(', ') + '};';
@@ -304,6 +305,31 @@ function nap(tuyChon) {
     (SpreadsheetApp, PropertiesService, Utilities, ContentService, LockService, Logger);
   g.__moiTruong = moiTruong;
   return g;
+}
+
+/**
+ * Thay từng mốc `[[mốc, thay], …]` trong một đoạn mã nguồn. Mỗi mốc phải có ĐÚNG MỘT chỗ — không thì hỏng to ở đây
+ * (mã đã đổi, sửa mốc), chứ không lặng lẽ thành một đối chứng âm không cắm được khuyết tật nào.
+ */
+function doiMoc_(nguon, doi, ten) {
+  let s = nguon;
+  for (const [moc, thay] of doi) {
+    const n = s.split(moc).length - 1;
+    if (n !== 1) throw new Error('KHÔNG CẮM ĐƯỢC KHUYẾT TẬT vào ' + ten + ' — mốc cần 1 chỗ, tìm được ' + n + ': "' + moc.slice(0, 80) + '"');
+    s = s.split(moc).join(thay);
+  }
+  return s;
+}
+
+/** Nạp BẢN SỬA của một file trong `node/` (trong bộ nhớ, không ghi đĩa) — cho đối chứng âm phía máy. */
+function napNodeSua(tenFile, doi) {
+  const Module = require('module');
+  const tep = path.join(__dirname, tenFile);
+  const m = new Module(tep, module);
+  m.filename = tep;
+  m.paths = Module._nodeModulePaths(__dirname);
+  m._compile(doiMoc_(fs.readFileSync(tep, 'utf8'), doi, tenFile), tep);
+  return m.exports;
 }
 
 /** Gọi doPost như Web App thật. Mặc định gửi kèm ID file tháng 9 — đúng hợp đồng D-42. */
@@ -559,6 +585,7 @@ console.log('--- Đối chiếu phiên bản Web App (mục 2.3) ---');
     bang(sai.loi, 'SAI_BI_MAT');
     bang(sai.phienBan, undefined, 'nhánh sai chuỗi KHÔNG được mang phienBan');
     bang(sai.banDung, undefined, 'nhánh sai chuỗi KHÔNG được mang banDung');
+    bang([sai.banWebApp, sai.mayToiThieu], [undefined, undefined], 'nhánh sai chuỗi KHÔNG được mang banWebApp / mayToiThieu (YC-42)');
 
     const chua = nap({ khongCaiDat: true });
     const kq = JSON.parse(chua.doPost({ postData: { contents: JSON.stringify({ hanhDong: 'ping', token: 'X' }) } })._text);
@@ -575,27 +602,97 @@ console.log('--- Đối chiếu phiên bản Web App (mục 2.3) ---');
     [BI_MAT + 'x', BI_MAT.slice(0, -1), BI_MAT.slice(0, -1) + 'X', '', null, BI_MAT.toLowerCase()]
       .forEach((x) => dung(!g.biMatDung_(x), 'phải từ chối: ' + JSON.stringify(x)));
   });
-  test('T-DT-21 lệch phiên bản → TỪ CHỐI GHI, đúng nguyên văn thông báo, chưa vào tới khóa', () => {
-    const kq = goi(g, { hanhDong: 'ghi', phienBanMongDoi: '9.9.9', thang: '2026-09', lenh: [] });
-    bang(kq.ok, false);
-    bang(kq.loi, 'LECH_PHIEN_BAN');
-    bang(kq.thongBao, 'Web App đang chạy bản ' + g.PHIEN_BAN + ', tool cần bản 9.9.9 — ' +
-      'hãy triển khai lại (Deploy → Manage deployments → New version).');
-    bang(g.__moiTruong.moKhoa, 0, 'không được vào tới LockService');
+  // YC-42 (2.7.0): cửa là KHOẢNG TƯƠNG THÍCH, không còn BẰNG tuyệt đối. Bốn bài dưới VIẾT LẠI theo hợp đồng mới — bản cũ
+  // chấm đúng cái hành vi YC-42 bỏ ("lệch là chặn", câu "tool cần bản X — hãy triển khai lại").
+  /** Chấm cửa phía Google trên một bản `.gs` — trả danh sách chỗ sai (rỗng = đạt). */
+  const chamCuaGoogle = (gg) => {
+    const loi = [];
+    const toiThieu = gg.MAY_TOI_THIEU;
+    // (a) máy từ 2.7.0 khai `banMay` DƯỚI mốc → từ chối cả ba hành động ghi, câu nguyên văn, chưa vào khóa
+    ['ghi', 'xuLy', 'taoThangMoi'].forEach((hd) => {
+      const khoa = gg.__moiTruong.moKhoa;
+      const kq = goi(gg, { hanhDong: hd, banMay: '2.4.9', phienBanMongDoi: '2.4.9', thang: '2026-09', lenh: [] });
+      if (kq.loi !== 'LECH_PHIEN_BAN') loi.push(hd + ' với máy 2.4.9 (dưới mốc) không bị chặn: ' + kq.loi);
+      else if (kq.thongBao !== gg.thongBaoMayQuaCu_('2.4.9', toiThieu)) loi.push(hd + ': câu chặn khác nguyên văn');
+      if (gg.__moiTruong.moKhoa !== khoa) loi.push(hd + ': đã vào tới LockService');
+    });
+    // (b) máy CỬA CŨ (không `banMay`) dưới mốc → cũng chặn; không trả số tương thích
+    const cuDuoi = goi(gg, { hanhDong: 'ghi', phienBanMongDoi: '2.4.0', thang: '2026-09', lenh: [] });
+    if (cuDuoi.loi !== 'LECH_PHIEN_BAN') loi.push('máy cửa cũ 2.4.0 không bị chặn');
+    // (c) máy CỬA CŨ 2.6.1 (đúng bản đang chạy ở máy user 14/9) → PHỤC VỤ, và `phienBan` trả lại đúng 2.6.1
+    const cu261 = goi(gg, { hanhDong: 'ghi', phienBanMongDoi: '2.6.1', thang: '2026-09', lenh: [] });
+    if (cu261.loi === 'LECH_PHIEN_BAN') loi.push('máy cửa cũ 2.6.1 (trong khoảng) bị chặn');
+    if (cu261.phienBan !== '2.6.1') loi.push('máy cửa cũ 2.6.1 nhận phienBan ' + cu261.phienBan + ' — nó sẽ tự chặn');
+    if (cu261.banWebApp !== gg.PHIEN_BAN) loi.push('thiếu banWebApp thật');
+    // (d) máy MỚI HƠN Google (khai `banMay` 9.9.9) → phục vụ, `phienBan` = bản thật
+    const moi = goi(gg, { hanhDong: 'ghi', banMay: '9.9.9', phienBanMongDoi: '9.9.9', thang: '2026-09', lenh: [] });
+    if (moi.loi === 'LECH_PHIEN_BAN') loi.push('máy 9.9.9 (mới hơn) bị chặn');
+    if (moi.phienBan !== gg.PHIEN_BAN || moi.mayToiThieu !== toiThieu) loi.push('máy có banMay phải nhận phienBan thật + mayToiThieu');
+    // (e) số bản không đọc được → chặn, không đoán
+    if (goi(gg, { hanhDong: 'xuLy', banMay: 'bản mới', thang: '2026-09', cacFile: [] }).loi !== 'LECH_PHIEN_BAN') loi.push('banMay "bản mới" không bị chặn');
+    return loi;
+  };
+
+  test('T-DT-21 YC-42 phía Google: máy DƯỚI MỐC bị từ chối nguyên văn trước khóa; máy cửa cũ 2.6.1 và máy mới hơn vẫn được phục vụ', () => {
+    const gg = nap();
+    bang(gg.MAY_TOI_THIEU, '2.5.0', 'mốc đề bài YC-42 điểm 2');
+    bang(chamCuaGoogle(gg), [], 'bản hiện hành');
+    const cua = 'banMay && !banDuTu_(banMay, MAY_TOI_THIEU)) {';
+    const traSo = "PHIEN_BAN_TRA_LOI_ = (!coBanMay && mongDoi && banDuTu_(mongDoi, MAY_TOI_THIEU)) ? mongDoi : PHIEN_BAN;";
+    const bangTuyetDoi = chamCuaGoogle(nap({ suaNguon: [[cua, 'banMay && banMay !== PHIEN_BAN) {']] }));
+    dung(bangTuyetDoi.some((x) => /cửa cũ 2\.6\.1 \(trong khoảng\) bị chặn/.test(x)),
+      'ĐỐI CHỨNG ÂM KHÔNG LỆCH: giữ so sánh bằng tuyệt đối mà máy 2.6.1 vẫn qua — ' + bangTuyetDoi.join(' | '));
+    const khongTraSo = chamCuaGoogle(nap({ suaNguon: [[traSo, 'PHIEN_BAN_TRA_LOI_ = PHIEN_BAN;']] }));
+    dung(khongTraSo.some((x) => /nhận phienBan 2\.7\.0/.test(x) || /nhận phienBan/.test(x)),
+      'ĐỐI CHỨNG ÂM KHÔNG LỆCH: bỏ trả số tương thích mà máy cửa cũ vẫn nhận 2.6.1 — ' + khongTraSo.join(' | '));
+    return 'ghi/xuLy/taoThangMoi với máy 2.4.9 → LECH_PHIEN_BAN nguyên văn, 0 lần vào khóa · máy cửa cũ 2.6.1 → phục vụ, phienBan 2.6.1 · ' +
+      'máy 9.9.9 → phục vụ · đối chứng âm "bằng tuyệt đối" -> LỆCH (' + bangTuyetDoi[0] + ') · "bỏ trả số tương thích" -> LỆCH (' + khongTraSo[0] + ')';
   });
-  test('T-DT-22 lệch bản vẫn cho ping và doc chạy — người ta phải xem được số lệch', () => {
-    dung(goi(g, { hanhDong: 'ping', phienBanMongDoi: '9.9.9' }).ok, 'ping phải chạy');
-    dung(goi(g, { hanhDong: 'doc', thang: '2026-09', phienBanMongDoi: '9.9.9' }).ok, 'doc phải chạy');
+  test('T-DT-22 máy dưới mốc vẫn cho ping và doc chạy — người ta phải xem được số bản mà đi cập nhật', () => {
+    dung(goi(g, { hanhDong: 'ping', banMay: '2.4.9', phienBanMongDoi: '2.4.9' }).ok, 'ping phải chạy');
+    dung(goi(g, { hanhDong: 'doc', thang: '2026-09', banMay: '2.4.9', phienBanMongDoi: '2.4.9' }).ok, 'doc phải chạy');
   });
-  test('T-DT-23 hai vỏ nói CÙNG MỘT CÂU (Node ↔ Apps Script)', () => {
-    bang(thongBaoLechPhienBan('1.0.0', '2.0.0'), g.thongBaoLechPhienBan_('1.0.0', '2.0.0'));
-    bang(PHIEN_BAN, g.PHIEN_BAN, 'PHIEN_BAN hai bên phải bằng nhau — lệch là tool tự chặn chính mình');
+  test('T-DT-23 hai vỏ nói CÙNG MỘT CÂU, cùng LUẬT so bản, cùng số bản phát hành (Node ↔ Apps Script ↔ package.json)', () => {
+    bang(thongBaoMayQuaCu('2.4.9', '2.5.0'), g.thongBaoMayQuaCu_('2.4.9', '2.5.0'));
+    bang(PHIEN_BAN, g.PHIEN_BAN, 'PHIEN_BAN hai vỏ phải bằng nhau khi phát hành');
+    bang(require('../package.json').version, PHIEN_BAN, 'version package.json (nút 2 so số này) phải bằng PHIEN_BAN');
+    const cap = [['2.5.0', '2.5.0'], ['2.6.1', '2.5.0'], ['2.4.9', '2.5.0'], ['2.10.0', '2.9.0'], ['3', '2.5.0'], ['', '2.5.0'], ['2.5', '2.5.0'], ['abc', '2.5.0']];
+    const lech = cap.filter(([a, b]) => g.banDuTu_(a, b) !== (soSanhBan(a, b) !== null && soSanhBan(a, b) >= 0)).map((x) => x.join(' vs '));
+    bang(lech, [], 'hai vỏ so bản khác nhau');
   });
-  test('T-DT-24 phía máy tính: Web App bản cũ (không trả phienBan) cũng bị chặn', () => {
-    bang(nemLoi(() => kiemPhienBan(undefined, '2.3.0')).message,
-      'Web App đang chạy bản (không rõ — bản cũ chưa trả phienBan), tool cần bản 2.3.0 — ' +
-      'hãy triển khai lại (Deploy → Manage deployments → New version).');
-    bang(kiemPhienBan('2.3.0', '2.3.0'), true);
+  test('T-DT-24 YC-42 phía máy: kiemPhienBan chặn Web App không báo số / dưới mốc / đòi máy mới hơn; trong khoảng thì NHẮC và cho chạy', () => {
+    const chamMayCua = (K) => {
+      const loi = [];
+      const chan = (ban, tc, rx, ten) => {
+        let e = null;
+        try { K.kiemPhienBan(ban, tc); } catch (x) { e = x; }
+        if (!e) loi.push(ten + ': không chặn');
+        else if (e.maKeodon !== 'LECH_PHIEN_BAN' || !rx.test(e.message)) loi.push(ten + ': câu/mã sai — ' + e.message.slice(0, 60));
+      };
+      chan(undefined, {}, /^BẢN TRÊN GOOGLE QUÁ CŨ — Web App đang chạy bản \(không rõ/, 'Web App không báo số bản');
+      chan('2.4.9', {}, /^BẢN TRÊN GOOGLE QUÁ CŨ/, 'Web App 2.4.9');
+      chan('abc', {}, /^BẢN TRÊN GOOGLE QUÁ CŨ/, 'Web App báo số bản hỏng');
+      chan(K.PHIEN_BAN, { mayToiThieu: '9.0.0' }, /^MÁY NÀY ĐANG CHẠY BẢN QUÁ CŨ/, 'Web App đòi máy từ 9.0.0');
+      const qua = (ban, rx, ten) => {
+        try { const k = K.kiemPhienBan(ban, { mayToiThieu: '2.5.0' }); if (!rx(k)) loi.push(ten + ': ' + JSON.stringify(k).slice(0, 80)); }
+        catch (x) { loi.push(ten + ' bị chặn: ' + x.message.slice(0, 60)); }
+      };
+      qua(K.PHIEN_BAN, (k) => k.khop === true && k.nhac === null, 'cùng bản');
+      qua('2.6.1', (k) => k.khop === false && /Google bản 2\.6\.1/.test(k.nhac) && /chủ dự án Deploy/.test(k.nhac), 'Google 2.6.1 (cũ hơn, trong khoảng)');
+      qua('2.5.0', (k) => k.khop === false && /VẪN GHI/.test(k.nhac), 'Google 2.5.0 (đúng mốc)');
+      qua('9.9.9', (k) => k.khop === false && /bấm 2_CAP_NHAT\.bat/.test(k.nhac), 'Google 9.9.9 (mới hơn)');
+      return loi;
+    };
+    const W = require('./gsheet-web-app');
+    bang(W.WEB_APP_TOI_THIEU, '2.5.0', 'mốc đề bài YC-42 điểm 2');
+    bang(chamMayCua(W), [], 'bản hiện hành');
+    bang(nemLoi(() => kiemPhienBan(undefined)).message, thongBaoGoogleQuaCu('(không rõ — bản rất cũ, chưa báo số bản)', WEB_APP_TOI_THIEU));
+    // ĐỐI CHỨNG ÂM — cửa bằng tuyệt đối như tới 2.6.1: mọi ca "trong khoảng" phải bị chấm là chặn.
+    const Sai = napNodeSua('gsheet-web-app.js', [['  if (ss === null || ss < 0) throw hong(', '  if (ss === null || soSanhBan(thuc, banMay) !== 0) throw hong(']]);
+    const cu = chamMayCua(Sai);
+    dung(cu.some((x) => /Google 2\.6\.1 .* bị chặn/.test(x)), 'ĐỐI CHỨNG ÂM KHÔNG LỆCH: cửa bằng tuyệt đối mà Google 2.6.1 vẫn qua — ' + cu.join(' | '));
+    return '4 ca chặn (không số · 2.4.9 · số hỏng · Web App đòi máy 9.0.0) · 4 ca qua (cùng bản · 2.6.1 · 2.5.0 · 9.9.9, ba ca sau có dòng nhắc đúng bên) · ' +
+      'đối chứng âm "bằng tuyệt đối" -> LỆCH (' + cu[0] + ')';
   });
 }
 
@@ -849,6 +946,186 @@ console.log('--- YC-40.4: tháng theo giờ Việt Nam · caiDat gỡ thuộc t�
 }
 
 // ==================================================================== 8. QUÉT RÒ RỈ LẦN CUỐI
+
+// ==================================================================== YC-41 VIỆC 1: LINK `/spreadsheets/u/<số>/d/<ID>`
+
+// Trình duyệt đăng nhập nhiều tài khoản Google thì thanh địa chỉ là `…/spreadsheets/u/0/d/<ID>/edit…` (số là thứ tự tài
+// khoản) — đúng dạng user copy ra nhiều hơn cả. Bản 2.6.1 chỉ nhận `/spreadsheets/d/` ở CẢ HAI phía: nút 3 báo sai ba
+// lượt rồi thoát mã 1, nút 4 báo "không phải link Google Sheet", Web App `bocIdTuLink_` trả rỗng — sai nguyên nhân.
+console.log('--- YC-41 việc 1: link dạng /spreadsheets/u/<số>/d/<ID> ---');
+{
+  // Link DỰNG LÚC CHẠY (INV-7 quét dòng mã chứa sẵn link + mã ≥ 25 ký tự).
+  const TIEN_TO = 'https://docs.google.com/spreadsheets/';
+  const linkU = (so, id, duoi) => TIEN_TO + 'u/' + so + '/d/' + id + (duoi == null ? '/edit#gid=0' : duoi);
+  // Nhánh phải có trong MỌI mẫu nhận/che link — viết thành chuỗi để chính file này không mang mẫu cũ.
+  const NHANH_U = '(?:u\\/\\d+\\/)?';
+  const CA_U = [];
+  ['0', '1', '12'].forEach((so) => ['/edit#gid=0', '/edit?usp=sharing', '', '/edit'].forEach((duoi) =>
+    CA_U.push(['u/' + so + (duoi ? ' ' + duoi : ' (không đuôi)'), linkU(so, ID_T9, duoi)])));
+  CA_U.push(['u/0 dính khoảng trắng + tab', '  ' + linkU('0', ID_T9) + '\t']);
+  // Trông giống nhưng KHÔNG phải link một file Google Sheet — phía máy phải từ chối như cũ. `gs` = phía Google cũng trả rỗng
+  // (phía Google không có ngưỡng ≥ 20 ký tự của máy, nên mã file bị cắt là việc của `openById` — không xét ở đây).
+  const CA_SAI = [
+    ['u/ không có số', TIEN_TO + 'u//d/' + ID_T9 + '/edit', true],
+    ['u/ là chữ', TIEN_TO + 'u/abc/d/' + ID_T9 + '/edit', true],
+    ['u/0 thiếu d/', TIEN_TO + 'u/0/' + ID_T9 + '/edit', true],
+    ['trang danh sách file u/0', TIEN_TO + 'u/0/', true],
+    ['tài liệu Docs dạng u/0', 'https://docs.google.com/document/u/0/d/' + ID_T9 + '/edit', true],
+    ['u/0 mã file bị cắt', TIEN_TO + 'u/0/d/abc/edit', false]
+  ];
+
+  /** Chấm phía máy trên một bản `gsheet-web-app` — trả danh sách chỗ sai (rỗng = đạt). */
+  function chamMay(W) {
+    const loi = [];
+    for (const [ten, l] of CA_U) {
+      let id = '';
+      try { id = W.idFileThang({ '2026-09': l }, '2026-09').id; } catch (e) { loi.push('idFileThang ' + ten + ': ' + e.maKeodon); }
+      if (id && id !== ID_T9) loi.push('idFileThang ' + ten + ': rút sai ID');
+      if (W.idTuLinkHoacId(l) !== ID_T9) loi.push('idTuLinkHoacId ' + ten + ': ' + (W.idTuLinkHoacId(l) ? 'sai ID' : 'rỗng'));
+      // INV-7: link dạng u/<số> vừa gõ (chưa nằm trong link_thang) trong câu lỗi lạ vẫn phải bị che hết.
+      const che = new W.WebAppGoogleSheet({}).chePhu('Google báo lỗi với ' + l.trim() + ' — thử lại');
+      if (che.indexOf(ID_T9) >= 0) loi.push('chePhu ' + ten + ': ID lọt');
+    }
+    for (const [ten, l] of CA_SAI) {
+      if (W.idTuLinkHoacId(l) !== '') loi.push('idTuLinkHoacId nhận nhầm "' + ten + '"');
+      try { W.idFileThang({ '2026-09': l }, '2026-09'); loi.push('idFileThang nhận nhầm "' + ten + '"'); } catch (e) {
+        if (e.maKeodon !== 'LINK_THANG_HONG') loi.push('idFileThang "' + ten + '": mã ' + e.maKeodon);
+      }
+    }
+    return loi;
+  }
+
+  test('T-DT-47 phía máy: link u/0, u/1, u/12 (đủ kiểu đuôi, dính khoảng trắng) → idFileThang và idTuLinkHoacId rút ĐÚNG ID, ' +
+    'chePhu che hết; dạng giả u/chữ, thiếu d/, Docs vẫn bị từ chối', () => {
+    const W = require('./gsheet-web-app');
+    bang(chamMay(W), [], 'bản hiện hành');
+    bang(W.idFileThang({ '2026-09': linkU('12', ID_T9) }, '2026-09').link, linkU('12', ID_T9), 'link giữ nguyên để in tên kỳ, không bị cắt');
+
+    // ĐỐI CHỨNG ÂM 1 — bỏ nhánh u/<số> khỏi MỌI mẫu trong gsheet-web-app.js (đúng bản 2.6.1): phép chấm phải LỆCH.
+    const nguonGw = fs.readFileSync(path.join(__dirname, 'gsheet-web-app.js'), 'utf8');
+    const dongCoNhanh = nguonGw.split('\n').filter((d) => d.indexOf(NHANH_U) >= 0);
+    dung(dongCoNhanh.length >= 2, 'gsheet-web-app.js phải có nhánh u/<số> ở RE_LINK_SHEET và ở mẫu che chung, tìm được ' + dongCoNhanh.length);
+    const cu = chamMay(napNodeSua('gsheet-web-app.js', dongCoNhanh.map((d) => [d, d.split(NHANH_U).join('')])));
+    dung(cu.length > 0, 'ĐỐI CHỨNG ÂM KHÔNG LỆCH: bỏ nhánh u/<số> mà phép chấm vẫn đạt — bài test mù');
+    dung(cu.some((x) => /^idFileThang u\/0/.test(x)) && cu.some((x) => /^idTuLinkHoacId u\/12/.test(x)),
+      'đối chứng âm phải lệch đúng chỗ (idFileThang u/0, idTuLinkHoacId u/12): ' + cu.slice(0, 3).join(' | '));
+
+    // ĐỐI CHỨNG ÂM 2 — chỉ mẫu CHE chung mất nhánh (RE_LINK_SHEET vẫn đúng): link u/<số> trong câu lỗi lạ phải lộ ID.
+    const dongChe = dongCoNhanh.filter((d) => /\.replace\(/.test(d));
+    bang(dongChe.length, 1, 'số dòng mẫu che chung có nhánh u/<số>');
+    const cuChe = chamMay(napNodeSua('gsheet-web-app.js', [[dongChe[0], dongChe[0].split(NHANH_U).join('')]]));
+    dung(cuChe.some((x) => /^chePhu/.test(x)), 'ĐỐI CHỨNG ÂM KHÔNG LỆCH: mẫu che mất nhánh u/<số> mà không ID nào lọt — phép quét che mù');
+    return CA_U.length + ' ca u/<số> đạt · ' + CA_SAI.length + ' ca giả bị từ chối · đối chứng âm "bỏ nhánh u/<số>" -> LỆCH ' +
+      cu.length + ' chỗ (' + cu[0] + ') · chỉ mẫu che mất nhánh -> LỆCH (' + cuChe.filter((x) => /^chePhu/.test(x))[0] + ')';
+  });
+
+  test('T-DT-48 phía Google: bocIdTuLink_ nhận u/0, u/1, u/12; gói gửi link u/1 thay cho ID vẫn mở ĐÚNG file tháng', () => {
+    const chamGs = (g) => {
+      const loi = [];
+      for (const [ten, l] of CA_U) if (g.bocIdTuLink_(l) !== ID_T9) loi.push('bocIdTuLink_ ' + ten + ': ' + (g.bocIdTuLink_(l) ? 'sai ID' : 'rỗng'));
+      for (const [ten, l, gs] of CA_SAI) if (gs && g.bocIdTuLink_(l) !== '') loi.push('bocIdTuLink_ nhận nhầm "' + ten + '"');
+      const kq = goi(g, { hanhDong: 'doc', thang: '2026-09', spreadsheetId: linkU('1', ID_T9) });
+      if (!kq.ok || kq.tenFile !== TEN_T9) loi.push('doPost doc với spreadsheetId dạng u/1: ' + (kq.loi || kq.tenFile));
+      if (JSON.stringify(kq).indexOf(ID_T9) >= 0) loi.push('phản hồi mang ID file');
+      return loi;
+    };
+    bang(chamGs(nap()), [], 'bản hiện hành');
+    const nguonShell = fs.readFileSync(FILE_SHELL, 'utf8');
+    const dong = nguonShell.split('\n').filter((d) => d.indexOf(NHANH_U) >= 0);
+    bang(dong.length, 1, 'ShellAppsScript.gs: số dòng có nhánh u/<số>');
+    const cu = chamGs(nap({ suaNguon: [[dong[0], dong[0].split(NHANH_U).join('')]] }));
+    dung(cu.some((x) => /^bocIdTuLink_ u\/0/.test(x)) && cu.some((x) => /^doPost doc/.test(x)),
+      'ĐỐI CHỨNG ÂM KHÔNG LỆCH đúng chỗ: bỏ nhánh u/<số> khỏi bocIdTuLink_ phải làm hỏng u/0 và lượt doc — được: ' + cu.slice(0, 3).join(' | '));
+    return CA_U.length + ' ca u/<số> rút đúng ID · lượt doc gửi link u/1 mở "' + TEN_T9 + '" · đối chứng âm "bỏ nhánh u/<số>" -> LỆCH ' +
+      cu.length + ' chỗ (' + cu.filter((x) => /^doPost/.test(x))[0] + ')';
+  });
+
+  /**
+   * Quét MÃ: mọi mẫu RegExp nhận hay che link Google Sheet (`spreadsheets\/…d\/`) trong src/ và node/ phải có nhánh u/<số>.
+   * Lỗi 2.6.1 nằm ở TÁM chỗ viết tay cùng một mẫu; sửa bảy chỗ là chỗ thứ tám vẫn từ chối oan (hoặc vẫn lộ link).
+   */
+  function quetMauLink(tep, noiDung) {
+    const ra = [];
+    const TIM = 'spreadsheets\\/';
+    noiDung.split('\n').forEach((d, i) => {
+      for (let k = d.indexOf(TIM); k >= 0; k = d.indexOf(TIM, k + 1)) {
+        const sau = d.slice(k + TIM.length);
+        if (sau.startsWith('d\\/')) ra.push(tep + ':' + (i + 1));
+      }
+    });
+    return ra;
+  }
+
+  test('T-DT-49 quét mã: không mẫu nhận/che link Google Sheet nào trong src/, node/ còn thiếu nhánh u/<số>', () => {
+    const ds = [];
+    const duyet = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((x) => {
+      const p = path.join(d, x.name);
+      if (x.isDirectory()) { if (x.name !== 'node_modules' && x.name !== 'fixtures') duyet(p); return; }
+      if (/\.(gs|js)$/.test(x.name)) ds.push(p);
+    });
+    duyet(SRC);
+    duyet(__dirname);
+    const vp = [];
+    let soMau = 0;
+    for (const p of ds) {
+      const s = fs.readFileSync(p, 'utf8');
+      soMau += s.split('spreadsheets\\/' + NHANH_U + 'd\\/').length - 1;
+      quetMauLink(path.relative(path.join(__dirname, '..'), p), s).forEach((x) => vp.push(x));
+    }
+    bang(vp, [], 'mẫu thiếu nhánh u/<số>');
+    dung(soMau >= 8, 'phải thấy ít nhất 8 mẫu có nhánh u/<số> (máy 5, nút 3 2, Google 1… và phép quét trong test), thấy ' + soMau);
+    // ĐỐI CHỨNG ÂM: cắm lại đúng dòng 2.6.1 của bocIdTuLink_ (dựng bằng cách BỎ nhánh khỏi dòng hiện hành).
+    const dongGs = fs.readFileSync(FILE_SHELL, 'utf8').split('\n').filter((d) => d.indexOf(NHANH_U) >= 0)[0];
+    const cam = quetMauLink('ShellAppsScript.gs (bản cắm lỗi)', dongGs.split(NHANH_U).join(''));
+    bang(cam.length, 1, 'ĐỐI CHỨNG ÂM: phép quét phải bắt dòng bocIdTuLink_ cũ');
+    return ds.length + ' file · ' + soMau + ' mẫu đều có nhánh u/<số> · đối chứng âm: cắm lại dòng 2.6.1 -> LỆCH (' + cam[0] + ')';
+  });
+}
+
+test('T-DT-50 nút 4 vẫn đọc ĐÚNG link_thang đã khai (dạng /spreadsheets/d/): mẫu mới rút cùng mã file như mẫu 2.6.1 trên mọi kỳ — ' +
+  'kể cả bảng link_thang THẬT của máy vận hành (chỉ đếm, không in)', () => {
+  // YC-41 việc 1 mức TRUNG BÌNH: `idFileThang` là hàm của đường ghi hằng ngày. Nới mẫu để nhận `u/<số>` không được làm lệch
+  // một kỳ nào đang chạy. Mẫu 2.6.1 dựng lại bằng cách BỎ nhánh u/<số> khỏi mẫu hiện hành — không gõ lại tay.
+  const W = require('./gsheet-web-app');
+  const NHANH = '(?:u\\/\\d+\\/)?';
+  const reCu = new RegExp(W.RE_LINK_SHEET.source.split(NHANH).join(''));
+  const soSanh = (bangLink, rutMoi) => {
+    const lech = [];
+    let dem = 0;
+    Object.keys(bangLink).filter((k) => /^\d{4}-\d{2}$/.test(k)).forEach((k) => {
+      const l = String(bangLink[k] || '').trim();
+      const mCu = l.match(reCu);
+      if (!mCu) return;                                  // kỳ không phải link /d/ (rỗng…) — mẫu cũ cũng không đọc được
+      dem++;
+      let idMoi = '';
+      try { idMoi = rutMoi(bangLink, k); } catch (e) { idMoi = 'LỖI ' + e.maKeodon; }
+      if (idMoi !== mCu[1]) lech.push(k);               // chỉ nêu KỲ, không nêu link/ID (INV-7)
+    });
+    return { dem, lech };
+  };
+  const rut = (bang, k) => W.idFileThang(bang, k).id;
+  // (a) bảng giả đủ kiểu đuôi
+  const GIA = { '2026-08': link(ID_T9), '2026-09': 'https://docs.google.com/spreadsheets/d/' + ID_T10, '2026-10': '  ' + link(ID_T9) + '  ',
+    '2026-11': 'https://docs.google.com/spreadsheets/d/' + ID_T10 + '/edit?usp=sharing' };
+  const a = soSanh(GIA, rut);
+  bang(a.lech, [], 'bảng giả');
+  bang(a.dem, 4, 'số kỳ đọc được');
+  // (b) bảng THẬT trên máy vận hành, nếu có (máy BA không có thư mục này → nói ra, không bỏ phần (a))
+  const cfgVH = path.join(__dirname, '..', '..', '..', '03_VAN_HANH', 'Cấu hình', 'CAU_HINH_VAN_HANH.json');
+  let that = 'không có 03_VAN_HANH trên máy này — chỉ chấm bảng giả';
+  if (fs.existsSync(cfgVH)) {
+    const lt = (JSON.parse(fs.readFileSync(cfgVH, 'utf8').replace(/^﻿/, '')).link_thang) || {};
+    const b = soSanh(lt, rut);
+    bang(b.lech, [], 'bảng link_thang thật: kỳ đọc lệch mẫu 2.6.1');
+    dung(b.dem >= 1, 'bảng link_thang thật không có kỳ nào đọc được');
+    that = b.dem + ' kỳ của link_thang thật đọc ra đúng mã file như 2.6.1';
+  }
+  // ĐỐI CHỨNG ÂM: mẫu làm hỏng link cũ (nhánh u/<số> thành BẮT BUỘC) → phép so phải báo lệch.
+  const reHong = new RegExp(W.RE_LINK_SHEET.source.split(NHANH).join('(?:u\\/\\d+\\/)'));
+  const dc = soSanh(GIA, (bangL, k) => { const m = String(bangL[k]).trim().match(reHong); if (!m) throw Object.assign(new Error('x'), { maKeodon: 'LINK_THANG_HONG' }); return m[1]; });
+  dung(dc.lech.length === 4, 'ĐỐI CHỨNG ÂM KHÔNG LỆCH: mẫu bắt buộc u/<số> mà link cũ vẫn đọc được — ' + JSON.stringify(dc.lech));
+  return '4/4 kỳ bảng giả · ' + that + ' · đối chứng âm "bắt buộc u/<số>" -> LỆCH ' + dc.lech.length + '/4 kỳ';
+});
 
 console.log('--- Quét rò rỉ toàn cục (INV-7) ---');
 {

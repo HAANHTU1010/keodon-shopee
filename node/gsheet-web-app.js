@@ -29,17 +29,28 @@
  * không mở / không ghi được file — cả ba gom về MỘT câu `cauLoiQuyen(thang)` rồi dừng; mã HTTP thật và
  * câu chi tiết của Apps Script đi ở dòng dưới, để người sửa còn manh mối.
  *
- * ĐỐI CHIẾU PHIÊN BẢN (GV-v2.3 mục 2.3): Google KHÔNG tự đồng bộ mã. Sửa `.gs` mà quên
- * Deploy → Manage deployments → New version thì link /exec vẫn chạy bản cũ, KHÔNG báo lỗi gì —
- * bên dự án chứng quyền gọi đây là "lỗi tốn kém nhất của dự án". Với keodon còn nặng hơn: bản `.gs`
- * cũ có thể ghi sai cột vào file tiền thật. Nên mỗi gói gửi lên kèm `phienBanMongDoi`, Web App trả
- * `phienBan` thật của nó, lệch là TỪ CHỐI GHI.
+ * ĐỐI CHIẾU PHIÊN BẢN (GV-v2.3 mục 2.3; YC-42 từ 2.7.0): Google KHÔNG tự đồng bộ mã. Sửa `.gs` mà quên
+ * Deploy → Manage deployments → New version thì link /exec vẫn chạy bản cũ, KHÔNG báo lỗi gì. Tới 2.6.1 cửa này đòi hai
+ * bên BẰNG NHAU tuyệt đối — lệch chiều nào cũng ngừng ghi, nên mỗi lần lên bản khi đã production là một khoảng chết bắt
+ * buộc. Từ 2.7.0 cửa là KHOẢNG TƯƠNG THÍCH: chỉ chặn khi một bên THẬT SỰ dưới mốc (`WEB_APP_TOI_THIEU` ở máy,
+ * `MAY_TOI_THIEU` ở Google); lệch trong khoảng thì nhắc một dòng và VẪN CHẠY. "Dán sót file .gs" — lý do gốc dựng cửa —
+ * nay do dấu vân tay bản dựng (`BAN_DUNG`) canh khi hai bên cùng số bản. Xem `kiemPhienBan`, `banGuiDi`.
  */
 const https = require('https');
 const { URL } = require('url');
 
-/** Phải khớp `var PHIEN_BAN` trong `src/ShellAppsScript.gs`. Đổi hợp đồng gói JSON thì đổi cả hai. */
-const PHIEN_BAN = '2.6.1';
+/**
+ * Bản của VỎ MÁY — bằng `version` trong package.json và `var PHIEN_BAN` trong `src/ShellAppsScript.gs` khi phát hành
+ * (T-DT-23 canh). Gửi lên Google trong trường `banMay` của mọi gói.
+ */
+const PHIEN_BAN = '2.7.0';
+
+/**
+ * YC-42: bản Web App THẤP NHẤT máy này còn dùng được. Web App dưới mốc → CHẶN trước lô đầu tiên, câu nói rõ bên nào cũ và
+ * việc phải làm. Từ mốc trở lên mà khác `PHIEN_BAN` → nhắc một dòng, vẫn chạy. CHỈ nâng mốc khi đổi GIAO THỨC (thêm/đổi
+ * trường trong thân POST, đổi tên hành động) — và phải nêu trong báo cáo dev. 2.5.0: mọi cặp 2.5.0…2.7.0 cùng giao thức.
+ */
+const WEB_APP_TOI_THIEU = '2.5.0';
 
 const TOI_DA_DON_MOT_LO = 200;      // Apps Script chỉ có 6 phút một lần chạy; chia lô cho chắc
 
@@ -59,14 +70,23 @@ const TOI_DA_DON_MOT_LO_XU_LY = 200;
 /** Số lần gọi tiếp tối đa khi Web App dừng gọn vì hết giờ. Chặn vòng lặp vô tận nếu có gì đó kẹt. */
 const SO_LAN_GOI_TIEP_TOI_DA = 12;
 
-const TIMEOUT_MS = 180000;
+/**
+ * Thời gian chờ MỘT lượt gọi thường (`ping`, `doc`, `ghi`, `xuLy` — nút 4): 300 giây (YC-41 việc 6; bản cũ 180).
+ *
+ * Vì sao 300: đường `xuLy` phía Google tự dừng gọn ở `NGUONG_GIAY_XU_LY` = 240 giây rồi còn phải làm nốt khối đang ghi,
+ * `flush` và dựng phản hồi; cộng chuyển hướng 302 thì một lượt đi hết ngưỡng về tới máy mất hơn 4 phút. Chờ 180 giây
+ * là máy báo "Web App không trả lời" giữa lúc Google VẪN đang ghi — người bấm tưởng hỏng. (Không mất đơn: file xuất ở
+ * nguyên chỗ, lượt sau khử trùng; nhưng câu báo sai nguyên nhân.) 300 = 240 + 60 giây dư, vẫn dưới trần 6 phút của Google.
+ * Bài T-WA-32 đọc 240 thẳng từ `src/ShellAppsScript.gs`: ai nâng ngưỡng bên Google mà quên số này là bài đó hỏng.
+ */
+const TIMEOUT_MS = 300000;
 
 /**
- * Thời gian chờ MỘT lượt `taoThangMoi` (nút 3 chế độ 1) — 400 giây, dài hơn hẳn 180 giây của kéo đơn.
+ * Thời gian chờ MỘT lượt `taoThangMoi` (nút 3 chế độ 1) — 400 giây, dài hơn 300 giây của kéo đơn.
  *
  * Vì sao phải riêng: Web App tạo tháng tự dừng gọn ở `TM_NGUONG_GIAY` = 270 giây, và một bước dở được lượt
  * sau chạy TỚI CÙNG không canh giờ (`buocDungTruoc`) — tức một lượt có thể đi sát trần 6 phút của Google.
- * Chờ 180 giây như kéo đơn thì máy báo "Web App không trả lời" giữa chừng trong khi Google VẪN đang chuyển sổ,
+ * Chờ như kéo đơn thì máy báo "Web App không trả lời" giữa chừng trong khi Google VẪN đang chuyển sổ,
  * người bấm tưởng hỏng rồi bấm lại chồng lên. 400 = 6 phút trần của Google + 40 giây cho chuyển hướng 302.
  */
 const TIMEOUT_TAO_THANG_MS = 400000;
@@ -136,10 +156,46 @@ function thangHienTaiMay(thoiDiem) {
   return x.nam + '-' + haiSo(x.thang);
 }
 
-/** Nguyên văn câu báo lệch phiên bản. Bản Apps Script (`thongBaoLechPhienBan_`) phải giống hệt từng chữ. */
-function thongBaoLechPhienBan(banThuc, banCan) {
-  return 'Web App đang chạy bản ' + banThuc + ', tool cần bản ' + banCan +
-    ' — hãy triển khai lại (Deploy → Manage deployments → New version).';
+// ==================================================================== CỬA PHIÊN BẢN (YC-42)
+
+/** '2.6.1' → [2, 6, 1]. Không đọc được (rỗng, chữ, '2') → null. */
+function soBan(s) {
+  const t = String(s == null ? '' : s).trim();
+  if (!/^\d+(\.\d+)+$/.test(t)) return null;
+  return t.split('.').map(Number);
+}
+
+/** So hai số bản: -1 · 0 · 1. Một bên không đọc được → null (phía gọi coi là "không rõ", không đoán). */
+function soSanhBan(a, b) {
+  const x = soBan(a), y = soBan(b);
+  if (!x || !y) return null;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const p = x[i] || 0, q = y[i] || 0;
+    if (p !== q) return p < q ? -1 : 1;
+  }
+  return 0;
+}
+
+/** Câu CHẶN khi Web App dưới mốc — viết cho người không rành máy: bên nào cũ, việc phải làm, tool chưa ghi gì. */
+function thongBaoGoogleQuaCu(banWebApp, toiThieu) {
+  return 'BẢN TRÊN GOOGLE QUÁ CŨ — Web App đang chạy bản ' + banWebApp + ', máy này cần Web App từ bản ' + toiThieu +
+    ' trở lên. Tool CHƯA ghi gì. Việc phải làm: báo chủ dự án mở Apps Script, dán mã mới rồi Deploy → Manage deployments → ' +
+    'New version; xong thì bấm lại.';
+}
+
+/** Câu CHẶN khi máy dưới mốc. Bản Apps Script (`thongBaoMayQuaCu_`) phải giống hệt từng chữ — Google gửi câu đó xuống. */
+function thongBaoMayQuaCu(banMay, toiThieu) {
+  return 'MÁY NÀY ĐANG CHẠY BẢN QUÁ CŨ — máy là bản ' + banMay + ', Web App trên Google chỉ còn phục vụ máy từ bản ' + toiThieu +
+    ' trở lên. Tool CHƯA ghi gì. Việc phải làm: bấm 2_CAP_NHAT.bat, đợi báo cập nhật xong, rồi bấm lại.';
+}
+
+/** Dòng NHẮC (không chặn) khi hai bên khác bản trong khoảng tương thích: nói bên nào cũ hơn và việc nên làm khi tiện. */
+function cauNhacLechBan(banWebApp, banMay) {
+  const googleCuHon = soSanhBan(banWebApp, banMay) < 0;
+  return 'Nhắc: máy đang chạy bản ' + banMay + ', Web App trên Google bản ' + banWebApp + ' — hai bản vẫn dùng chung được nên ' +
+    'tool VẪN GHI bình thường. ' + (googleCuHon
+    ? 'Khi tiện, chủ dự án Deploy bản mới trên Apps Script cho hai bên cùng bản.'
+    : 'Khi tiện, bấm 2_CAP_NHAT.bat trên máy này cho hai bên cùng bản.');
 }
 
 /**
@@ -193,15 +249,29 @@ function soDauVanTay(pingKq) {
 }
 
 /**
- * Cổng chặn ghi — HÀM THUẦN, kiểm được không cần mạng.
- * `banThuc` rỗng/không có nghĩa là Web App đang chạy bản CŨ, bản chưa biết trả `phienBan` về.
- * Đó chính là ca nguy hiểm nhất (hỏng âm thầm) nên cũng phải chặn, không được coi là "chắc là ok".
+ * Cổng chặn ghi theo KHOẢNG TƯƠNG THÍCH (YC-42) — HÀM THUẦN, kiểm được không cần mạng.
+ *
+ * CHẶN (ném, `maKeodon` = `LECH_PHIEN_BAN`) khi: Web App không báo số bản / số bản không đọc được — bản rất cũ, ca nguy hiểm
+ * nhất, không được coi là "chắc là ok"; Web App dưới `WEB_APP_TOI_THIEU`; hoặc Web App báo `mayToiThieu` cao hơn bản máy.
+ * Còn lại KHÔNG chặn: trả `{ khop, nhac }` — `nhac` là một dòng cho người vận hành khi hai bên khác bản.
+ *
+ * @param {string} banWebApp   bản thật của Web App (`banWebApp` từ 2.7.0, `phienBan` ở bản cũ hơn)
+ * @param {Object} [tuyChon]   { banMay, webAppToiThieu, mayToiThieu } — mặc định hằng của máy này
  */
-function kiemPhienBan(banThuc, banCan) {
-  const can = banCan || PHIEN_BAN;
-  const thuc = String(banThuc == null ? '' : banThuc).trim();
-  if (thuc === can) return true;
-  throw new Error(thongBaoLechPhienBan(thuc || '(không rõ — bản cũ chưa trả phienBan)', can));
+function kiemPhienBan(banWebApp, tuyChon) {
+  const t = tuyChon || {};
+  const banMay = t.banMay || PHIEN_BAN;
+  const toiThieu = t.webAppToiThieu || WEB_APP_TOI_THIEU;
+  const thuc = String(banWebApp == null ? '' : banWebApp).trim();
+  const hong = (cau) => { const e = new Error(cau); e.maKeodon = 'LECH_PHIEN_BAN'; return e; };
+  const ss = soSanhBan(thuc, toiThieu);
+  if (ss === null || ss < 0) throw hong(thongBaoGoogleQuaCu(thuc || '(không rõ — bản rất cũ, chưa báo số bản)', toiThieu));
+  if (t.mayToiThieu != null && String(t.mayToiThieu).trim() !== '') {
+    const sm = soSanhBan(banMay, t.mayToiThieu);
+    if (sm === null || sm < 0) throw hong(thongBaoMayQuaCu(banMay, String(t.mayToiThieu).trim()));
+  }
+  const khop = soSanhBan(thuc, banMay) === 0;
+  return { khop: khop, nhac: khop ? null : cauNhacLechBan(thuc, banMay) };
 }
 
 // ==================================================================== LINK THÁNG TRÊN MÁY (D-42)
@@ -212,7 +282,14 @@ function cauThieuLinkThang(thang) {
     'để khai báo (chế độ 2) hoặc chuyển sổ (chế độ 1). Tool không ghi gì.';
 }
 
-const RE_LINK_SHEET = /^https:\/\/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]{20,})/;
+/**
+ * Link file Google Sheet → nhóm 1 là ID (≥ 20 ký tự). Nhận CẢ dạng `…/spreadsheets/u/<số>/d/<ID>…` (YC-41 việc 1):
+ * trình duyệt đăng nhập nhiều tài khoản Google thì thanh địa chỉ hiện đúng dạng đó, tức là dạng user copy ra NHIỀU
+ * HƠN CẢ. Bản cũ chỉ nhận `/spreadsheets/d/` nên từ chối oan link thật: nút 3 báo sai ba lượt rồi thoát, nút 4 báo
+ * "không phải link Google Sheet" — sai nguyên nhân. Mọi mẫu nhận hay CHE link trong mã phải có nhánh `(?:u\/\d+\/)?`
+ * (bài T-DT-49 quét).
+ */
+const RE_LINK_SHEET = /^https:\/\/docs\.google\.com\/spreadsheets\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]{20,})/;
 
 /**
  * Tra link file tháng trong `link_thang` (object "yyyy-MM" → link) — HÀM THUẦN, không chạm mạng.
@@ -235,7 +312,7 @@ function idFileThang(linkThang, thang) {
   if (!m) {
     // INV-7: KHÔNG in lại giá trị đang có trong ô — nó có thể là một link thật của tháng khác.
     const e = new Error('link_thang["' + th + '"] trong CAU_HINH_VAN_HANH.json không phải link Google Sheet ' +
-      '(phải bắt đầu bằng https://docs.google.com/spreadsheets/d/<ID>). Sửa dòng đó bằng Notepad, hoặc bấm ' +
+      '(phải dạng https://docs.google.com/spreadsheets/d/<ID> hoặc …/spreadsheets/u/0/d/<ID>). Sửa dòng đó bằng Notepad, hoặc bấm ' +
       '3_TAO_FILE_THANG_MOI.bat chế độ 2, rồi chạy lại. Tool không ghi gì.');
     e.maKeodon = 'LINK_THANG_HONG';
     throw e;
@@ -404,7 +481,9 @@ class WebAppGoogleSheet {
     this.linkThang = (c.link_thang && typeof c.link_thang === 'object') ? c.link_thang : null;
     this.spreadsheetId = String(c.spreadsheetId || '').trim() || null;
     this.choPhepThangKhac = c.choPhepThangKhac === true;
-    this.phienBanWebApp = null;      // điền từ phản hồi đầu tiên; null = chưa nói chuyện lần nào
+    this.phienBanWebApp = null;      // bản THẬT của Web App, điền từ phản hồi đầu tiên; null = chưa nói chuyện lần nào
+    this.webAppBietKhoang = false;   // YC-42: Web App từ 2.7.0 trả `banWebApp` + `mayToiThieu`; bản cũ hơn chỉ trả `phienBan`
+    this.mayToiThieuWebApp = null;   // bản máy thấp nhất Web App còn phục vụ (null = Web App cũ, không báo)
     this.banDungWebApp = null;       // dấu vân tay bản dựng Google trả về (YC-38.3: in vào dòng RUN)
     this.canhBaoBanDung = [];        // câu cảnh báo lệch dấu vân tay bản dựng, điền sau lượt ping
     this.cheThemDs = [];             // link/ID không nằm trong link_thang (nút 3 vừa gõ) — `chePhu` che luôn
@@ -460,7 +539,7 @@ class WebAppGoogleSheet {
     return s
       .replace(/"token"\s*:\s*"[^"]*"/g, '"token":"***"')
       .replace(/https:\/\/script\.google(usercontent)?\.com\/[^\s"']*/g, '<link Web App>')
-      .replace(/https:\/\/docs\.google\.com\/spreadsheets\/d\/[a-zA-Z0-9_-]+[^\s"']*/g, '<link file tháng>')
+      .replace(/https:\/\/docs\.google\.com\/spreadsheets\/(?:u\/\d+\/)?d\/[a-zA-Z0-9_-]+[^\s"']*/g, '<link file tháng>')
       .replace(/"spreadsheetId"\s*:\s*"[^"]*"/g, '"spreadsheetId":"<ID>"');
   }
 
@@ -478,7 +557,7 @@ class WebAppGoogleSheet {
     const laTaoThang = hd === 'taothangmoi';
     const choMs = laTaoThang ? TIMEOUT_TAO_THANG_MS : TIMEOUT_MS;
     if (hd === 'ghi' || hd === 'xuly') kiemPII(body, this.cotPII);
-    const goi = Object.assign({ token: this.biMat, phienBanMongDoi: PHIEN_BAN }, body);
+    const goi = Object.assign({ token: this.biMat, phienBanMongDoi: this.banGuiDi(), banMay: PHIEN_BAN }, body);
     // D-42: file tháng do MÁY chỉ định. Tra TRƯỚC khi gọi mạng — thiếu link tháng là dừng ngay tại đây,
     // chưa một byte nào rời khỏi máy, và chắc chắn không ghi lùi vào file tháng trước.
     if (hd === 'doc' || hd === 'ghi' || hd === 'xuly') {
@@ -582,11 +661,22 @@ class WebAppGoogleSheet {
           }
           // Nhớ lại bản THẬT của Web App ngay cả khi phản hồi là lỗi — nhờ vậy `ghi()` chặn được
           // trước khi gửi lô đầu tiên, không phải chờ tới lúc Google trả lời.
-          if (kq.phienBan != null) this.phienBanWebApp = String(kq.phienBan);
+          // YC-42: Web App từ 2.7.0 báo bản thật ở `banWebApp` (còn `phienBan` là số nó ĐỒNG Ý phục vụ cho gói này — xem
+          // `traLoi_` phía Google); Web App cũ hơn chỉ có `phienBan` và đó chính là bản thật của nó.
+          if (kq.banWebApp != null) { this.phienBanWebApp = String(kq.banWebApp); this.webAppBietKhoang = true; }
+          else if (kq.phienBan != null) { this.phienBanWebApp = String(kq.phienBan); this.webAppBietKhoang = false; }
+          if (kq.mayToiThieu != null) this.mayToiThieuWebApp = String(kq.mayToiThieu);
           if (kq.banDung != null) this.banDungWebApp = String(kq.banDung);
           // So dấu vân tay trên MỌI phản hồi, không riêng `ping`: `banDung` đi kèm mọi phản hồi đã
           // qua cửa bí mật, nên không tốn thêm lượt gọi nào. Gộp câu, không lặp lại câu đã có.
-          soDauVanTay(kq).forEach((c) => { if (this.canhBaoBanDung.indexOf(c) < 0) this.canhBaoBanDung.push(c); });
+          // Chỉ so khi hai bên CÙNG số bản — đó mới là ca "dán sót file .gs". Khác bản trong khoảng tương thích thì dấu vân tay
+          // đương nhiên lệch, và câu của nó ("dán lại … Deploy lại") sai khi máy mới là bên cũ hơn: in dòng nhắc nói đúng bên.
+          const cungBan = this.phienBanWebApp == null || soSanhBan(this.phienBanWebApp, PHIEN_BAN) === 0;
+          let dsCanh = cungBan ? soDauVanTay(kq) : [];
+          if (!cungBan) {
+            try { const k = kiemPhienBan(this.phienBanWebApp); if (k.nhac) dsCanh = [k.nhac]; } catch (ek) { /* dưới mốc: chotPhienBan chặn */ }
+          }
+          dsCanh.forEach((c) => { if (this.canhBaoBanDung.indexOf(c) < 0) this.canhBaoBanDung.push(c); });
           if (!kq.ok) {
             // Câu báo lệch phiên bản phải tới tay người dùng NGUYÊN VĂN, không bọc thêm tiền tố
             // "Web App từ chối [...]" — đây là câu duy nhất nói thẳng việc phải làm.
@@ -638,7 +728,20 @@ class WebAppGoogleSheet {
    */
   async chotPhienBan(tuyChon) {
     if (this.phienBanWebApp === null) await this.ping(tuyChon);
-    return kiemPhienBan(this.phienBanWebApp, PHIEN_BAN);
+    return kiemPhienBan(this.phienBanWebApp, { mayToiThieu: this.mayToiThieuWebApp });
+  }
+
+  /**
+   * `phienBanMongDoi` gửi lên (YC-42). Web App CỬA CŨ (tới 2.6.1, không báo `banWebApp`) chỉ nhận gói ghi khi số này BẰNG
+   * đúng bản của nó — nên khi đã biết nó đang chạy một bản còn trong khoảng tương thích, gửi đúng số đó để máy mới vẫn ghi
+   * được trong lúc Google chưa Deploy. Web App từ 2.7.0 xét `banMay` (bản thật của máy), không xét số này.
+   * Chưa nói chuyện lần nào, hoặc Web App dưới mốc → gửi bản của máy (gói ghi không bao giờ đi trước `chotPhienBan`).
+   */
+  banGuiDi() {
+    if (this.phienBanWebApp !== null && !this.webAppBietKhoang) {
+      try { kiemPhienBan(this.phienBanWebApp); return this.phienBanWebApp; } catch (e) { /* dưới mốc: chotPhienBan chặn */ }
+    }
+    return PHIEN_BAN;
   }
 
   /**
@@ -793,7 +896,7 @@ class WebAppGoogleSheet {
     if (kyCu === kyMoi) throw hong('THAM_SO_SAI', 'Tháng trước và tháng mới cùng là ' + kyMoi + '. Tool chưa gọi Google.');
     if (!idCu || !idMoi) {
       throw hong('LINK_THANG_HONG', 'Link file tháng ' + (!idCu ? 'trước [3/7]' : 'mới [6/7]') + ' không phải link Google Sheet ' +
-        '(https://docs.google.com/spreadsheets/d/<ID>…). Tool chưa gọi Google.');
+        '(https://docs.google.com/spreadsheets/d/<ID>… hoặc …/spreadsheets/u/0/d/<ID>…). Tool chưa gọi Google.');
     }
     if (idCu === idMoi) throw hong('TRUNG_FILE', 'Link tháng trước và link tháng mới là CÙNG MỘT file.' + GOI_Y_TAO_THANG.TRUNG_FILE);
 
@@ -971,7 +1074,7 @@ function lenhTuDon(tenSheet, donDS, ngayGhi) {
 module.exports = {
   WebAppGoogleSheet, chiaLo, chiaLoTheoDon, lenhTuDon, chuanDuong,
   TOI_DA_DON_MOT_LO, TOI_DA_DON_MOT_LO_XU_LY, SO_LAN_GOI_TIEP_TOI_DA,
-  PHIEN_BAN, kiemPhienBan, thongBaoLechPhienBan, soDauVanTay,
+  PHIEN_BAN, WEB_APP_TOI_THIEU, kiemPhienBan, soBan, soSanhBan, thongBaoGoogleQuaCu, thongBaoMayQuaCu, cauNhacLechBan, soDauVanTay,
   kiemPII, TRUONG_DONG_LOP_1, RE_DIEN_THOAI,
   idFileThang, cauThieuLinkThang, thangSau, canhBaoThangSau, RE_LINK_SHEET, thangHienTaiMay, phanNgayVN,
   cauLoiQuyen, loiQuyen, MA_LOI_QUYEN_WEBAPP, laTrangHtml,

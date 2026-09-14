@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-setlocal enabledelayedexpansion
+setlocal
 cd /d "%~dp0"
 title Cap nhat tool - lay ban ma moi tu GitHub
 
@@ -19,6 +19,11 @@ rem  Nut nay KHONG BAO GIO dung toi:
 rem      CAU_HINH_VAN_HANH.json  (chua chuoi bi mat)
 rem      1_THA_FILE_XUAT  va cac thu muc  da xu ly  ben trong  (du lieu khach)
 rem
+rem  Tham so:
+rem      /lui                           LUI VE BAN CU: chep nguoc ban da sao luu gan nhat
+rem                                     (cu hon ban dang chay) trong  Cau hinh\_ban_cu_...
+rem                                     de len src, node, package.json. Khong tai gi,
+rem                                     khong dung CAU_HINH_VAN_HANH.json (YC-42).
 rem  Tham so an, chi dung khi chay thu:
 rem      /nguon "duong dan file .zip"   doc tu file thay vi tai tu mang
 rem      /tu-dong                       khong dung lai cho bam phim
@@ -26,13 +31,18 @@ rem ============================================================
 
 set "CN_TEP=%~f0"
 rem Cat duong dan thu muc TRUOC vong doc tham so: sau lenh `shift` thi %~dp0 KHONG con tro
-rem toi chinh file .bat nay nua. Bay nay da ghi trong DONG_GOI_GIAO_USER.md muc 5.
+rem toi chinh file .bat nay nua.
+rem KHONG bat enabledelayedexpansion (YC-41 viec 5, giong nut 3): bat len thi cmd nuot mat dau
+rem cham than trong duong dan - CN_TEP tro sai file va PowerShell khong doc duoc chinh file nay.
+rem Vi vay ca file KHONG co dau cham than nao.
 set "CN_GOC=%~dp0"
 set "CN_NGUON="
 set "CN_TU_DONG="
+set "CN_LUI="
 
 :doc_tham_so
 if "%~1"=="" goto het_tham_so
+if /i "%~1"=="/lui" goto ts_lui
 if /i "%~1"=="/nguon" goto ts_nguon
 if /i "%~1"=="/tu-dong" goto ts_tu_dong
 shift
@@ -44,6 +54,10 @@ shift
 goto doc_tham_so
 :ts_tu_dong
 set "CN_TU_DONG=1"
+shift
+goto doc_tham_so
+:ts_lui
+set "CN_LUI=1"
 shift
 goto doc_tham_so
 :het_tham_so
@@ -95,7 +109,7 @@ exit /b 1
 rem ==================================================================
 rem  Tu day tro xuong la ma PowerShell. cmd.exe khong bao gio doc toi
 rem  vi da exit /b o tren. Dong ngay duoi la moc de PowerShell cat file.
-rem  Ca file phai la ASCII thuan va xuong dong CRLF, xem NOTES_DEV muc 4.1,
+rem  Ca file phai la ASCII thuan va xuong dong CRLF, xem README.md muc 6.4,
 rem  nen moi cau tieng Viet trong file nay deu viet khong dau.
 rem ==================================================================
 #PS_BAT_DAU
@@ -253,6 +267,89 @@ try {
     Bao '  Dung xoa file nay: no chua cai dat rieng cua may ban.'
     Bao '  Khong tu sua duoc thi bao nguoi phu trach ky thuat.'
     $global:CN_MA = 1; return
+  }
+
+  # ---- LUI VE BAN CU (YC-42) -------------------------------------------
+  #  Chep nguoc ban da sao luu GAN NHAT ma CU HON ban dang chay. Khong tai gi ve,
+  #  khong dung CAU_HINH_VAN_HANH.json va thu muc 1_THA_FILE_XUAT - dung mot danh
+  #  sach trang voi luot cap nhat: src, node, package.json. Bam lai lan nua la lui
+  #  them mot ban (neu may con giu ban cu hon).
+  if ($env:CN_LUI) {
+    Bao 'LUI VE BAN CU - lay lai ban da sao luu truoc lan cap nhat gan nhat'
+    Bao ''
+    $pkgDang = Join-Path $tool 'package.json'
+    if (-not (Test-Path -LiteralPath $pkgDang)) {
+      Bao 'KHONG LUI DUOC: may nay chua cai ma cua tool nen khong co gi de lui.'
+      Bao '  Bam dup 1_CAI_DAT_LAN_DAU.bat de cai. Chua co gi tren may bi thay doi.'
+      $global:CN_MA = 11; return
+    }
+    $vDangS = ''
+    try { $vDangS = ([string]((Get-Content -LiteralPath $pkgDang -Raw -Encoding UTF8).TrimStart([char]0xFEFF) | ConvertFrom-Json).version).Trim() } catch { $vDangS = '' }
+    $vDang = SoPhienBan $vDangS
+    Bao ('Ban dang chay tren may:  ' + $vDangS)
+    $dsLui = @()
+    foreach ($d in (Get-ChildItem -LiteralPath $base -Directory -Filter '_ban_cu_*' | Sort-Object Name -Descending)) {
+      $pk = Join-Path $d.FullName 'package.json'
+      if (-not ((Test-Path -LiteralPath $pk) -and (Test-Path -LiteralPath (Join-Path $d.FullName 'src')) -and (Test-Path -LiteralPath (Join-Path $d.FullName 'node')))) { continue }
+      $vS = ''
+      try { $vS = ([string]((Get-Content -LiteralPath $pk -Raw -Encoding UTF8).TrimStart([char]0xFEFF) | ConvertFrom-Json).version).Trim() } catch { $vS = '' }
+      $dsLui += [PSCustomObject]@{ Ten = $d.Name; Duong = $d.FullName; Ban = $vS; So = (SoPhienBan $vS) }
+    }
+    if ($dsLui.Count -gt 0) {
+      Bao 'Cac ban da sao luu    :'
+      foreach ($x in $dsLui) { Bao ('   ' + $x.Ten + '   (ban ' + $x.Ban + ')') }
+    }
+    $chon = $null
+    if ($vDang) {
+      foreach ($x in $dsLui) { if ($x.So -and ((SoSanh $x.So $vDang) -lt 0)) { $chon = $x; break } }
+    }
+    if (-not $chon) {
+      Bao ''
+      Gach
+      Bao '  KHONG CO BAN CU HON DE LUI. Chua co gi tren may bi thay doi.'
+      Bao '  May chi giu ban sao luu cua 3 lan cap nhat gan nhat, trong thu muc  Cau hinh'
+      Bao '  (ten bat dau bang  _ban_cu_ ). Can ban cu hon thi bao nguoi phu trach ky thuat.'
+      Gach
+      $global:CN_MA = 11; return
+    }
+    $tvDang = KhoaThuVien $pkgDang
+    $tvLui  = KhoaThuVien (Join-Path $chon.Duong 'package.json')
+    try {
+      ThayThuMuc (Join-Path $chon.Duong 'src')  (Join-Path $tool 'src')
+      ThayThuMuc (Join-Path $chon.Duong 'node') (Join-Path $tool 'node')
+      Copy-Item -LiteralPath (Join-Path $chon.Duong 'package.json') -Destination $pkgDang -Force
+    } catch {
+      Bao ''
+      Bao 'LOI: Khong chep duoc ban cu vao thu muc bo ma.'
+      Bao '  Thuong la dang co cua so den chay tool, hoac may quet virus giu file.'
+      Bao '  Dong het cua so den roi bam lai  2_CAP_NHAT.bat /lui .'
+      Bao ('  Ban cu van con nguyen trong:  ' + $chon.Ten)
+      Bao ('  Chi tiet ky thuat:  ' + $_.Exception.Message)
+      $global:CN_MA = 7; return
+    }
+    $global:CN_MA = 0
+    if ($tvDang -ne $tvLui) {
+      Bao 'Danh sach thu vien cua ban cu khac ban dang chay. Dang cai lai thu vien...'
+      $npm = $null
+      $npmCam = Join-Path $base 'node-portable\npm.cmd'
+      if (Test-Path -LiteralPath $npmCam) { $npm = $npmCam }
+      if (-not $npm) { $c = Get-Command npm -ErrorAction SilentlyContinue; if ($c) { $npm = $c.Source } }
+      $maNpm = 1
+      if ($npm) { Push-Location $tool; try { & $npm install --no-audit --no-fund; $maNpm = $LASTEXITCODE } finally { Pop-Location } }
+      if ($maNpm -ne 0) {
+        Bao 'CHU Y: Ma da lui xong nhung cai thu vien khong thanh cong. Khi co mang, bam dup 1_CAI_DAT_LAN_DAU.bat mot lan.'
+        $global:CN_MA = 8
+      }
+    }
+    GhiMoc
+    Bao ''
+    Gach
+    Bao ('  DA LUI XONG.  ' + $vDangS + '  ->  ' + $chon.Ban + '   (lay tu  ' + $chon.Ten + ')')
+    Bao '  Cau hinh va thu muc 1_THA_FILE_XUAT khong bi dung toi.'
+    Bao '  Bam  2_CAP_NHAT.bat /lui  lan nua de lui them mot ban, neu may con ban cu hon.'
+    Bao '  Bam  2_CAP_NHAT.bat  binh thuong la tool len lai ban moi nhat tren GitHub.'
+    Gach
+    return
   }
 
   $cn = $cfg.cap_nhat
@@ -583,7 +680,10 @@ try {
     Bao ('  DA CAP NHAT XONG.  ' + $vCuS + '  ->  ' + $vMoiS)
   }
   Bao '  Cau hinh va thu muc 1_THA_FILE_XUAT khong bi dung toi.'
-  if (-not $lanDau) { Bao ('  Ban cu nam trong  ' + $bakTen + '  (may giu 3 ban gan nhat).') }
+  if (-not $lanDau) {
+    Bao ('  Ban cu da luu o: ' + $bakTen + ' - bam  2_CAP_NHAT.bat /lui  neu can quay lai.')
+    Bao '  (may giu ban sao luu cua 3 lan cap nhat gan nhat)'
+  }
   Bao '  Gio bam dup 4_CHAY_TOOL.bat, lam viec nhu moi ngay.'
   Gach
   if ($global:CN_MA -ne 8) { $global:CN_MA = 0 }

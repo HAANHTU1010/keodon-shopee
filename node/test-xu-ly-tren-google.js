@@ -538,18 +538,20 @@ function inBang(cot, hang) {
     const kq = sim.vo.doPost({
       postData: {
         contents: JSON.stringify({
-          token: sim.biMat, hanhDong: 'xuLy', phienBanMongDoi: '9.9.9', thang: THANG, cacFile: []
+          token: sim.biMat, hanhDong: 'xuLy', banMay: '2.4.9', phienBanMongDoi: '2.4.9', thang: THANG, cacFile: []
         })
       }
     });
     const o = JSON.parse(kq.getContent());
     const anh = anhChupDay(sim);
     sim.thaoGo();
-    test('T-XL-21 lệch phiên bản → xuLy TỪ CHỐI, đúng nguyên văn câu của hành động ghi', () => {
+    // Viết lại 14/9 theo YC-42: tới 2.6.1 bài này gửi máy 9.9.9 và đòi bị chặn ("lệch là chặn"). Nay máy MỚI HƠN trong khoảng
+    // được phục vụ (T-WA-33), ca bị chặn là máy DƯỚI MỐC `MAY_TOI_THIEU` — cùng một câu với hành động ghi.
+    test('T-XL-21 máy dưới mốc (YC-42) → xuLy TỪ CHỐI, đúng nguyên văn câu của hành động ghi, không ghi ô nào', () => {
       dung(!o.ok, 'phải từ chối');
       bang(o.loi, 'LECH_PHIEN_BAN');
-      bang(o.thongBao, vo.thongBaoLechPhienBan_(PHIEN_BAN, '9.9.9'));
-      bang(anh[TEN_SHEET].dongCuoi, 5, 'lệch bản mà vẫn ghi được ô nào là hỏng');
+      bang(o.thongBao, vo.thongBaoMayQuaCu_('2.4.9', vo.MAY_TOI_THIEU));
+      bang(anh[TEN_SHEET].dongCuoi, 5, 'dưới mốc mà vẫn ghi được ô nào là hỏng');
     });
   }
 

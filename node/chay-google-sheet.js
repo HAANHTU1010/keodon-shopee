@@ -252,7 +252,8 @@ async function duongGhiCu(web, tuyChon, thang, ngayGhi, in_) {
 
   // Chặn lệch phiên bản NGAY SAU lượt đọc đầu tiên, trước khi bỏ công dựng gói. Đọc thì vô hại,
   // nhưng nếu Google đang chạy bản `.gs` cũ thì mọi thứ sau đây đều vô nghĩa và nguy hiểm.
-  kiemPhienBan(tuXa.phienBan, PHIEN_BAN);
+  // YC-42: cửa theo khoảng tương thích — `web` đã nhớ bản thật + mốc máy tối thiểu từ chính phản hồi `doc` này.
+  kiemPhienBan(web.phienBanWebApp, { mayToiThieu: web.mayToiThieuWebApp });
 
   in_('File tháng: ' + tuXa.tenFile + ' · đã có ' +
     Object.keys(tuXa.sheets || {}).map((t) => t + ': ' + tuXa.sheets[t].soDon + ' đơn').join(' · '));

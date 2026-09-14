@@ -420,7 +420,9 @@ function kiemGoi(dich) {
         const kyNay = nay.getFullYear() + '-' + ('0' + (nay.getMonth() + 1)).slice(-2);
         const v = String(lt[kyNay] || '').trim();
         if (!v) pham.push('link_thang thiếu khóa của tháng hiện tại (' + kyNay + ')');
-        else if (!/^https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,}/.test(v)) {
+        // CÙNG luật với nút 4 (`RE_LINK_SHEET`, nhận cả `/spreadsheets/u/<số>/d/`) — luật riêng ở đây từng chặn oan gói
+        // chỉ vì link tháng được copy từ trình duyệt đăng nhập nhiều tài khoản (YC-41 việc 1).
+        else if (!require('./gsheet-web-app').RE_LINK_SHEET.test(v)) {
           pham.push('link_thang["' + kyNay + '"] không phải link Google Sheet hợp lệ');
         }
       }

@@ -101,7 +101,8 @@ test('INV-7', 'Không in chuỗi bí mật / link Web App / link file tháng / I
         if (/(SECRET|chuoi_?[Bb]i[Mm]at|biMat)\s*[:=]\s*['"][^'"]{12,}['"]/.test(dong) && !/\bprocess\.env\b/.test(dong))
           viPham.push(path.relative(ROOT, p) + ':' + (i + 1) + ' gán chuỗi bí mật viết cứng');
         // link file tháng thật viết cứng trong mã: đó là đường vào sổ tiền của shop.
-        if (/https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{25,}/.test(dong))
+        // Có nhánh `u/<số>/` (YC-41): link copy từ trình duyệt đăng nhập nhiều tài khoản cũng là link thật.
+        if (/https:\/\/docs\.google\.com\/spreadsheets\/(?:u\/\d+\/)?d\/[A-Za-z0-9_-]{25,}/.test(dong))
           viPham.push(path.relative(ROOT, p) + ':' + (i + 1) + ' chứa link file Google Sheet thật');
       });
     }

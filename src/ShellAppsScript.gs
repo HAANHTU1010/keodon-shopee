@@ -39,8 +39,9 @@
  *  3. Deploy → New deployment → Web app → Execute as "Me" → Who has access "Anyone" → chép link `/exec`
  *     vào `google_sheet.web_app_url` của CAU_HINH_VAN_HANH.json.
  *  4. Sửa mã xong PHẢI Deploy → Manage deployments → bút chì → Version: New version → Deploy, nếu không
- *     link `/exec` vẫn chạy bản cũ. Mọi phản hồi kèm `phienBan` + `banDung`: lệch `PHIEN_BAN` là TỪ CHỐI
- *     GHI; lệch dấu vân tay bản dựng thì máy cảnh báo (`soDauVanTay` trong node/gsheet-web-app.js).
+ *     link `/exec` vẫn chạy bản cũ. Mọi phản hồi kèm `banWebApp` + `mayToiThieu` + `banDung`: bên nào DƯỚI MỐC
+ *     của bên kia là TỪ CHỐI GHI (YC-42, `MAY_TOI_THIEU` / `WEB_APP_TOI_THIEU`), khác bản trong khoảng thì máy nhắc
+ *     một dòng và vẫn ghi; cùng bản mà lệch dấu vân tay thì máy cảnh báo (`soDauVanTay` trong node/gsheet-web-app.js).
  *
  * ------------------------------------------------------------------ GIỚI HẠN 6 PHÚT
  *  Apps Script cắt một lần chạy ở 6 phút (360 giây) và cắt bằng cách NÉM NGOẠI LỆ giữa chừng — phần
@@ -56,11 +57,25 @@
  */
 
 /**
- * Số bản của vỏ Google. Phải khớp PHIEN_BAN trong `node/gsheet-web-app.js`.
- * Đổi số này MỖI KHI sửa hợp đồng gói JSON (thêm/bớt trường, đổi ý nghĩa hành động) rồi Deploy
- * New version. Không đổi thì Google im lặng chạy bản cũ và tool tưởng đã ghi đúng.
+ * Số bản của vỏ Google — bằng `PHIEN_BAN` trong `node/gsheet-web-app.js` và `version` của package.json khi phát hành.
+ * Mọi phản hồi đã qua cửa bí mật kèm bản thật này ở trường `banWebApp`.
  */
-var PHIEN_BAN = '2.6.1';
+var PHIEN_BAN = '2.7.0';
+
+/**
+ * YC-42: bản MÁY thấp nhất Web App này còn phục vụ gói ghi (`ghi`, `xuLy`, `taoThangMoi`). Dưới mốc → từ chối
+ * `LECH_PHIEN_BAN` với câu nói rõ máy cũ và việc phải làm; từ mốc trở lên thì phục vụ dù khác bản. Tới 2.6.1 cửa này đòi
+ * BẰNG tuyệt đối — lệch chiều nào cũng ngừng ghi, mỗi lần lên bản là một khoảng chết. CHỈ nâng mốc khi đổi GIAO THỨC.
+ */
+var MAY_TOI_THIEU = '2.5.0';
+
+/**
+ * Số `phienBan` sẽ trả cho gói ĐANG xử lý (đặt ở đầu `doPost`). Máy tới 2.6.1 có cửa BẰNG tuyệt đối: nó chỉ ghi khi
+ * `phienBan` trong phản hồi bằng đúng bản của nó. Với máy đó (gói không có `banMay`) mà bản còn trong khoảng, Web App trả
+ * lại đúng số máy gửi — nhờ vậy Deploy 2.7.0 lên trước không làm máy 2.6.1 ngừng ghi trong lúc chờ bấm nút 2. Bản thật của
+ * Web App luôn ở `banWebApp`. Máy từ 2.7.0 gửi `banMay` và nhận `phienBan` = bản thật.
+ */
+var PHIEN_BAN_TRA_LOI_ = '';
 
 /**
  * Khóa Script Property giữ chuỗi bí mật. GIỮ NGUYÊN từ bản 09/9 — chuỗi đã cài trên dự án Apps Script
@@ -219,7 +234,10 @@ function traLoi_(obj) {
   // Trước 13/9 `phienBan` vẫn lọt ở hai nhánh này — đó chính là chỗ rò còn lại của C-6.1.
   var chuaQuaCua = (o.loi === 'SAI_BI_MAT' || o.loi === 'CHUA_CAI_DAT');
   if (!chuaQuaCua) {
-    if (o.phienBan == null) o.phienBan = PHIEN_BAN;
+    if (o.phienBan == null) o.phienBan = PHIEN_BAN_TRA_LOI_ || PHIEN_BAN;
+    // YC-42: bản thật + mốc máy tối thiểu — máy từ 2.7.0 đọc hai trường này để xét khoảng tương thích.
+    if (o.banWebApp == null) o.banWebApp = PHIEN_BAN;
+    if (o.mayToiThieu == null) o.mayToiThieu = MAY_TOI_THIEU;
     // Dấu vân tay bản dựng đi kèm mọi phản hồi ĐÃ QUA CỬA (12 ký tự, rẻ) để máy so được mà không tốn
     // thêm một lượt gọi — thêm lượt `ping` sẽ phá các bài đang đếm chính xác số lượt gọi mạng.
     if (o.banDung == null && typeof BAN_DUNG !== 'undefined') o.banDung = BAN_DUNG;
@@ -227,10 +245,26 @@ function traLoi_(obj) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
 }
 
-/** Nguyên văn câu báo lệch phiên bản (GV-v2.3 mục 2.3). Bản Node phải giống hệt từng chữ. */
-function thongBaoLechPhienBan_(banThuc, banCan) {
-  return 'Web App đang chạy bản ' + banThuc + ', tool cần bản ' + banCan +
-    ' — hãy triển khai lại (Deploy → Manage deployments → New version).';
+/**
+ * YC-42: câu từ chối khi MÁY dưới mốc — viết cho người không rành máy: bên nào cũ, việc phải làm, tool chưa ghi gì.
+ * Bản Node (`thongBaoMayQuaCu` trong node/gsheet-web-app.js) phải giống hệt từng chữ — máy in nguyên văn câu này.
+ */
+function thongBaoMayQuaCu_(banMay, toiThieu) {
+  return 'MÁY NÀY ĐANG CHẠY BẢN QUÁ CŨ — máy là bản ' + banMay + ', Web App trên Google chỉ còn phục vụ máy từ bản ' + toiThieu +
+    ' trở lên. Tool CHƯA ghi gì. Việc phải làm: bấm 2_CAP_NHAT.bat, đợi báo cập nhật xong, rồi bấm lại.';
+}
+
+/** '2.6.1' ≥ '2.5.0'? So từng số. Không đọc được số bản (rỗng, chữ) → false: không đoán. */
+function banDuTu_(ban, moc) {
+  var re = /^\d+(\.\d+)+$/;
+  var a = String(ban == null ? '' : ban).trim(), b = String(moc == null ? '' : moc).trim();
+  if (!re.test(a) || !re.test(b)) return false;
+  var x = a.split('.'), y = b.split('.');
+  for (var i = 0; i < Math.max(x.length, y.length); i++) {
+    var p = Number(x[i] || 0), q = Number(y[i] || 0);
+    if (p !== q) return p > q;
+  }
+  return true;
 }
 
 function thangHienTai_() { return Utilities.formatDate(new Date(), MUI_GIO, 'yyyy-MM'); }
@@ -250,12 +284,13 @@ function chuanHoaThang_(x) {
 // ==================================================================== file tháng theo ID trong gói (D-42)
 
 /**
- * Link hoặc ID → spreadsheet ID. Nhận: link có '#gid=', link không có '/edit', và chuỗi ID trần (≥ 20 ký
- * tự, đúng bảng chữ của Google). Không nhận ra → '' (phía gọi tự báo lỗi, KHÔNG in lại giá trị nhận được).
+ * Link hoặc ID → spreadsheet ID. Nhận: link có '#gid=', link không có '/edit', link dạng `/spreadsheets/u/<số>/d/`
+ * (thanh địa chỉ khi trình duyệt đăng nhập nhiều tài khoản Google — YC-41 việc 1), và chuỗi ID trần (≥ 20 ký tự,
+ * đúng bảng chữ của Google). Không nhận ra → '' (phía gọi tự báo lỗi, KHÔNG in lại giá trị nhận được).
  */
 function bocIdTuLink_(x) {
   var t = String(x == null ? '' : x).trim();
-  var m = t.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  var m = t.match(/\/spreadsheets\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]+)/);
   if (m) return m[1];
   return /^[a-zA-Z0-9_-]{20,}$/.test(t) ? t : '';
 }
@@ -509,6 +544,7 @@ function doGet() {
 
 function doPost(e) {
   var batDau = new Date().getTime();
+  PHIEN_BAN_TRA_LOI_ = '';   // Apps Script dựng lại phạm vi toàn cục mỗi lượt gọi; giả lập thì không — xóa số của gói trước
   var body;
   try {
     body = JSON.parse(e && e.postData ? e.postData.contents : '{}');
@@ -518,6 +554,10 @@ function doPost(e) {
 
   var hd = String(body.hanhDong || '').trim().toLowerCase();
   var mongDoi = body.phienBanMongDoi == null ? '' : String(body.phienBanMongDoi);
+  // YC-42: máy từ 2.7.0 gửi bản THẬT của nó ở `banMay`; máy cũ hơn (cửa bằng tuyệt đối) chỉ gửi `phienBanMongDoi` = bản của nó.
+  var coBanMay = body.banMay != null && String(body.banMay).trim() !== '';
+  var banMay = coBanMay ? String(body.banMay).trim() : mongDoi;
+  PHIEN_BAN_TRA_LOI_ = (!coBanMay && mongDoi && banDuTu_(mongDoi, MAY_TOI_THIEU)) ? mongDoi : PHIEN_BAN;
 
   // CỬA BÍ MẬT — đặt TRƯỚC mọi nhánh hành động, kể cả 'ping'. Gói giao user mang sẵn chuỗi nên user
   // không phải gõ gì; ai không có gói thì không qua được cửa này.
@@ -531,14 +571,12 @@ function doPost(e) {
     return traLoi_({ ok: false, loi: 'CHUA_CAI_DAT', thongBao: String(err && err.message ? err.message : err) });
   }
 
-  // Lệch bản thì TỪ CHỐI GHI. Chặn cả hai nhánh có ghi ('ghi' và 'xuLy'); 'ping' và 'doc' phải chạy được
-  // để người ta nhìn thấy con số lệch mà đi triển khai lại — chặn luôn cả hai thì chỉ còn lỗi "không gọi
-  // được". Chiều ngược lại (Google đang chạy bản CŨ, chưa có đoạn này) do phía máy tính bắt: nó so
-  // `phienBan` trong phản hồi trước khi gửi lệnh ghi — bản cũ không trả trường đó là đủ để dừng. Với
-  // 'xuLy' còn một chiều nữa: bản cũ không biết hành động này nên trả HANH_DONG_LA, và phía máy dịch mã
-  // đó thành đúng câu "hãy Deploy lại" chứ không im lặng coi như đã ghi.
-  if ((hd === 'ghi' || hd === 'xuly' || hd === 'taothangmoi') && mongDoi && mongDoi !== PHIEN_BAN) {
-    return traLoi_({ ok: false, loi: 'LECH_PHIEN_BAN', thongBao: thongBaoLechPhienBan_(PHIEN_BAN, mongDoi) });
+  // Máy DƯỚI MỐC thì TỪ CHỐI GHI (YC-42 — khoảng tương thích, không còn đòi bằng tuyệt đối). Chặn các nhánh có ghi
+  // ('ghi', 'xuLy', 'taoThangMoi'); 'ping' và 'doc' phải chạy được để người ta nhìn thấy con số mà đi cập nhật — chặn luôn
+  // thì chỉ còn lỗi "không gọi được". Chiều ngược lại (Google dưới mốc của máy) do phía máy bắt: nó xét `banWebApp` /
+  // `phienBan` trong phản hồi trước khi gửi lệnh ghi. Gói không khai bản nào (công cụ chạy tay) giữ như cũ: không xét.
+  if ((hd === 'ghi' || hd === 'xuly' || hd === 'taothangmoi') && banMay && !banDuTu_(banMay, MAY_TOI_THIEU)) {
+    return traLoi_({ ok: false, loi: 'LECH_PHIEN_BAN', thongBao: thongBaoMayQuaCu_(banMay, MAY_TOI_THIEU) });
   }
 
   try {
@@ -2340,6 +2378,6 @@ function chayBoTest() {
   return 'Tổng ' + kq.length + ' · hỏng ' + hong.length;
 }
 
-var VAN_TAY_SHELL = '450d5d77';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_SHELL = 'bafb2742';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
 
-var BAN_DUNG = '01e6c75f7ce3';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay
+var BAN_DUNG = 'f76c2f20dc04';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay

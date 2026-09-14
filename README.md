@@ -101,6 +101,7 @@ quả khác nhau trên cùng một sổ. Nay máy chỉ gửi bảng dòng đã 
     dong-goi.js             dựng gói giao user, tự kiểm, nén ra .zip
     dau-van-tay.js          băm từng file src/ để biết Google đang chạy bản nào
     nghiem-thu.js           bộ nghiệm thu trên dữ liệu thật tháng 8
+    mui-gio-du-an.js        ghim múi giờ tiến trình test theo `src/appsscript.json` — cho bộ chấm giờ do mã .gs tự sinh
     test-*.js               16 bộ test, xem bảng ở phần 4
     fixtures/               dữ liệu test đã lọc sạch thông tin người mua
 
@@ -135,20 +136,26 @@ Số bài lấy từ dòng tổng kết mỗi bộ tự in ra; chạy lại là 
 | `npm test` | `T-xx`, `FR-21` | lõi lớp 1–2–3 trong bộ nhớ; lớp 2/3 không biết tên sàn |
 | `npm run test-node` | `N-xx` | vỏ Excel trên file thật: đọc, ghi, đổi tên file, khóa chống chạy chồng |
 | `npm run test-bat-bien` | `INV-1…INV-11` | các bất biến ở phần 5 (INV-11: trước/sau một lượt ghi trên file DEMO tháng 9 thật) — vi phạm một cái là hỏng cả đợt |
-| `npm run test-dinh-tuyen` | `T-DT-xx` | tra `link_thang`, mở file theo ID, kiểm chéo tên file, chống ghi lùi |
+| `npm run test-dinh-tuyen` | `T-DT-xx` | tra `link_thang`, mở file theo ID, kiểm chéo tên file, chống ghi lùi; T-DT-47…50 link dạng `/spreadsheets/u/<số>/d/` hai phía, quét mọi mẫu link trong mã, `link_thang` cũ vẫn đọc đúng; T-DT-21…24 cửa phiên bản theo khoảng (YC-42) |
 | `npm run test-xu-ly` | `T-XL-xx` | hai đường `ghi`/`xuLy` cho ra file giống nhau TỪNG Ô; tô lại tab Mapping |
-| `npm run test-web-app` | `T-WA-xx` | lỗi mạng, lệch phiên bản, quyền truy cập, cửa chuỗi bí mật, khóa hai máy |
+| `npm run test-web-app` | `T-WA-xx` | lỗi mạng, lệch phiên bản, quyền truy cập, cửa chuỗi bí mật, khóa hai máy; T-WA-32 thời gian chờ nút 4 ≥ ngưỡng `xuLy` của `.gs` + 60 giây; T-WA-33 ma trận máy × Google (YC-42) trên đường `xuLy`, gồm máy/Google 2.6.1 cửa cũ |
 | `npm run test-chep-cong-thuc` | `T-CT-xx` | chép công thức E/F/L/M/N xuống dòng mới, dấu thời gian ô P1 |
 | `npm run test-quyen-mo-file` | `T-QM-xx` | Google từ chối mở/ghi file → câu tiếng Việt nói đúng việc phải làm |
 | `npm run test-gia-von-0` | — | bán trúng lô giá vốn 0 → tô vàng + ghi chú |
-| `npm run test-nut-van-hanh` | `N-xx` | bốn file `.bat`: ASCII, CRLF, cái bẫy `!`, câu báo lỗi; nút 3 (N-33, N-36…N-42): 7 trường, từng trường sai, khoảng trắng, ghi đè khóa bằng file tạm, chế độ 1 lệch K không ghi link |
-| `npm run test-dong-goi` | `DG-xx`, `CN-xx` | gói giao user và nút cập nhật — chạy `.bat` thật bằng `cmd.exe` |
+| `npm run test-nut-van-hanh` | `N-xx` | bốn file `.bat`: ASCII, CRLF, cái bẫy `!`, câu báo lỗi; nút 3 (N-33, N-36…N-43): 7 trường, từng trường sai, khoảng trắng, ghi đè khóa bằng file tạm, chế độ 1 lệch K không ghi link, link `u/<số>`; N-44 chạy thật nút 1, 2, 4 trong thư mục có dấu `!`; N-45 `2_CAP_NHAT.bat /lui` |
+| `npm run test-dong-goi` | `DG-xx`, `CN-xx` | gói giao user và nút cập nhật — chạy `.bat` thật bằng `cmd.exe`; DG-13 link tháng `u/<số>` trong gói |
 | `npm run test-dau-van-tay` | `DV-xx` | dấu vân tay bản dựng; hằng và hàm mà máy trông đợi ở vỏ Google |
-| `npm run test-tao-thang-moi` | `TM-01…TM-12` | chuyển sổ sang tháng mới, đo trên cặp tháng 8→9 thật |
+| `npm run test-tao-thang-moi` | `TM-01…TM-13` | chuyển sổ sang tháng mới, đo trên cặp tháng 8→9 thật; TM-13 thao tác `KEO_CT` hai vỏ ra cùng một cột |
 | `npm run test-gian-hang` | `T-GH-xx` | file thả nhầm thư mục gian hàng: luật D-04 trên 12 file xuất thật, và vỏ Google chặn trước khi ghi |
 | `npm run test-hop-dong` | `T-HD-xx` | YC-38.1 hợp đồng file tháng: lệch khuôn → `SAI_HOP_DONG` trước lệnh ghi đầu tiên; không chặn oan khuôn thật; Mapping ghi THEO TÊN CỘT |
 | `npm run test-dong-run` | `T-RUN-xx` | YC-38.3 dòng tổng kết RUN: RUN id giờ Việt Nam, Web App ghi nhật ký + trả số dòng CÓ và băm Mapping, thả lại cùng file ra cùng dòng |
-| `npm run test-tao-thang-moi-web` | `TM-W-xx` | YC-35 hành động `taoThangMoi` trên Web App giả, chạy trên file tháng 9 khuôn mới (bản sao → tháng 10) và tháng 8 thật (TM-01…TM-12); TM-W-19…22 phía máy trọn đường: nút 3 → `WebAppGoogleSheet.taoThangMoi` → Web App giả |
+| `npm run test-tao-thang-moi-web` | `TM-W-xx` | YC-35 hành động `taoThangMoi` trên Web App giả, chạy trên file tháng 9 khuôn mới (bản sao → tháng 10) và tháng 8 thật (TM-01…TM-12); TM-W-19…22 phía máy trọn đường: nút 3 → `WebAppGoogleSheet.taoThangMoi` → Web App giả; bộ này GHIM múi giờ dự án (TM-W-25) |
+
+**Bộ test phải 0 hỏng ở MỌI múi giờ máy**, không riêng giờ Việt Nam. Thử lại trước khi push:
+`TZ=UTC npm run test-tat-ca` (Git Bash) hoặc `$env:TZ='UTC'; npm run test-tat-ca` (PowerShell). Tên múi giờ có dấu `/`
+(`America/Los_Angeles`) đặt từ Git Bash sẽ bị MSYS đổi mất trước khi tới Node — đặt từ PowerShell. Bộ nào chấm giờ/ngày
+do mã `.gs` tự sinh thì gọi `ghimMuiGioDuAn()` (`node/mui-gio-du-an.js`) ở dòng đầu, vì trên Google mã đó chạy theo
+`timeZone` của `appsscript.json`; bộ canh phía MÁY thì KHÔNG ghim (máy user có thể đặt sai múi giờ thật — T-DT-44).
 
 **Luật số một của bộ test: mọi tiêu chí phải có đối chứng âm.** Dựng lại đúng khuyết tật nó phải bắt, rồi
 chứng minh phép chấm báo TRƯỢT. Một phép kiểm chỉ có bài ĐẠT là một phép kiểm chưa được kiểm — bệnh này
@@ -229,22 +236,29 @@ dòng đó là sinh ra ca mất đơn mà không ai biết — file đã đi kh�
   mồ côi.
 - **Sửa `.gs` xong PHẢI Deploy bản mới.** Lưu thôi là chưa đủ: link `/exec` vẫn chạy bản đã deploy, và
   Google không báo gì cả. Đây là cái bẫy tốn thời gian nhất của cả dự án. Deploy → Manage deployments →
-  bút chì → Version: **New version** → Deploy. Hai lớp canh: `PHIEN_BAN` hai vỏ phải bằng nhau, và dấu vân
-  tay bản dựng (`BAN_DUNG`) so băm từng file.
+  bút chì → Version: **New version** → Deploy. Hai lớp canh: số bản theo khoảng tương thích (`WEB_APP_TOI_THIEU` ở
+  máy, `MAY_TOI_THIEU` ở Google — dưới mốc là chặn, khác bản trong khoảng là nhắc một dòng), và dấu vân tay bản dựng
+  (`BAN_DUNG`) so băm từng file khi hai bên cùng số bản. Nút 1 bước 5 in bản thật trên Google và `KHOP`/`KHAC` dấu vân
+  tay — dùng nó để kiểm đã Deploy đúng chưa.
 - **Web App để access "Anyone"** vì user không đăng nhập Google khi bấm nút. Cửa khóa bằng **chuỗi bí
   mật** trong mỗi gói POST, so bằng SHA-256 hai phía. Gói giao user mang sẵn chuỗi — nên **gói là thứ
   phải giữ**, chỉ đi kênh nội bộ.
 - **Giới hạn 6 phút.** Lô 200 đơn, khối 100 dòng, tự dừng ở ngưỡng 240 giây rồi báo máy gọi tiếp. Tô màu
   phải gọi `setBackgrounds` một lần cho cả vùng; tô từng ô là nguyên nhân số một gây hết giờ.
-- **Tạo tháng chờ 400 giây mỗi lượt, không phải 180.** `taoThangMoi` tự dừng gọn ở 270 giây, và bước dở
-  được lượt sau chạy TỚI CÙNG không canh giờ (`buocDungTruoc`) — một lượt có thể đi sát trần 6 phút. Chờ 180 giây như
-  kéo đơn là máy báo "không trả lời" trong khi Google vẫn đang chuyển sổ (`TIMEOUT_TAO_THANG_MS`, bài TM-W-19).
+- **Máy chờ Google đủ lâu.** Kéo đơn chờ 300 giây mỗi lượt (`TIMEOUT_MS`): `xuLy` tự dừng gọn ở 240 giây rồi còn
+  làm nốt khối đang ghi — chờ 180 như bản cũ là máy báo "không trả lời" giữa lúc Google vẫn ghi (T-WA-32 đọc 240 thẳng
+  từ `.gs`). Tạo tháng chờ 400 giây: `taoThangMoi` tự dừng ở 270 giây, và bước dở được lượt sau chạy TỚI CÙNG không
+  canh giờ (`buocDungTruoc`) — một lượt có thể đi sát trần 6 phút (`TIMEOUT_TAO_THANG_MS`, bài TM-W-19).
 - **Chuỗi trông như ngày bị Google đổi kiểu.** `setValues([['2026-10']])` vào ô chưa ép `@` là thành ngày 01/10/2026.
   Ô cờ `THANG` (O2) của tạo tháng vì thế ghi với định dạng `@` ĐẶT TRƯỚC giá trị (`ghiKhoiO_`), và lõi đọc cờ qua
   `chuanThangCo` (Date → `yyyy-MM`). Giả lập chỉ bắt chước bẫy này khi bật `taoGiaLap({ epNgayNhuGoogle: true })` — bài TM-W-24.
 - **Định tuyến tháng nằm trên MÁY** (`link_thang` trong `CAU_HINH_VAN_HANH.json`), không nằm trên Google.
   Máy gửi `spreadsheetId` trong gói. Không có link của tháng đang chạy thì **dừng**, không ghi lùi vào
   tháng trước. Web App còn kiểm chéo tên file với tháng và từ chối nếu lệch.
+- **Link Google Sheet có HAI dạng**: `…/spreadsheets/d/<ID>…` và `…/spreadsheets/u/<số>/d/<ID>…` — dạng sau là thanh địa
+  chỉ khi trình duyệt đăng nhập nhiều tài khoản Google, tức dạng user copy ra nhiều hơn cả. Mọi mẫu nhận hay CHE link
+  phải có nhánh `(?:u\/\d+\/)?` (2.6.1 thiếu ở tám chỗ: nút 3 báo sai ba lượt rồi thoát, nút 4 báo "không phải link").
+  Phía máy dùng chung `RE_LINK_SHEET`; T-DT-49 quét cả `src/` lẫn `node/` tìm mẫu thiếu nhánh.
 
 ### 6.4. Vỏ vận hành trên Windows
 
@@ -253,8 +267,11 @@ dòng đó là sinh ra ca mất đơn mà không ai biết — file đã đi kh�
   Chữ tiếng Việt có dấu nằm trong mã Node, không nằm trong `.bat`.
 - **`chcp 65001 >nul` ở đầu file `.bat`** là để **đầu ra của Node** hiện đúng tiếng Việt, không phải để
   cho chữ trong `.bat` có dấu.
-- **Dấu `!` bị `cmd.exe` nuốt** trong khối `setlocal enabledelayedexpansion`. Câu báo lỗi có dấu chấm than
-  sẽ mất chữ mà không báo gì.
+- **Dấu `!` bị `cmd.exe` nuốt** khi bật `setlocal enabledelayedexpansion` — trong câu báo lỗi, trong đoạn JS của
+  `node -e`, và tệ nhất là trong ĐƯỜNG DẪN: cài tool vào thư mục có `!` thì nút báo "không tìm thấy cấu hình" dù file
+  nằm ngay đó. Từ 2.7.0 **không nút nào bật** delayed expansion và không file `.bat` nào có dấu `!` (N-44). Mã thoát của
+  một lệnh chạy trong khối `if (...)` thì đọc bằng `goto` ra ngoài khối: trong khối, `%ERRORLEVEL%` đã bị thay giá trị
+  từ lúc cmd đọc cả khối, trước khi lệnh chạy (bước 5 nút 1).
 - **File văn bản cho người dùng ghi kèm BOM** (`LOG_*.txt`, `.csv`), nếu không Notepad và Excel mở ra
   thành ký tự rác. Ngược lại **`CAU_HINH_VAN_HANH.json` phải cắt BOM trước khi `JSON.parse`** — Notepad
   hay lưu kèm BOM và làm parse chết.
@@ -272,11 +289,17 @@ kho: chiều đi là `bat/` → `03_VAN_HANH/`, và `DG-06` bắt mọi khác bi
 | Nút | Việc |
 |---|---|
 | `1_CAI_DAT_LAN_DAU.bat` | 6 bước kiểm: Node, mã nguồn, thư viện, cấu hình, gọi thử Web App, kết luận |
-| `2_CAP_NHAT.bat` | tải bản mã mới nhất từ GitHub. **Không bao giờ ghi đè `CAU_HINH_VAN_HANH.json`** — chỉ THÊM khóa còn thiếu |
+| `2_CAP_NHAT.bat` | tải bản mã mới nhất từ GitHub. **Không bao giờ ghi đè `CAU_HINH_VAN_HANH.json`** — chỉ THÊM khóa còn thiếu. Sao lưu bản đang chạy vào `Cấu hình\_ban_cu_<yyyyMMdd_HHmm>` (giữ 3) và in đường lùi. `2_CAP_NHAT.bat /lui` chép ngược bản sao lưu gần nhất CŨ HƠN bản đang chạy (bấm lại là lùi thêm một bản; hết bản cũ hơn → mã 11), không đụng cấu hình (N-45) |
 | `3_TAO_FILE_THANG_MOI.bat` | hỏi 7 trường. Chế độ 1: chuyển sổ trên Google (`taoThangMoi`), đủ 8/8 phép K mới khai `link_thang`. Chế độ 2: chỉ khai `link_thang`, không gọi mạng. File `.bat` chỉ tìm cấu hình/mã/Node rồi gọi `node/nut-3-thang-moi.js` |
 | `4_CHAY_TOOL.bat` | nút dùng hằng ngày |
 
-Nút 2 không tự ghi đè chính nó — Windows khóa file `.bat` đang chạy. Nó in một dòng nhắc thay vì chép.
+Nút 2 không tự ghi đè chính nó — Windows khóa file `.bat` đang chạy. Nó in một dòng nhắc thay vì chép. Hệ quả: sửa
+`2_CAP_NHAT.bat` (như `/lui` ở 2.7.0) chỉ tới máy nào nhận **gói giao mới** hoặc được chép tay file đó; máy đã cài vẫn
+chạy nút 2 cũ và in "Nut cap nhat co ban moi" mỗi lần cập nhật.
+
+**Trên máy chủ dự án, nút 2 trong `03_VAN_HANH` cập nhật THẲNG vào kho mã** (`..\02_CODE\keodon-apps-script`, vì
+`Cấu hình\keodon-apps-script` không tồn tại). Kho đang có bản mới hơn GitHub thì nó chỉ báo "đang là bản mới nhất";
+nhưng nếu kho đang ở nhánh phụ với `version` CŨ HƠN `main` trên GitHub, bấm nút 2 ở đó là mã GitHub đè lên kho.
 
 Gói giao user (`npm run dong-goi`) mang bốn nút, thư mục thả file, cấu hình **đầy đủ giá trị thật**, bản
 Node xách tay và một trang hướng dẫn. Không mang `src/` và `node/`: mã tới máy user bằng **một đường duy
@@ -288,7 +311,15 @@ nhất** là nút 2, nên không thể có chuyện máy này một bản, máy 
 
 1. `npm run test-tat-ca` → 0 hỏng. Không sửa test để cho qua.
 2. Sửa `src/*.gs` → `npm run dau-van-tay -- --ghi`.
-3. Tăng `version` trong `package.json` (nút 2 chỉ tải khi số lớn hơn) và `PHIEN_BAN` trong **cả hai** vỏ.
+3. Tăng `version` trong `package.json` (nút 2 chỉ tải khi số lớn hơn) và `PHIEN_BAN` trong **cả hai** vỏ cho bằng nó
+   (T-DT-23 canh). Từ 2.7.0 cửa phiên bản là **khoảng tương thích** (YC-42): máy chặn khi Web App dưới
+   `WEB_APP_TOI_THIEU`, Google chặn khi máy dưới `MAY_TOI_THIEU`; khác bản trong khoảng thì chỉ nhắc một dòng. Hai mốc
+   **chỉ nâng khi đổi giao thức** (thêm/đổi trường trong thân POST, đổi tên hành động) và phải nêu trong báo cáo — nâng
+   mốc là quay lại cảnh "Deploy và nút 2 phải sát nhau". Máy tới 2.6.1 còn cửa BẰNG tuyệt đối: Google trả `phienBan` =
+   đúng bản máy đó gửi (nếu còn trong khoảng) để nó không tự chặn, máy mới gửi `phienBanMongDoi` = bản Google cửa cũ báo
+   (`banGuiDi`). Đừng gỡ hai lớp tương thích đó chừng nào còn máy/Google tới 2.6.1 (T-WA-33 dựng đúng hai ca này).
 4. Đổi `.gs` thì nêu rõ trong `BAO_CAO_DEV.md` để chủ dự án dán lại và Deploy **trước khi** user bấm nút 2.
+   Đổi `2_CAP_NHAT.bat` thì máy đã cài sẽ in "Nut cap nhat co ban moi" mỗi lần bấm nút 2 (nó không tự ghi đè chính nó) —
+   nêu rõ trong báo cáo, vì user sẽ thấy dòng đó.
 5. Kho này **công khai**. Không link `/exec`, không chuỗi bí mật, không link file tháng, không số liệu
    thật của shop. `INV-7` quét mỗi lượt chạy test, nhưng đừng dựa vào nó thay cho việc tự nhìn lại.

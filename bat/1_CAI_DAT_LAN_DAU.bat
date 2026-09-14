@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-setlocal enabledelayedexpansion
+setlocal
 cd /d "%~dp0"
 title Cai dat lan dau
 
@@ -19,7 +19,11 @@ rem    4. Kiem link Web App va chuoi bi mat           - trong thi NHAC, khong ch
 rem    5. Goi thu  ping  len Web App
 rem    6. Ket luan mot dong
 rem
-rem  CA FILE PHAI LA ASCII THUAN VA XUONG DONG CRLF - NOTES_DEV muc 4.1.
+rem  CA FILE PHAI LA ASCII THUAN VA XUONG DONG CRLF - README.md muc 6.4.
+rem  KHONG bat enabledelayedexpansion (YC-41 viec 5, giong nut 3): bat len thi cmd
+rem  nuot mat dau cham than trong duong dan cai dat - ca bon buoc tim thu muc,
+rem  tim Node, keo ma deu sai duong. Vi vay ca file KHONG co dau cham than nao,
+rem  va ma thoat cua lenh node o buoc 5 doc bang goto chu khong doc trong khoi (...).
 rem  Ten thu muc  Cau hinh  va  da xu ly  co dau tieng Viet nen phai DO
 rem  chu khong go thang duoc.
 rem ============================================================
@@ -175,14 +179,18 @@ if "%MAGS%"=="0" (
 )
 
 rem ---- 5. Goi thu ping len Web App ---------------------------------------
+rem  Viet bang goto, KHONG viet trong khoi if (...): trong khoi, %ERRORLEVEL% da bi
+rem  thay gia tri tu luc cmd doc ca khoi - TRUOC khi node chay - nen ping hong van ra 0
+rem  va buoc 6 bao SAN SANG sai.
 set "MAPING=9"
-if "%MAGS%"=="0" (
-  echo [5/6] Goi thu len Web App tren Google...
-  "%NODE%" -e "var W=require(process.argv[1]).WebAppGoogleSheet;var fs=require('fs');var s=fs.readFileSync(process.argv[2],'utf8').replace(/^\uFEFF/,'');var c=JSON.parse(s);var g=c.google_sheet||{};g.bat=true;var w;try{w=new W(g);}catch(e){console.error('      CHUA DIEN DU CAU HINH: '+e.message);process.exit(2);}w.ping().then(function(r){console.log('      Web App tra loi OK.');console.log('      Ban dang Deploy tren Google : '+r.phienBan);console.log('      Thang may chu Google dang o : '+r.thangHienTai);process.exit(0);},function(e){console.error('      GOI KHONG DUOC: '+e.message);process.exit(1);});" "%TOOL%\node\gsheet-web-app.js" "%CFG%"
-  set "MAPING=!ERRORLEVEL!"
-) else (
-  echo [5/6] Goi thu len Web App: BO QUA vi chua dien du cau hinh
-)
+if not "%MAGS%"=="0" goto bo_qua_ping
+echo [5/6] Goi thu len Web App tren Google...
+"%NODE%" -e "var W=require(process.argv[1]).WebAppGoogleSheet;var fs=require('fs');var s=fs.readFileSync(process.argv[2],'utf8').replace(/^\uFEFF/,'');var c=JSON.parse(s);var g=c.google_sheet||{};g.bat=true;var w;try{w=new W(g);}catch(e){console.error('      CHUA DIEN DU CAU HINH: '+e.message);process.exit(2);}w.ping().then(function(r){console.log('      Web App tra loi OK.');console.log('      Ban dang Deploy tren Google : '+(r.banWebApp||r.phienBan));var v='';try{v=String(require(process.argv[3]).tinh().tong);}catch(e){v='';}console.log('      Ban dung tren Google        : '+(r.banDung||'(khong co)')+(v===''?'':(String(r.banDung)===v?'  = KHOP ma tren may nay':'  - KHAC ma tren may nay: '+v)));console.log('      Thang may chu Google dang o : '+r.thangHienTai);process.exit(0);},function(e){console.error('      GOI KHONG DUOC: '+e.message);process.exit(1);});" "%TOOL%\node\gsheet-web-app.js" "%CFG%" "%TOOL%\node\dau-van-tay.js"
+set "MAPING=%ERRORLEVEL%"
+goto sau_ping
+:bo_qua_ping
+echo [5/6] Goi thu len Web App: BO QUA vi chua dien du cau hinh
+:sau_ping
 
 rem ---- 6. Ket luan -------------------------------------------------------
 echo.

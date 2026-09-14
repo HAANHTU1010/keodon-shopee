@@ -32,7 +32,9 @@ const fs = require('fs');
 const path = require('path');
 const gw = require('./gsheet-web-app');
 
-const TIEN_TO_LINK = 'https://docs.google.com/spreadsheets/d/';
+// Tiền tố chung của MỌI link Google Sheet — dừng trước `d/` vì link từ trình duyệt đăng nhập nhiều tài khoản có
+// thêm `u/<số>/` ở giữa (YC-41 việc 1). Phần sau tiền tố do `gw.RE_LINK_SHEET` chấm.
+const TIEN_TO_LINK = 'https://docs.google.com/spreadsheets/';
 const SO_LUOT_HOI_TOI_DA = 3;
 
 /** Nguyên văn đề bài YC-34 (ASCII — cửa sổ đen nào cũng hiện đúng). Câu 7 thêm một dòng nhắc chỗ gõ. */
@@ -68,7 +70,8 @@ function kiemNam(x) {
 }
 
 /**
- * Link `trim()` rồi phải bắt đầu bằng `https://docs.google.com/spreadsheets/d/` (đề bài), VÀ có mã file ≥ 20 ký tự
+ * Link `trim()` rồi phải bắt đầu bằng `https://docs.google.com/spreadsheets/`, theo sau là `d/` hoặc `u/<số>/d/`
+ * (YC-41: dạng thứ hai là thanh địa chỉ khi trình duyệt đăng nhập nhiều tài khoản Google), VÀ có mã file ≥ 20 ký tự
  * sau `/d/` — cùng luật `RE_LINK_SHEET` mà nút 4 dùng để rút ID. Nhận link thiếu mã là ghi vào `link_thang` một dòng
  * mà ngày mai nút 4 sẽ từ chối.
  */
@@ -117,7 +120,9 @@ function kyHienTai(thoiDiem) { return gw.thangHienTaiMay(thoiDiem); }
 function cauDaGhi(ky, thoiDiem) {
   const nay = kyHienTai(thoiDiem);
   const dau = 'DA GHI link thang ' + ky + '.';
-  if (ky === nay) return dau + ' Tu ngay mai nut 4 se ghi vao file nay.';
+  // D-65 (chủ dự án duyệt 14/9, thay câu nguyên văn đề bài YC-34 "Tu ngay mai…"): khai cho tháng ĐANG chạy thì nút 4 ghi
+  // vào file này NGAY lượt bấm tới, không phải từ ngày mai.
+  if (ky === nay) return dau + ' Tu bay gio nut 4 se ghi vao file nay.';
   // Tháng sau: "từ ngày mai" là sai — nút 4 lấy tháng theo NGÀY CHẠY, nên phải tới ngày 1 của tháng đó.
   if (ky > nay) return dau + ' Tu ngay 1/' + Number(ky.slice(5)) + '/' + ky.slice(0, 4) + ' nut 4 se ghi vao file nay.';
   return dau + ' Thang nay da qua: nut 4 chi ghi vao file nay khi chay tay voi --thang ' + ky + '.';
@@ -291,7 +296,7 @@ async function chay(tc) {
   const che = (s) => {
     let t = String(s == null ? '' : s);
     cheDs.forEach((x) => { t = t.split(x).join(gw.RE_LINK_SHEET.test(x) ? '<link file tháng>' : '<ID file tháng>'); });
-    return t.replace(/https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]+[^\s"')]*/g, '<link file tháng>')
+    return t.replace(/https:\/\/docs\.google\.com\/spreadsheets\/(?:u\/\d+\/)?d\/[A-Za-z0-9_-]+[^\s"')]*/g, '<link file tháng>')
       .replace(/https:\/\/script\.google(usercontent)?\.com\/[^\s"')]*/g, '<link Web App>');
   };
   const nhat = [];
@@ -545,7 +550,7 @@ if (require.main === module) {
     .then((ma) => { daCoKetQua = true; process.exit(ma); }, (e) => {
       daCoKetQua = true;
       const s = String(e && e.message || e)
-        .replace(/https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]+[^\s"']*/g, '<link file tháng>')
+        .replace(/https:\/\/docs\.google\.com\/spreadsheets\/(?:u\/\d+\/)?d\/[A-Za-z0-9_-]+[^\s"']*/g, '<link file tháng>')
         .replace(/https:\/\/script\.google(usercontent)?\.com\/[^\s"']*/g, '<link Web App>')
         .replace(/[A-Za-z0-9_-]{25,}/g, '<mã>');
       console.log('LỖI KHÔNG ĐOÁN TRƯỚC: ' + s);
