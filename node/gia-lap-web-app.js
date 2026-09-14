@@ -11,7 +11,8 @@
  * ------------------------------------------------------------------ KIẾN TRÚC BA TẦNG
  *  Tầng 1 — MÁY TÍNH (mã thật, không đụng):  node/chay-google-sheet.js → node/gsheet-web-app.js
  *  Tầng 2 — ĐƯỜNG TRUYỀN (giả, ở đây):       shim `https` + bơm lỗi (302 · 500 · HTML đăng nhập ·
- *                                            401/403 · hết giờ · đứt giữa chừng · lệch phiên bản)
+ *                                            401/403 · hết giờ · đứt giữa chừng · lệch phiên bản ·
+ *                                            chuỗi chuyển hướng nhiều nấc / không Location / thân rỗng — 2.7.1)
  *  Tầng 3 — APPS SCRIPT (mã thật, không đụng): src/ShellAppsScript.gs chạy trong Node nhờ bộ dịch vụ
  *                                            Google giả (SpreadsheetApp, PropertiesService,
  *                                            LockService, ContentService, Utilities, Logger)
@@ -724,9 +725,56 @@ function taoGiaLap(tc) {
   // ---------------------------------------------------------- xử lý một gói POST
   const doiTuongLoi = () => sim.loi || {};
 
-  function phanHoiJson(chuoi) {
+  /**
+   * CHUỖI CHUYỂN HƯỚNG GIẢ (2.7.1) — `sim.datLoi({ soNac, cuoi, chuyenHuongCho, truocKhiChay, giuKhoa, tuongDoi })`.
+   * Không có `soNac` lẫn `cuoi` → `null`: đường mặc định cũ (một nấc 302 → 200 JSON), mọi bộ test cũ chạy y nguyên.
+   *   soNac          số phản hồi 3xx (POST là nấc 1, các GET sau) — mặc định 1
+   *   cuoi           'json' (200 JSON thật) · 'rong200' (200 thân rỗng) · 'khongLocation' (nấc 3xx CUỐI không có Location) — mặc định 'json'
+   *   chuyenHuongCho CHỈ áp cho hành động này ('taothangmoi', 'ping', 'doc'…); bỏ trống = mọi hành động
+   *   truocKhiChay   true = trả chuỗi hỏng MÀ KHÔNG chạy doPost (Google chưa chạy); mặc định chạy doPost thật rồi mới trả chuỗi
+   *   giuKhoa        true = sau khi doPost chạy, đặt `sim.khoaBiMayKhacGiu = true` (Google "vẫn đang chạy" — lượt coTaoThang thấy dangChay)
+   *   tuongDoi       true = Location là đường dẫn TƯƠNG ĐỐI (`/macros/echo?…`), máy phải tự ghép máy chủ
+   */
+  function chuoiChuyenHuongCho(l, hd) {
+    if (l.soNac == null && l.cuoi == null) return null;
+    if (l.chuyenHuongCho != null && String(l.chuyenHuongCho).trim().toLowerCase() !== hd) return null;
+    const soNac = l.soNac == null ? 1 : Number(l.soNac);
+    const cuoi = l.cuoi == null ? 'json' : String(l.cuoi);
+    if (!(soNac >= 0) || Math.floor(soNac) !== soNac || ['json', 'rong200', 'khongLocation'].indexOf(cuoi) < 0) {
+      throw new Error('GIẢ LẬP: chuỗi chuyển hướng sai cấu hình (soNac ' + l.soNac + ', cuoi ' + l.cuoi + ')');
+    }
+    if (cuoi === 'khongLocation' && soNac < 1) throw new Error('GIẢ LẬP: cuoi = khongLocation cần soNac ≥ 1');
+    if (l.truocKhiChay && cuoi === 'json') {
+      throw new Error('GIẢ LẬP: truocKhiChay (Google chưa chạy) không đi với cuoi = json — không có JSON nào để trả');
+    }
+    return { soNac: soNac, cuoi: cuoi, truocKhiChay: l.truocKhiChay === true, giuKhoa: l.giuKhoa === true, tuongDoi: l.tuongDoi === true };
+  }
+
+  /**
+   * Dựng chuỗi từ CUỐI về ĐẦU: phản hồi 3xx thứ i trỏ Location tới địa chỉ của phản hồi i+1 (khóa kho = NGUYÊN chuỗi địa chỉ, dùng
+   * một lần). Trả phản hồi của POST. `chuoi` = thân JSON thật (null khi Google chưa chạy).
+   */
+  function dungChuoiChuyenHuong(ch, chuoi) {
+    let sau = ch.cuoi === 'json' ? { statusCode: 200, headers: { 'content-type': 'application/json' }, body: chuoi }
+      : ch.cuoi === 'rong200' ? { statusCode: 200, headers: { 'content-type': 'application/binary' }, body: '' } : null;
+    for (let i = ch.soNac; i >= 1; i--) {
+      // Đo thật 14/9: nấc chuyển hướng của Apps Script mang content-type application/binary, thân 0 byte.
+      const pt = { statusCode: 302, headers: { 'content-type': 'application/binary' }, body: '' };
+      if (!(ch.cuoi === 'khongLocation' && i === ch.soNac)) {
+        const duong = '/macros/echo?user_content_key=' + sim.ten + '_NAC' + (i + 1) + '_' + Date.now() + Math.random().toString(36).slice(2);
+        const dia = (ch.tuongDoi ? 'https://' + new URL(URL_GIA).host : HOST_CHUYEN_HUONG.split('/macros/')[0]) + duong;
+        KHO_CHUYEN_HUONG.set(dia, sau);
+        pt.headers.location = ch.tuongDoi ? duong : dia;
+      }
+      sau = pt;
+    }
+    return sau;
+  }
+
+  function phanHoiJson(chuoi, ch) {
     sim.chuOiDaTraVe.push(chuoi);
     const l = doiTuongLoi();
+    if (ch) return dungChuoiChuyenHuong(ch, chuoi);
     if (l.khong302) return { statusCode: 200, headers: { 'content-type': 'application/json' }, body: chuoi };
     // Apps Script LUÔN trả 302 sang script.googleusercontent.com — phía máy phải đi theo được.
     const dia = HOST_CHUYEN_HUONG + sim.ten + '_' + (KHO_CHUYEN_HUONG.size + 1) + '_' + Date.now() + Math.random().toString(36).slice(2);
@@ -774,6 +822,10 @@ function taoGiaLap(tc) {
       return phanHoiJson(chuoi);
     }
 
+    // ------- chuỗi chuyển hướng hỏng TRƯỚC khi Google chạy (2.7.1) -------
+    const ch = chuoiChuyenHuongCho(l, hd);
+    if (ch && ch.truocKhiChay) return dungChuoiChuyenHuong(ch, null);
+
     // ------- chạy MÃ THẬT của ShellAppsScript.gs -------
     if (l.dutTruocKhiGhi) {
       return { statusCode: 200, headers: {}, body: '{"ok":true', ngat: true };   // đứt trước khi script kịp ghi
@@ -797,7 +849,9 @@ function taoGiaLap(tc) {
       (l.dutSauKhiGhi === true || l.dutSauKhiGhi === sim.demGoiGhi)) {
       return { statusCode: 200, headers: { 'content-type': 'application/json' }, body: noiDung, ngat: true };
     }
-    return phanHoiJson(noiDung);
+    // Google đã chạy xong lượt này nhưng "vẫn đang chạy" trong mắt lượt đọc cờ kế tiếp (khóa Web App còn bị giữ).
+    if (ch && ch.giuKhoa) sim.khoaBiMayKhacGiu = true;
+    return phanHoiJson(noiDung, ch);
   }
 
   BO_XU_LY.set(sim.duong, xuLyPost);

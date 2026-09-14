@@ -1083,6 +1083,133 @@ function lechCongThuc2000(ssMoi) {
     return 'cờ B5_DANG_LAM → dừng, 0 lệnh ghi, "' + String(kq.thongBao).slice(0, 90) + '…" · đối chứng âm "câu 2.6.1" -> LỆCH';
   });
 
+  await test('TM-W-30', 'YC-44 (đo thật 14/9 23:10 + 23:24): `Tổng nhập`!I CHÉP NGUYÊN VĂN công thức khuôn (D-57) — sổ Việt Nam trả `IFERROR(H4*G4;"")` thì ghi đúng chuỗi đó, dịch dòng; RÀ MỌI công thức tool ghi (GHI_CT) của cả kế hoạch: không chuỗi nào mang dấu `,` ngoài ngoặc kép khi sổ dùng `;`', async () => {
+    const TM = A.sim.vo.TaoThangMoi;
+    // (a) luật dò dấu phân cách — chỉ còn dùng cho đường dự phòng (khuôn không có cột I dạng H×G)
+    const anhGia = (ds) => ({ sheets: { S: { congThuc: [ds] } } });
+    bang([['IFERROR(H4*G4;"")'], ['SUM(A1,B1)'], ['IF(A1=";",1,2)'], ['IF(A1=",";1;2)'], ['A1+B1'], []].map((ds) => TM.dauPhanCachCuaAnh([anhGia(ds)])),
+      [';', ',', ',', ';', ';', ';'], 'luật dò dấu phân cách');
+    // (b) ảnh chụp THẬT của cặp tháng 9 → 10, công thức đổi sang dấu `;` như Google trả `getFormulas()` với sổ Việt Nam
+    const doiSangChamPhay = (anh) => {
+      const x = JSON.parse(JSON.stringify(anh));
+      Object.keys(x.sheets).forEach((t) => {
+        x.sheets[t].congThuc = x.sheets[t].congThuc.map((row) => row.map((f) => {
+          if (!f) return f;
+          let out = '', trong = false;
+          for (const ch of f) { if (ch === '"') trong = !trong; out += (!trong && ch === ',') ? ';' : ch; }
+          return out;
+        }));
+      });
+      return x;
+    };
+    const phayNgoaiNgoac = (f) => { let trong = false; for (const ch of String(f)) { if (ch === '"') trong = !trong; else if (!trong && ch === ',') return true; } return false; };
+    const lapKe = (Lop, tc) => {
+      const sim = gl.taoGiaLap({ ngay: '2026-10-01T02:00:00Z', suaNguon: tc && tc.suaNguon });
+      const ssCu = saoFile(MAU.T9.ss, sim.khaiThang('2026-09', MAU.T9.ten));
+      const ssMoi = saoFile(MAU.T9.ss, sim.khaiThang('2026-10', 'THÁNG-10-2026-KINH-DOANH'));
+      const anhCu = doiSangChamPhay(sim.vo.chupFileThangMoi_(ssCu)), anhMoi = doiSangChamPhay(sim.vo.chupFileThangMoi_(ssMoi));
+      const ke = sim.vo.TaoThangMoi.lapKeHoach(anhCu, anhMoi, Object.assign({ thangMoi: '2026-10', nguonClone: MAU.T9.ten, thoiDiem: new Date() }, (tc && tc.them) || {}));
+      sim.thaoGo();
+      return { ke, anhMoi };
+    };
+    const oI = (ke) => ke.buoc.filter((b) => b.ma === 'B4')[0].thaoTac.filter((t) => t.loai === 'GHI_CT' && t.c === 9 && t.r >= 4);
+    const moiCT = (ke) => ke.batDau.concat(...ke.buoc.map((b) => b.thaoTac)).filter((t) => t.loai === 'GHI_CT');
+    const lechNguyenVan = (ke) => oI(ke).filter((t) => t.text !== 'IFERROR(H' + t.r + '*G' + t.r + ';"")').map((t) => 'I' + t.r + ' = ' + t.text);
+
+    const { ke, anhMoi } = lapKe();
+    bang(anhMoi.sheets['Tổng nhập'].congThuc[3][8], 'IFERROR(H4*G4;"")', 'khuôn `Tổng nhập`!I4 như Google trả');
+    const ds = oI(ke);
+    dung(ds.length >= 80, 'khối đầu kỳ phải có ≥ 80 ô I, được ' + ds.length);
+    bang(lechNguyenVan(ke), [], 'I chép nguyên văn khuôn');
+    const tatCa = moiCT(ke);
+    bang(tatCa.filter((t) => phayNgoaiNgoac(t.text)).map((t) => t.sheet + '!' + t.r + ':' + t.c + ' ' + t.text).slice(0, 3), [], 'RÀ MỌI GHI_CT: dấu `,` ngoài ngoặc kép');
+    dung(NGUON_GS.indexOf("dauPhanCach: ','") < 0, 'ShellAppsScript.gs còn gán cứng dauPhanCach: \',\'');
+
+    // Dự phòng: khuôn KHÔNG có cột I dạng H×G → tự dựng theo dấu dò từ chính sổ (`;`), vẫn không có `,`
+    const boKhuon = sua('.filter(laMauCotI)[0] || null;', '.filter(laMauCotI)[0] && null;');
+    const du = lapKe(null, { suaNguon: boKhuon });
+    const duI = oI(du.ke).map((t) => t.text);
+    dung(duI.length === ds.length && duI.every((f) => /^iferror\(H\d+\*G\d+;""\)$/.test(f)), 'dự phòng phải dựng `iferror(H*G;"")`: ' + duI.slice(0, 2).join(' | '));
+
+    // ĐỐI CHỨNG ÂM 1 — bỏ chép khuôn (cách 2.7.0/2.7.1 sớm): I là chuỗi tự dựng → phép "nguyên văn" LỆCH
+    const am1 = await doiChungAm(() => lechNguyenVan(du.ke), 'bỏ chép nguyên văn khuôn cột I');
+    // ĐỐI CHỨNG ÂM 2 — cấy lại ĐÚNG chuỗi sai trên Google 14/9: bỏ khuôn + gán cứng ',' → phép rà dấu phẩy LỆCH
+    const sai = lapKe(null, { suaNguon: boKhuon, them: { dauPhanCach: ',' } });
+    const am2 = await doiChungAm(() => moiCT(sai.ke).filter((t) => phayNgoaiNgoac(t.text)).map((t) => t.sheet + '!I' + t.r + ' ' + t.text), 'cấy lại chuỗi iferror(H4*G4,"")');
+    return ds.length + ' ô I = ' + ds[0].text + ' … (nguyên văn khuôn) · rà ' + tatCa.length + ' công thức GHI_CT: 0 dấu `,` ngoài ngoặc · dự phòng ' + duI[0] +
+      '\n        · ' + am1 + '\n        · ' + am2;
+  });
+
+  await test('TM-W-31', 'YC-44 việc 4: ô công thức tool vừa ghi mà Google ra #ERROR! → DỪNG NGAY ở bước đó (CONG_THUC_HONG), nêu ô + công thức Google đang giữ, cờ BUOC_DA_XONG chưa nhích, chưa chèn cột `Lợi nhuận`. Đối chứng âm: bỏ phép đọc lại → chạy tới B8 và K-6 TRƯỢT', async () => {
+    // Giả lập bộ phân tích công thức của Google sổ Việt Nam cho ĐÚNG chuỗi đã hỏng trên Google thật 14/9 (`iferror(H4*G4,"")`
+    // do tool tự dựng): ô mang chuỗi đó ra #ERROR! sau mỗi lần tính lại. Công thức chép nguyên văn khuôn không bị đụng.
+    const parserVN = (ss) => {
+      const sh = ss.getSheetByName('Tổng nhập');
+      let coLoi = false;
+      Object.keys(sh.congThuc).forEach((k) => {
+        const [r, c] = k.split(':').map(Number);
+        if (c === 9 && r >= 4 && sh.congThuc[k] && /^=?iferror\(H\d+\*G\d+,""\)$/.test(r1c1SangA1(sh.congThuc[k], r, c))) { sh.giaTri[k] = '#ERROR!'; coLoi = true; }
+      });
+      // Lỗi lan theo tham chiếu như Google: I2 = SUM(I4:…) chứa ô #ERROR! → I2 #ERROR!, ô `Lợi nhuận` trỏ vào I2 cũng vậy.
+      if (!coLoi) return;
+      sh.giaTri['2:9'] = '#ERROR!';
+      const ln = ss.getSheetByName('Lợi nhuận');
+      Object.keys(ln.congThuc).forEach((k) => {
+        const [r, c] = k.split(':').map(Number);
+        if (ln.congThuc[k] && /Tổng nhập'?!\$?I\$?2\b/.test(r1c1SangA1(ln.congThuc[k], r, c))) ln.giaTri[k] = '#ERROR!';
+      });
+    };
+    // (1) mã hiện tại: I chép khuôn → không ô nào #ERROR!, 8/8
+    const tot = await kichBan({ sauTinh: parserVN });
+    dung(tot.kq.ok === true && tot.kq.kiem.every((p) => p.dat), 'mã hiện tại phải 8/8: ' + (tot.kq.thongBao || '').slice(0, 200));
+    // (2) cấy lại chuỗi sai → dừng ở B4
+    const cay = sua('.filter(laMauCotI)[0] || null;', '.filter(laMauCotI)[0] && null;');
+    const doiDau = sua("var dau = ts.dauPhanCach || dauPhanCachCuaAnh([anhMoi, anhCu]);", "var dau = ',';");
+    const hong = await kichBan({ sauTinh: parserVN, suaNguon: (s) => doiDau(cay(s)) });
+    bang(hong.kq.loi, 'CONG_THUC_HONG', 'mã lỗi');
+    const tb = hong.kq.thongBao || '';
+    dung(/bước B4/.test(tb) && /Tổng nhập!I4 — Google đang giữ: =iferror\(H4\*G4,""\)/.test(tb) && /#ERROR!/.test(tb) && /DỪNG TẠI CHỖ/.test(tb), 'câu phải nêu B4 + ô + công thức: ' + tb.slice(0, 300));
+    bang(coTM(hong.ssMoi, 5), 'B3', 'cờ BUOC_DA_XONG dừng ở B3 (B4 chưa được đánh dấu xong)');
+    bang(hong.ssMoi.getSheetByName('Lợi nhuận').getRange(5, 4).getValue(), hong.truocMoi['Lợi nhuận'].gt['5:4'], '`Lợi nhuận`!D5 chưa bị chèn cột');
+    // (3) ĐỐI CHỨNG ÂM: cấy chuỗi sai + BỎ phép đọc lại → lỗi chỉ lộ ở tự kiểm cuối
+    const boKiem = sua('      kiemCongThucVuaGhiTM_(ssMoi, b.thaoTac, b.ma);', '');
+    const mu = await kichBan({ sauTinh: parserVN, suaNguon: (s) => boKiem(doiDau(cay(s))) });
+    const k6 = (mu.kq.kiem || []).filter((p) => p.ma === 'K-6')[0];
+    if (!(mu.kq.loi === 'TU_KIEM_LECH' && k6 && !k6.dat)) console.log('        [chẩn đoán] ' + JSON.stringify({ loi: mu.kq.loi, tb: String(mu.kq.thongBao || '').slice(0, 300) }));
+    const am = await doiChungAm(() => (mu.kq.loi === 'TU_KIEM_LECH' && k6 && !k6.dat ? ['K-6 ' + k6.chiTiet] : []), 'bỏ phép đọc lại công thức trong bước (chuỗi sai đi tới B8)');
+    return 'mã hiện tại 8/8 dưới bộ phân tích VN giả · chuỗi sai → ' + tb.slice(tb.indexOf('Công thức tool'), tb.indexOf('Công thức tool') + 150) + ' …\n        · ' + am;
+  });
+
+  await test('TM-W-32', '2.7.1 hành động CHỈ ĐỌC `coTaoThang` (máy gọi sau lỗi đường truyền): khóa đang giữ → dangChay; cờ O1/O5 đọc đúng; không ghi ô nào, không giữ khóa; sai bí mật → SAI_BI_MAT', async () => {
+    const X = await kichBan({});
+    const goi = (them) => JSON.parse(X.sim.vo.doPost({ postData: { contents: JSON.stringify(Object.assign({
+      token: X.sim.biMat, hanhDong: 'coTaoThang', thang: '2026-10', idMoi: X.sim.idCua('2026-10')
+    }, them || {})) } }).getContent());
+    const truoc = chup(X.ssMoi);
+    const r1 = goi();
+    dung(r1.ok === true && r1.dangChay === false && /^DA_KHOI_TAO_/.test(r1.coKhoiTao) && r1.buocDaXong === 'B7', 'file đã tạo xong: ' + JSON.stringify({ ok: r1.ok, dangChay: r1.dangChay, co: r1.coKhoiTao, b: r1.buocDaXong, loi: r1.loi }));
+    X.sim.khoaBiMayKhacGiu = true;
+    const r2 = goi();
+    X.sim.khoaBiMayKhacGiu = false;
+    bang([r2.ok, r2.dangChay, r2.buocDaXong], [true, true, 'B7'], 'khóa đang bị giữ');
+    bang(X.sim.khoaDangGiu, false, 'đọc xong không giữ khóa');
+    bang(soOKhac(truoc, chup(X.ssMoi)), 0, 'số ô đổi sau hai lượt đọc');
+    bang(goi({ token: 'sai' }).loi, 'SAI_BI_MAT', 'cửa bí mật');
+    bang(goi({ idMoi: 'khong-phai-id' }).loi, 'THIEU_ID_FILE', 'ID hỏng');
+    // bản sao chưa chạy lần nào: không cờ
+    const Y = gl.taoGiaLap({ ngay: '2026-10-01T02:00:00Z' });
+    saoFile(MAU.T9.ss, Y.khaiThang('2026-10', 'THÁNG-10-2026-KINH-DOANH', { khongKhaiLink: true }));
+    const r3 = JSON.parse(Y.vo.doPost({ postData: { contents: JSON.stringify({ token: Y.biMat, hanhDong: 'coTaoThang', thang: '2026-10', idMoi: Y.idCua('2026-10') }) } }).getContent());
+    Y.thaoGo();
+    bang([r3.ok, r3.dangChay, r3.coKhoiTao, r3.buocDaXong], [true, false, '', ''], 'bản sao mới chưa chạy');
+    // ĐỐI CHỨNG ÂM: bỏ phép xét khóa → khóa đang giữ mà vẫn báo dangChay:false
+    const Z = await kichBan({ suaNguon: sua('  var ranh = khoa.tryLock(1);', '  var ranh = true;') });
+    Z.sim.khoaBiMayKhacGiu = true;
+    const r4 = JSON.parse(Z.sim.vo.doPost({ postData: { contents: JSON.stringify({ token: Z.sim.biMat, hanhDong: 'coTaoThang', thang: '2026-10', idMoi: Z.sim.idCua('2026-10') }) } }).getContent());
+    const am = await doiChungAm(() => (r4.dangChay === false ? ['dangChay:false khi khóa đang bị giữ'] : []), 'bỏ phép xét khóa');
+    return 'xong: ' + r1.coKhoiTao.slice(0, 12) + '… / B7 · khóa giữ → dangChay:true · 0 ô đổi · bản sao mới: không cờ\n        · ' + am;
+  });
+
   RAC_MAY.forEach((d) => { try { fs.rmSync(d, { recursive: true, force: true }); } catch (e) { /* thư mục tạm */ } });
 
   console.log('\n=== ' + soDat + ' ĐẠT · ' + soHong + ' HỎNG · tổng ' + (soDat + soHong) + ' ===');

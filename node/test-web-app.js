@@ -859,7 +859,7 @@ async function chay() {
       m._compile(thay(NGUON_GW, doi, 'gsheet-web-app.js'), tepGw);
       return m.exports;
     };
-    const MOC_BAN_MAY = "const PHIEN_BAN = '2.7.0';";
+    const MOC_BAN_MAY = "const PHIEN_BAN = '2.7.1';";
     const MOC_CUA_MAY = '  if (ss === null || ss < 0) throw hong(';
     const MAY_BANG_TUYET_DOI = [MOC_CUA_MAY, '  if (ss === null || soSanhBan(thuc, banMay) !== 0) throw hong('];
     const mayBan = (ban) => napMay([[MOC_BAN_MAY, "const PHIEN_BAN = '" + ban + "';"]]);
@@ -871,7 +871,7 @@ async function chay() {
       ['          if (kq.mayToiThieu != null) this.mayToiThieuWebApp', '          if (false) this.mayToiThieuWebApp'],
       MAY_BANG_TUYET_DOI
     ]);
-    const MOC_BAN_GS = "var PHIEN_BAN = '2.7.0';";
+    const MOC_BAN_GS = "var PHIEN_BAN = '2.7.1';";
     const MOC_CUA_GS = 'banMay && !banDuTu_(banMay, MAY_TOI_THIEU)) {';
     const GS_BANG_TUYET_DOI = [MOC_CUA_GS, 'banMay && banMay !== PHIEN_BAN) {'];
     const MOC_TRA_SO = 'PHIEN_BAN_TRA_LOI_ = (!coBanMay && mongDoi && banDuTu_(mongDoi, MAY_TOI_THIEU)) ? mongDoi : PHIEN_BAN;';

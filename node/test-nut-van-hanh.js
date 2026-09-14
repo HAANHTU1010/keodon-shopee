@@ -733,6 +733,75 @@ test('N-33 3_TAO_FILE_THANG_MOI.bat chạy thật: chuyển /tra-loi sang nút 3
     + dc1 + ' · ' + dc2 + ' · ' + dc3 + ' · ' + dcTs;
 });
 
+/**
+ * 2.7.1 — mã thoát 6 của nút 3: máy mất đường trả lời của `taoThangMoi`, đọc lại cờ thấy Google VẪN ĐANG CHẠY. `https` giả (qua
+ * NODE_OPTIONS): `ping` đúng bản · `taoThangMoi` đứt kết nối · `coTaoThang` trả `dangChay: true`, cờ B4. Không một byte ra mạng thật.
+ */
+function shimHttpsNut3DangChay() {
+  const tep = path.join(tamMoi('shim3dc'), 'https-gia.js');
+  fs.writeFileSync(tep, [
+    "'use strict';",
+    "const { EventEmitter } = require('events');",
+    'const PB = ' + JSON.stringify(PHIEN_BAN_MAY) + ';',
+    'function tra(obj, cb) {',
+    "  const res = new EventEmitter(); res.statusCode = 200; res.headers = {}; res.setEncoding = () => res; res.resume = () => res;",
+    "  setImmediate(() => { cb(res); setImmediate(() => { res.emit('data', JSON.stringify(obj)); res.emit('end'); }); });",
+    '}',
+    'const gia = {',
+    '  request(opt, cb) {',
+    "    const req = new EventEmitter(); let than = '';",
+    '    req.write = (d) => { than += d; return true; }; req.destroy = () => {}; req.setTimeout = () => req;',
+    '    req.end = () => {',
+    '      const g = JSON.parse(than);',
+    "      if (g.hanhDong === 'ping') return tra({ ok: true, phienBan: PB }, cb);",
+    "      if (g.hanhDong === 'taoThangMoi') { setImmediate(() => req.emit('error', new Error('socket hang up'))); return; }",
+    "      if (g.hanhDong === 'coTaoThang') return tra({ ok: true, hanhDong: 'coTaoThang', thang: g.thang, dangChay: true, coKhoiTao: 'DANG_KHOI_TAO_2026-10-01 09:00', buocDaXong: 'B4', tenFileMoi: 'THANG-10-2026-KINH-DOANH' }, cb);",
+    "      return tra({ ok: false, loi: 'HANH_DONG_LA', thongBao: 'giả lập' }, cb);",
+    '    };',
+    '    return req;',
+    '  },',
+    "  get() { throw new Error('https giả: không có chuyển hướng'); }",
+    '};',
+    "for (const t of ['https', 'node:https']) require.cache[t] = { id: t, filename: t, loaded: true, exports: gia, children: [], paths: [] };"
+  ].join('\n'), 'utf8');
+  return tep.split(path.sep).join('/');
+}
+
+test('N-46 3_TAO_FILE_THANG_MOI.bat mã thoát 6 (2.7.1): Google VẪN ĐANG CHẠY sau khi máy mất đường trả lời → câu cuối "CHUA PHAI THAT BAI", không "KHONG TAO DUOC", cấu hình y nguyên', async () => {
+  // Chấm BẢN GỐC `bat/` của kho (quyết định 13/9: `bat/` là gốc, `03_VAN_HANH/` là bản cài đồng bộ bằng `dong-goi.js
+  // --dong-bo-van-hanh`). Nhánh mã 6 là của 2.7.1 — bản cài chỉ có sau lượt đồng bộ; DG-06 (test-dong-goi) canh hai bản khớp byte.
+  const NUT3_GOC = path.join(__dirname, '..', 'bat', '3_TAO_FILE_THANG_MOI.bat');
+  const shim = shimHttpsNut3DangChay();
+  const TL = ['9', '2026', LK('T9'), '10', '2026', LK('T10'), '1', 'c'];
+  const cham = (nut) => {
+    const h = dungMay({ banMa: '9.9.0', nut3That: true, linkThang: { '2026-09': LK('T9') }, thayNut: { '3_TAO_FILE_THANG_MOI.bat': nut } });
+    const t0 = tho(h.cfgTep);
+    const r = chayNut3Moi(h.may, TL, { NODE_OPTIONS: '--require "' + shim + '"' });
+    if (r.ma !== 6) throw new Error('phải thoát mã 6, nhận được ' + r.ma + ': ' + r.ra.slice(-400));
+    if (!/CHƯA PHẢI THẤT BẠI — GOOGLE CÓ THỂ VẪN ĐANG CHẠY\./.test(r.ra) || !/Google VẪN ĐANG CHẠY \(cờ BUOC_DA_XONG hiện là B4\)/.test(r.ra)) {
+      throw new Error('script nút 3 thiếu tiêu đề / câu Google vẫn đang chạy: ' + r.ra.slice(-400));
+    }
+    if (!/CHUA PHAI THAT BAI - Google co the van dang chay\./.test(r.ra) || !/DUNG bam lai ngay: doi 5 phut roi bam lai file nay, chon che do 1\./.test(r.ra) ||
+      !/link thang KHONG doi\./.test(r.ra)) {
+      throw new Error('nút bấm thiếu ba dòng mã 6: ' + ((r.ra.match(/LOI KHONG DOAN TRUOC[^\r\n]*/) || [r.ra.slice(-200)])[0]));
+    }
+    if (/KHONG TAO DUOC|KHÔNG TẠO ĐƯỢC|LOI KHONG DOAN TRUOC/.test(r.ra)) throw new Error('mã 6 mà vẫn in câu thất bại');
+    if (!cungByte(tho(h.cfgTep), t0)) throw new Error('mã 6 mà CAU_HINH_VAN_HANH.json đã bị ghi');
+    if (r.ra.indexOf(idGia('T10')) >= 0 || r.ra.indexOf(idGia('T9')) >= 0 || r.ra.indexOf(BI_MAT_MOI) >= 0 || r.ra.indexOf(LINK_MOI) >= 0) {
+      throw new Error('INV-7: mã file / chuỗi bí mật / link Web App lọt ra màn hình');
+    }
+    return r;
+  };
+  const r = cham(NUT3_GOC);
+  const goc = fs.readFileSync(NUT3_GOC, 'latin1');
+  const boNhanh6 = goc.replace(/\) else if "%MA%"=="6" \(\r\n(?: {2}echo[^\r\n]*\r\n)+/, '');
+  if (boNhanh6 === goc) throw new Error('KHÔNG CẮM ĐƯỢC KHUYẾT TẬT vào bat/3_TAO_FILE_THANG_MOI.bat — mã đã đổi, sửa lại bài test, đừng bỏ qua.');
+  const tepHong = path.join(tamMoi('hong6'), '3_TAO_FILE_THANG_MOI.bat');
+  fs.writeFileSync(tepHong, boNhanh6, 'latin1');
+  const dc = await doiChungAm('nut bam khong co nhanh ma 6', async () => { cham(tepHong); });
+  return 'mã 6 · "' + (r.ra.match(/CHUA PHAI THAT BAI[^\r\n]*/) || [''])[0] + '" · cấu hình y nguyên · ' + dc;
+});
+
 test('N-36 nút 3 bảy trường hợp lệ: hỏi đúng thứ tự đề bài, in lại đủ bảy giá trị, chế độ 2 ghi đúng khóa; bỏ ràng buộc "tháng liền sau", bỏ file thang-moi-*.json', async () => {
   const v = dungVh3();
   const r = await chay3(v, TL_CHE_DO_2());

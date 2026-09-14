@@ -24,7 +24,8 @@
  * Mã thoát (nút bấm in câu tương ứng):
  *   0 đã ghi link · 1 chưa làm gì (nhập sai ba lượt, trả lời k, thiếu cấu hình, không ghi được cấu hình ở chế độ 2) ·
  *   3 Web App từ chối / tự kiểm lệch — link không đổi · 4 lỗi mạng, quyền, lệch bản, thiếu cấu hình Web App — link
- *   không đổi · 5 Google đã tạo xong 8/8 nhưng máy không ghi được link · 9 lỗi không đoán trước.
+ *   không đổi · 5 Google đã tạo xong 8/8 nhưng máy không ghi được link · 6 CHƯA PHẢI THẤT BẠI: máy mất đường trả lời và đọc
+ *   lại cờ thấy Google VẪN ĐANG CHẠY (hoặc không đọc được cờ) — đợi 5 phút rồi bấm lại, link không đổi · 9 lỗi không đoán trước.
  */
 'use strict';
 
@@ -453,7 +454,7 @@ async function chay(tc) {
     nguon.dong();
   }
 
-  /** Chế độ 1. Trả mã thoát 0 / 3 / 4 / 5. */
+  /** Chế độ 1. Trả mã thoát 0 / 3 / 4 / 5 / 6. */
   async function lamCheDo1(gt) {
     let w;
     try {
@@ -471,6 +472,12 @@ async function chay(tc) {
       inRa('  ! BẢN TRÊN GOOGLE KHÔNG KHỚP BẢN TRÊN MÁY:', 'vang');
       ds.forEach((c) => inRa('    ! ' + c, 'vang'));
     };
+    // 2.7.1: đường đi từng lượt gọi (`POST→302 (có Location → <máy chủ>)` · `GET→200`) — in cả khi đạt lẫn hỏng, vào cả nhật ký:
+    // lần sau Google trả chuỗi chuyển hướng lạ, người phụ trách đọc được ngay nấc nào hỏng mà không phải dựng lại sự cố.
+    const inDuongTruyen = (web) => {
+      const ds = (web && Array.isArray(web.nhatKyDuongTruyen)) ? web.nhatKyDuongTruyen : [];
+      ds.forEach((x) => inRa('Đường truyền — ' + x));
+    };
     inRa('Đang chuyển sổ ' + gt.kyCu + ' → ' + gt.kyMoi + ' trên Google. Sổ lớn mất vài phút — ĐỪNG đóng cửa sổ này.');
 
     let kq;
@@ -486,12 +493,23 @@ async function chay(tc) {
         }
       });
     } catch (e) {
+      inDuongTruyen(w);
       inBanDung(w);
+      const cau = typeof w.chePhu === 'function' ? w.chePhu(e.message) : e.message;
+      // 2.7.1: máy mất đường trả lời mà Google VẪN ĐANG CHẠY (hoặc chưa đọc được cờ). Chữ đỏ "KHÔNG TẠO ĐƯỢC" ở đây là bảo người
+      // bấm lại NGAY — chồng một lượt thứ hai lên lượt Google còn đang chạy. Nói đúng: chưa phải thất bại, đợi rồi mới bấm.
+      if (e && (e.maKeodon === 'GOOGLE_DANG_CHAY' || e.maKeodon === 'CHUA_RO_TIEN_DO')) {
+        inRa('CHƯA PHẢI THẤT BẠI — GOOGLE CÓ THỂ VẪN ĐANG CHẠY.', 'vang');
+        inRa(cau, 'vang');
+        inRa('link_thang trong CAU_HINH_VAN_HANH.json KHÔNG đổi.');
+        return 6;
+      }
       inRa('KHÔNG TẠO ĐƯỢC THÁNG ' + gt.kyMoi + '.', 'do');
-      inRa(typeof w.chePhu === 'function' ? w.chePhu(e.message) : e.message, 'do');
+      inRa(cau, 'do');
       inRa('link_thang trong CAU_HINH_VAN_HANH.json KHÔNG đổi.');
       return 4;
     }
+    inDuongTruyen(w);
     inBanDung(w);
     (kq.canhBao || []).forEach((c) => inRa('  ! ' + c, 'vang'));
     if (kq.tenFileCu || kq.tenFileMoi) inRa('File tháng trước: ' + (kq.tenFileCu || '?') + ' · file tháng mới: ' + (kq.tenFileMoi || '?'));

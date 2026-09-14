@@ -60,7 +60,7 @@
  * Số bản của vỏ Google — bằng `PHIEN_BAN` trong `node/gsheet-web-app.js` và `version` của package.json khi phát hành.
  * Mọi phản hồi đã qua cửa bí mật kèm bản thật này ở trường `banWebApp`.
  */
-var PHIEN_BAN = '2.7.0';
+var PHIEN_BAN = '2.7.1';
 
 /**
  * YC-42: bản MÁY thấp nhất Web App này còn phục vụ gói ghi (`ghi`, `xuLy`, `taoThangMoi`). Dưới mốc → từ chối
@@ -598,7 +598,8 @@ function doPost(e) {
     if (hd === 'ghi') return traLoi_(hanhDongGhi_(body, batDau));
     if (hd === 'xuly') return traLoi_(hanhDongXuLy_(body, batDau));
     if (hd === 'taothangmoi') return traLoi_(hanhDongTaoThangMoi_(body, batDau));   // YC-35, nút 3 chế độ 1
-    return traLoi_({ ok: false, loi: 'HANH_DONG_LA', thongBao: 'hanhDong = "' + hd + '"; chỉ nhận: ping, doc, ghi, xuLy, taoThangMoi' });
+    if (hd === 'cotaothang') return traLoi_(hanhDongCoTaoThang_(body));             // 2.7.1: đọc lại cờ sau lỗi đường truyền
+    return traLoi_({ ok: false, loi: 'HANH_DONG_LA', thongBao: 'hanhDong = "' + hd + '"; chỉ nhận: ping, doc, ghi, xuLy, taoThangMoi, coTaoThang' });
   } catch (err) {
     // Giữ nguyên mã lỗi nghiệp vụ nếu nơi ném có gắn; chỉ rơi về NGOAI_LE khi thật sự không rõ.
     return traLoi_({ ok: false, loi: (err && err.maKeodon) ? err.maKeodon : 'NGOAI_LE',
@@ -2125,7 +2126,8 @@ function hanhDongTaoThangMoi_(body, batDau) {
     var anhCu = chupFileThangMoi_(ssCu);
     var anhMoi = chupFileThangMoi_(ssMoi);
     var ke = TaoThangMoi.lapKeHoach(anhCu, anhMoi, {
-      thangMoi: kyMoi, nguonClone: ssCu.getName(), thoiDiem: new Date(), dauPhanCach: ','
+      // KHÔNG truyền dauPhanCach: lõi dò từ chính công thức Google trả về (sổ Việt Nam dùng `;` — gán cứng `,` là #ERROR!, 14/9).
+      thangMoi: kyMoi, nguonClone: ssCu.getName(), thoiDiem: new Date()
     });
     if (!ke.chay) {
       var maDung = ke.maDung || 'FILE_CO_DU_LIEU';      // lõi nói lý do dừng: DA_KHOI_TAO · FILE_CO_DU_LIEU · B5_DANG_LAM
@@ -2156,6 +2158,8 @@ function hanhDongTaoThangMoi_(body, batDau) {
       if (b.mocTruoc) { ghiCoTM_(ssMoi, 5, b.mocTruoc); SpreadsheetApp.flush(); }
       var kq = thucThiThaoTacTM_(ssMoi, b.thaoTac, (b.khongLapLai || epXong) ? function () { return false; } : hetGio);
       if (!kq.xong) return traDoTM_(kyMoi, daXong, batDau, nguong, b.ma, canhBao, thongBao);
+      SpreadsheetApp.flush();
+      kiemCongThucVuaGhiTM_(ssMoi, b.thaoTac, b.ma);          // YC-44: #ERROR! là dừng ở ĐÚNG bước này, cờ chưa nhích
       if (b.ma === 'B6') toLaiMapping_(ssMoi, canhBao);        // D-47: chép xong thì tô lại CÓ/chưa CÓ
       ghiCoTM_(ssMoi, 5, b.mocSau);
       daXong = b.mocSau;
@@ -2189,6 +2193,60 @@ function hanhDongTaoThangMoi_(body, batDau) {
   } finally {
     khoa.releaseLock();
   }
+}
+
+/**
+ * 2.7.1 — ĐỌC LẠI CỜ sau khi máy mất đường trả lời của `taoThangMoi` (sự cố 14/9 23:01: máy nhận "HTTP 302, thân rỗng" rồi
+ * kết luận thất bại mà không biết Google đã chạy tới đâu). CHỈ ĐỌC — không ghi ô nào, không giữ khóa:
+ *   · `dangChay`: khóa Web App đang có người giữ (một lượt tạo tháng hoặc kéo đơn chưa xong) → máy nói "đợi", không nói "thất bại";
+ *   · `coKhoiTao` (`Mapping_san_pham`!O1: DANG_KHOI_TAO_… / DA_KHOI_TAO_…) và `buocDaXong` (O5).
+ * Xét khóa TRƯỚC rồi mới đọc cờ: khóa rảnh nghĩa là lượt chạy kia đã kết thúc, cờ đọc sau đó là cờ cuối.
+ */
+function hanhDongCoTaoThang_(body) {
+  var idMoi = bocIdTuLink_(body.idMoi);
+  if (!idMoi) throw loiTM_('THIEU_ID_FILE', 'Thiếu link/ID hợp lệ của file tháng mới. Tool chưa đọc gì.');
+  var khoa = LockService.getScriptLock();
+  var ranh = khoa.tryLock(1);
+  if (ranh) khoa.releaseLock();
+  var ss = moBangTinh_(idMoi, 'tháng ' + String(body.thang || 'mới'), 'Link đó là trường [6/7] của nút 3.');
+  return {
+    ok: true, hanhDong: 'coTaoThang', thang: body.thang || null, dangChay: !ranh,
+    coKhoiTao: docCoTM_(ss, 1), buocDaXong: docCoTM_(ss, 5), tenFileMoi: ss.getName()
+  };
+}
+
+/**
+ * YC-44 việc 4 — ghi công thức xong là ĐỌC LẠI NGAY trong bước đó: ô nào tool vừa ghi công thức (`GHI_CT`) mà Google hiện
+ * `#ERROR!` (lỗi PHÂN TÍCH công thức — chuỗi sai cú pháp từ lúc ghi, khác #REF!/#VALUE!) thì DỪNG TẠI CHỖ, nêu ô và nguyên văn công
+ * thức Google đang giữ. Trước đây lỗi này (`Tổng nhập`!I, 14/9) đi hết B5…B7 rồi mới lộ ở K-6.
+ * Chỉ xét ô gốc của lỗi (ô tool ghi), không xét ô kéo theo — `Lợi nhuận`!D6/D11/D12 hỏng là do trỏ vào `Tổng nhập`!I2.
+ */
+function kiemCongThucVuaGhiTM_(ssMoi, dsThaoTac, buoc) {
+  var theoSheet = {};
+  dsThaoTac.forEach(function (t) { if (t.loai === 'GHI_CT') (theoSheet[t.sheet] = theoSheet[t.sheet] || []).push(t); });
+  var hong = [];
+  Object.keys(theoSheet).forEach(function (ten) {
+    var ds = theoSheet[ten], sh = sheetTM_(ssMoi, ten);
+    var r1 = Infinity, r2 = 0, c1 = Infinity, c2 = 0;
+    ds.forEach(function (t) { r1 = Math.min(r1, t.r); r2 = Math.max(r2, t.r); c1 = Math.min(c1, t.c); c2 = Math.max(c2, t.c); });
+    var vung = sh.getRange(r1, c1, r2 - r1 + 1, c2 - c1 + 1), hien = vung.getDisplayValues();
+    ds.forEach(function (t) {
+      if (hong.length >= 5) return;
+      if (String(hien[t.r - r1][t.c - c1]).trim() !== '#ERROR!') return;
+      var ct = '';
+      try { ct = sh.getRange(t.r, t.c).getFormula(); } catch (e) { ct = '(không đọc được)'; }
+      hong.push(ten + '!' + chuCotTM_(t.c) + t.r + ' — Google đang giữ: ' + ct + ' — tool đã ghi: =' + t.text);
+    });
+  });
+  if (!hong.length) return;
+  throw loiTM_('CONG_THUC_HONG', 'Công thức tool vừa ghi ở ' + buoc + ' ra #ERROR! (lỗi phân tích công thức, sai cú pháp ngay từ lúc ghi): ' +
+    hong.join(' · ') + '. DỪNG TẠI CHỖ, chưa làm bước sau.');
+}
+
+function chuCotTM_(c) {
+  var s = '';
+  for (var n = c; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s;
+  return s;
 }
 
 /** Đọc một ô cờ `Mapping_san_pham`!O<dong> của file đang tạo; đọc không được (sheet chưa có…) → ''. Không bao giờ ném. */
@@ -2440,6 +2498,6 @@ function chayBoTest() {
   return 'Tổng ' + kq.length + ' · hỏng ' + hong.length;
 }
 
-var VAN_TAY_SHELL = '542a314f';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_SHELL = 'dbcbbc50';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
 
-var BAN_DUNG = '82899afce58a';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay
+var BAN_DUNG = 'ffd8f86632f5';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay

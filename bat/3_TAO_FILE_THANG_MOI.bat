@@ -117,6 +117,8 @@ rem  Cau tra loi an di qua bien moi truong TM_TRA_LOI, khong qua dong lenh:
 rem  link Google hay co dau va, ma dau va tren dong lenh la cmd cat lenh.
 "%NODE%" "%TOOL%\node\nut-3-thang-moi.js" --van-hanh "%TM_BASE%."
 set "MA=%ERRORLEVEL%"
+rem  Ma 6 (2.7.1): may mat duong tra loi nhung Google co the VAN DANG CHAY -
+rem  khong phai that bai, dung bao nguoi bam bam lai ngay.
 
 echo.
 if "%MA%"=="0" (
@@ -145,6 +147,12 @@ if "%MA%"=="0" (
   echo   GOOGLE DA TAO XONG THANG MOI NHUNG MAY CHUA GHI DUOC LINK.
   echo   Bam lai file nay, chon CHE DO 2 voi dung link thang moi.
   echo   DUNG chon lai che do 1.
+  echo ------------------------------------------------------------
+) else if "%MA%"=="6" (
+  echo ------------------------------------------------------------
+  echo   CHUA PHAI THAT BAI - Google co the van dang chay.
+  echo   DUNG bam lai ngay: doi 5 phut roi bam lai file nay, chon che do 1.
+  echo   link thang KHONG doi.
   echo ------------------------------------------------------------
 ) else (
   echo ------------------------------------------------------------

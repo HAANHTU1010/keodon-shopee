@@ -149,7 +149,8 @@ Số bài lấy từ dòng tổng kết mỗi bộ tự in ra; chạy lại là 
 | `npm run test-gian-hang` | `T-GH-xx` | file thả nhầm thư mục gian hàng: luật D-04 trên 12 file xuất thật, và vỏ Google chặn trước khi ghi |
 | `npm run test-hop-dong` | `T-HD-xx` | YC-38.1 hợp đồng file tháng: lệch khuôn → `SAI_HOP_DONG` trước lệnh ghi đầu tiên; không chặn oan khuôn thật; Mapping ghi THEO TÊN CỘT |
 | `npm run test-dong-run` | `T-RUN-xx` | YC-38.3 dòng tổng kết RUN: RUN id giờ Việt Nam, Web App ghi nhật ký + trả số dòng CÓ và băm Mapping, thả lại cùng file ra cùng dòng |
-| `npm run test-tao-thang-moi-web` | `TM-W-xx` | YC-35 hành động `taoThangMoi` trên Web App giả, chạy trên file tháng 9 khuôn mới (bản sao → tháng 10) và tháng 8 thật (TM-01…TM-12); TM-W-19…22 phía máy trọn đường: nút 3 → `WebAppGoogleSheet.taoThangMoi` → Web App giả; bộ này GHIM múi giờ dự án (TM-W-25); TM-W-26…29 YC-43: dán vào ô gộp, đóng băng trước khi dọn, câu báo giữa chừng, bản sao kẹt B5 |
+| `npm run test-tao-thang-moi-web` | `TM-W-xx` | YC-35 hành động `taoThangMoi` trên Web App giả, chạy trên file tháng 9 khuôn mới (bản sao → tháng 10) và tháng 8 thật (TM-01…TM-12); TM-W-19…22 phía máy trọn đường: nút 3 → `WebAppGoogleSheet.taoThangMoi` → Web App giả; bộ này GHIM múi giờ dự án (TM-W-25); TM-W-26…29 YC-43: dán vào ô gộp, đóng băng trước khi dọn, câu báo giữa chừng, bản sao kẹt B5; TM-W-30…32 YC-44/2.7.1: cột I chép nguyên văn khuôn + rà mọi công thức tool ghi, dừng ngay khi ô vừa ghi ra #ERROR!, hành động chỉ-đọc `coTaoThang` |
+| `npm run test-chuyen-huong` | `T-CH-xx` | 2.7.1 đường truyền: đi theo chuyển hướng tới 5 nấc, ghi đường đi từng nấc, 3xx hỏng/thân rỗng KHÔNG gọi là lỗi quyền; nút 3 mất đường trả lời thì đọc lại cờ rồi mới kết luận (mã thoát 6 khi Google vẫn chạy) |
 
 **Bộ test phải 0 hỏng ở MỌI múi giờ máy**, không riêng giờ Việt Nam. Thử lại trước khi push:
 `TZ=UTC npm run test-tat-ca` (Git Bash) hoặc `$env:TZ='UTC'; npm run test-tat-ca` (PowerShell). Tên múi giờ có dấu `/`
@@ -257,6 +258,21 @@ dòng đó là sinh ra ca mất đơn mà không ai biết — file đã đi kh�
 - **Tạo tháng: đóng băng số phụ thuộc TRƯỚC, phá hủy SAU.** Bước `B2b` ghi cột tháng cũ `Lợi nhuận` thành số cứng trước khi
   dọn bất kỳ sheet nào; chết giữa chừng sau khi dọn thì số tháng cũ trong bản sao vẫn còn (TM-W-27). Mọi ngoại lệ sau khi
   bắt đầu ghi nói bước + cờ + việc phải làm (`loiGiuaChungTM_`); cờ `B5_DANG_LAM` là bản sao hỏng, tool bảo làm bản sao mới.
+- **Công thức tool TỰ DỰNG phải khớp dấu phân cách của sổ — nên đừng tự dựng (YC-44).** `setValues('=…')` và `getFormulas()`
+  đi theo cài đặt vùng của sổ: sổ Việt Nam dùng `;`. Bản 2.7.0 dựng tay `iferror(H4*G4,"")` cho `Tổng nhập`!I → Google ra
+  `#ERROR!` (lỗi phân tích công thức) ở cả khối đầu kỳ, lan sang I2 và `Lợi nhuận` D12/D11/D6 (trỏ vào I2); cùng lệnh ghi đó
+  C/E/F/G chép nguyên văn từ `getFormulas()` thì ra số đúng (đo thật 14/9 23:10). Từ 2.7.1 cột I **chép nguyên văn khuôn** như
+  C/E/F/G; chỉ khi khuôn không có I dạng H×G mới dựng theo dấu dò từ chính sổ (`dauPhanCachCuaAnh`). Bản `.xlsx` xuất từ
+  Google luôn đổi về `,` — nhìn file xuất KHÔNG thấy lỗi này. Ghi xong mỗi bước là đọc lại ô công thức vừa ghi; gặp `#ERROR!`
+  thì dừng ngay ở bước đó, nêu ô + công thức Google đang giữ (`kiemCongThucVuaGhiTM_`, mã `CONG_THUC_HONG`, TM-W-30/31).
+- **Apps Script có thể chuyển hướng hơn một nấc.** Đo thật: POST → 302 (Location sang `script.googleusercontent.com`) → GET
+  → 200 JSON. 14/9 23:01 máy 2.7.0 nhận một phản hồi 302 thân rỗng sau lượt theo đầu tiên và gọi nhầm là "LỖI QUYỀN". Từ
+  2.7.1 máy đi theo tối đa 5 nấc, ghi đường đi từng nấc (chỉ tên máy chủ), 3xx hỏng/thân rỗng là lỗi ĐƯỜNG TRUYỀN
+  (`CHUYEN_HUONG_HONG`/`KHONG_PHAI_JSON`), chỉ 401/403/trang HTML đăng nhập mới là lỗi quyền. Nút 3 chế độ 1 mất đường trả
+  lời thì **đọc lại cờ** bằng hành động chỉ-đọc `coTaoThang` trước khi kết luận: khóa Web App đang giữ → "Google vẫn đang
+  chạy, đợi 5 phút" (mã thoát 6), không nói thất bại (T-CH-xx, TM-W-32).
+- **Chỉ một thư mục mã cho production.** `03_VAN_HANH` chạy thẳng `02_CODE/keodon-apps-script`: sửa dở trong thư mục đó là
+  sửa production. Làm việc trên worktree/nhánh riêng, thư mục production chỉ nhận mã đã merge.
 - **Chuỗi trông như ngày bị Google đổi kiểu.** `setValues([['2026-10']])` vào ô chưa ép `@` là thành ngày 01/10/2026.
   Ô cờ `THANG` (O2) của tạo tháng vì thế ghi với định dạng `@` ĐẶT TRƯỚC giá trị (`ghiKhoiO_`), và lõi đọc cờ qua
   `chuanThangCo` (Date → `yyyy-MM`). Giả lập chỉ bắt chước bẫy này khi bật `taoGiaLap({ epNgayNhuGoogle: true })` — bài TM-W-24.

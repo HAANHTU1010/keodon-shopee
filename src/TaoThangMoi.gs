@@ -110,6 +110,43 @@ var TaoThangMoi = (function () {
    */
 
   /** Đổi `;` → `,` cho vỏ Excel. Chỉ đổi dấu phân cách NGOÀI chuỗi trong nháy kép. */
+  /**
+   * Dấu phân cách đối số của CHÍNH sổ — cho công thức tool TỰ DỰNG (hiện chỉ có `Tổng nhập`!I).
+   *
+   * VÌ SAO (đo thật trên Google 14/9 23:10, bản sao tháng 10): Google trả `getFormulas()` và đọc công thức ghi bằng
+   * `setValues('=…')` THEO CÀI ĐẶT VÙNG của sổ — sổ Việt Nam dùng `;`. Công thức chép từ sổ (C/E/F/G `Tổng nhập`,
+   * `Lợi nhuận`!D7) nên tự đúng; riêng `iferror(H4*G4,"")` do vỏ Google gán cứng dấu `,` thì ra `#ERROR!` (lỗi cú pháp) →
+   * `Tổng nhập`!I2 và `Lợi nhuận` D6/D11/D12 lỗi theo, K-2 và K-6 lệch. Bản xuất .xlsx luôn đổi về `,` nên nhìn file xuất
+   * không thấy được — phải dò từ chính công thức Google trả về.
+   * Luật dò: có dấu `;` NGOÀI chuỗi trong bất kỳ công thức nào của ảnh chụp → `;`; không có mà có `,` → `,`; không có công
+   * thức nhiều đối số nào → `;` (khuôn sổ của shop).
+   * @param {Array} dsAnh các ảnh chụp file (mới trước, cũ sau)
+   */
+  function dauPhanCachCuaAnh(dsAnh) {
+    var coPhay = false;
+    for (var i = 0; i < dsAnh.length; i++) {
+      var sheets = (dsAnh[i] && dsAnh[i].sheets) || {};
+      for (var ten in sheets) {
+        var rows = sheets[ten].congThuc || [];
+        for (var r = 0; r < rows.length; r++) {
+          var row = rows[r] || [];
+          for (var c = 0; c < row.length; c++) {
+            var f = row[c];
+            if (!f) continue;
+            var trongChuoi = false;
+            for (var k = 0; k < f.length; k++) {
+              var ch = f.charAt(k);
+              if (ch === '"') trongChuoi = !trongChuoi;
+              else if (!trongChuoi && ch === ';') return ';';
+              else if (!trongChuoi && ch === ',') coPhay = true;
+            }
+          }
+        }
+      }
+    }
+    return coPhay ? ',' : ';';
+  }
+
   function doiDauPhanCach(text, dau) {
     if (dau === ';') return text;
     var out = '', trongChuoi = false;
@@ -722,6 +759,11 @@ var TaoThangMoi = (function () {
     return { thaoTac: tt, dongCuoi: cuoi, cotCuoi: cCuoi };
   }
 
+  /** Khuôn cột I `Tổng nhập` dùng được: công thức (đã dịch về dòng 4) nhân đúng H4 với G4 của CHÍNH dòng đó. */
+  function laMauCotI(m) {
+    return !!(m && /(^|[^A-Z$0-9])H4([^0-9]|$)/i.test(m.text) && /(^|[^A-Z$0-9])G4([^0-9]|$)/i.test(m.text) && m.text.indexOf('*') >= 0);
+  }
+
   /** Mẫu công thức của một cột: lấy ô có công thức đầu tiên từ dòng 4, dịch về dòng 4. */
   function mauCongThuc(ss, chuCot, tuDong) {
     if (!ss) return null;
@@ -759,11 +801,14 @@ var TaoThangMoi = (function () {
       mau[chu] = mauCongThuc(ssNhapMoi, chu) || mauCongThuc(ssNhapCu, chu);
     });
     var thieu = ['C', 'E', 'F', 'G'].filter(function (chu) { return !mau[chu]; });
+    var mauI = [mauCongThuc(ssNhapMoi, 'I'), mauCongThuc(ssNhapCu, 'I')].filter(laMauCotI)[0] || null;
     var r = 4;
     danhMuc.forEach(function (m) {
       tt.push({ loai: 'GHI_O', sheet: ten, r: r, c: C('D'), gt: m.tenVietTat });
       tt.push({ loai: 'GHI_O', sheet: ten, r: r, c: C('H'), gt: m.ton });          // số thuần, không công thức
-      tt.push({ loai: 'GHI_CT', sheet: ten, r: r, c: C('I'), text: doiDauPhanCach('iferror(H' + r + '*G' + r + ';"")', dau), mang: false });
+      // YC-44: CHÉP NGUYÊN VĂN công thức cột I của khuôn (D-57) — chuỗi Google trả qua getFormulas ghi lại được, đo thật 14/9 ở
+      // C/E/F/G cùng lệnh ghi. Chỉ khi khuôn không có I dạng H×G mới tự dựng, theo dấu phân cách dò từ chính sổ.
+      tt.push({ loai: 'GHI_CT', sheet: ten, r: r, c: C('I'), text: mauI ? Utils.dichCongThuc(mauI.text, 4, r) : doiDauPhanCach('iferror(H' + r + '*G' + r + ';"")', dau), mang: mauI ? mauI.mang : false });
       ['C', 'E', 'F', 'G'].forEach(function (chu) {
         if (!mau[chu]) return;
         tt.push({ loai: 'GHI_CT', sheet: ten, r: r, c: C(chu), text: Utils.dichCongThuc(mau[chu].text, 4, r), mang: mau[chu].mang });
@@ -882,7 +927,8 @@ var TaoThangMoi = (function () {
    */
   function lapKeHoach(anhCu, anhMoi, ts) {
     ts = ts || {};
-    var dau = ts.dauPhanCach || ';';
+    // Vỏ Excel truyền ',' (ExcelJS luôn dấu phẩy). Vỏ Google KHÔNG truyền: dò từ chính công thức của sổ (xem dauPhanCachCuaAnh).
+    var dau = ts.dauPhanCach || dauPhanCachCuaAnh([anhMoi, anhCu]);
     var thoiDiem = ts.thoiDiem || new Date();
     var nhan = Utils.dinhDangNgayGio(thoiDiem).slice(0, 16);
     var thangMoi = String(ts.thangMoi || '');
@@ -892,7 +938,7 @@ var TaoThangMoi = (function () {
 
     var kq = {
       thangMoi: thangMoi, phienBan: PHIEN_BAN, canhBao: [], thongBao: [],
-      chay: false, lyDoDung: [], kiem: null, doc: null, batDau: [], buoc: [], tuBuoc: 'B2b'
+      chay: false, lyDoDung: [], kiem: null, doc: null, batDau: [], buoc: [], tuBuoc: 'B2b', dauPhanCach: dau
     };
 
     var kiem = kiemDieuKien(anhMoi, anhCu, thangMoi);
@@ -1175,6 +1221,7 @@ var TaoThangMoi = (function () {
     kiemDieuKien: kiemDieuKien,
     buocBatDau: buocBatDau,
     THU_TU_BUOC: THU_TU_BUOC,
+    dauPhanCachCuaAnh: dauPhanCachCuaAnh,
     CAU_BAN_SAO_HONG: CAU_BAN_SAO_HONG,
     docDanhMuc: docDanhMuc,
     docLoiNhuanCu: docLoiNhuanCu,
@@ -1189,4 +1236,4 @@ var TaoThangMoi = (function () {
   };
 })();
 
-var VAN_TAY_TAOTHANGMOI = 'cc4684e7';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_TAOTHANGMOI = '6e124ea7';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

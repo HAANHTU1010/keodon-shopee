@@ -7,7 +7,8 @@
  *
  * Năm hành động: `ping` (thử cửa) · `doc` (lấy mã đơn đã có + Mapping + tồn kho) · `ghi` (nối dòng) ·
  * `xuLy` (gửi thẳng bảng dòng đã qua lớp 1, Web App tự làm lớp 2 + lớp 3 + ghi trong một lần gọi) ·
- * `taoThangMoi` (nút 3 chế độ 1 — chuyển sổ sang tháng mới, xem `WebAppGoogleSheet.taoThangMoi`).
+ * `taoThangMoi` (nút 3 chế độ 1 — chuyển sổ sang tháng mới, xem `WebAppGoogleSheet.taoThangMoi`) · và từ 2.7.1 `coTaoThang`
+ * (CHỈ ĐỌC cờ tiến độ của file tháng mới — máy hỏi lại sau khi mất đường trả lời của `taoThangMoi`, xem `_goiTaoThang`).
  *
  * `xuLy` là đường mặc định từ bản 2.4.0. `doc` + `ghi` GIỮ NGUYÊN làm đường lùi (khóa `duong` trong
  * `CAU_HINH_VAN_HANH.json` → `google_sheet.duong = "ghi"`), vì đó là đường đã nghiệm thu.
@@ -28,6 +29,8 @@
  * LỖI QUYỀN NÓI TIẾNG NGƯỜI (D-46): 401/403, trang HTML hoặc trang đăng nhập thay vì JSON, và Web App báo
  * không mở / không ghi được file — cả ba gom về MỘT câu `cauLoiQuyen(thang)` rồi dừng; mã HTTP thật và
  * câu chi tiết của Apps Script đi ở dòng dưới, để người sửa còn manh mối.
+ * KHÔNG phải lỗi quyền (2.7.1, sự cố 14/9 23:01): chuỗi chuyển hướng hỏng (`CHUYEN_HUONG_HONG`) và thân RỖNG / chữ lạ không phải
+ * trang HTML (`KHONG_PHAI_JSON`) — đó là lỗi ĐƯỜNG TRUYỀN, câu nói rõ vậy kèm đường đi từng nấc.
  *
  * ĐỐI CHIẾU PHIÊN BẢN (GV-v2.3 mục 2.3; YC-42 từ 2.7.0): Google KHÔNG tự đồng bộ mã. Sửa `.gs` mà quên
  * Deploy → Manage deployments → New version thì link /exec vẫn chạy bản cũ, KHÔNG báo lỗi gì. Tới 2.6.1 cửa này đòi hai
@@ -43,7 +46,7 @@ const { URL } = require('url');
  * Bản của VỎ MÁY — bằng `version` trong package.json và `var PHIEN_BAN` trong `src/ShellAppsScript.gs` khi phát hành
  * (T-DT-23 canh). Gửi lên Google trong trường `banMay` của mọi gói.
  */
-const PHIEN_BAN = '2.7.0';
+const PHIEN_BAN = '2.7.1';
 
 /**
  * YC-42: bản Web App THẤP NHẤT máy này còn dùng được. Web App dưới mốc → CHẶN trước lô đầu tiên, câu nói rõ bên nào cũ và
@@ -96,6 +99,58 @@ const TIMEOUT_TAO_THANG_MS = 400000;
  * làm xong ít nhất bước vừa dở, nên tối đa ~7 lượt là xong. 20 là trần chống vòng lặp, không phải con số mong đợi.
  */
 const SO_LUOT_TAO_THANG_TOI_DA = 20;
+
+/**
+ * Số nấc CHUYỂN HƯỚNG tối đa máy đi theo trong MỘT lượt gọi (2.7.1).
+ *
+ * Vì sao nhiều nấc (sự cố 14/9 23:01, nút 3 chế độ 1): Apps Script trả `POST→302` sang `script.googleusercontent.com`, rồi
+ * `GET→200` JSON — đó là đường thường gặp. Nhưng Google có lúc trả thêm một nấc 3xx nữa, hoặc 302 không kèm Location. Bản 2.7.0
+ * chỉ đi theo ĐÚNG MỘT nấc 302: nấc thứ hai rơi vào phần đọc thân, `JSON.parse('')` hỏng và máy báo "LỖI QUYỀN TRUY CẬP" — sai
+ * nguyên nhân (nút 4 cùng Web App năm phút sau vẫn chạy tốt), người bấm đi kiểm quyền trong khi Google đã chạy xong.
+ * 5 nấc dư cho mọi chuỗi Google thật từng trả; quá 5 là chuỗi vòng — dừng với `CHUYEN_HUONG_HONG`, không quay mãi.
+ */
+const SO_NAC_CHUYEN_HUONG_TOI_DA = 5;
+
+/** Mã HTTP chuyển hướng máy đi theo (có Location). Mọi nấc sau nấc đầu đi bằng GET, như Apps Script đòi. */
+const MA_CHUYEN_HUONG = [301, 302, 303, 307, 308];
+
+/** Thời gian chờ MỖI nấc của lượt đọc lại cờ `coTaoThang` — hành động chỉ đọc hai ô, không cần chờ như lượt tạo tháng. */
+const TIMEOUT_DOC_CO_MS = 90000;
+
+/**
+ * Cờ `DA_KHOI_TAO_<giờ>` ghi TRƯỚC lúc máy bắt đầu lần tạo tháng này quá ngần ấy thì KHÔNG phải do lần này ghi. 15 phút dư cho
+ * đồng hồ máy lệch đồng hồ Google; lệch hơn thế thì máy chỉ bảo chạy lại chế độ 1 — hướng AN TOÀN (xem `ketLuanSauLoiDuongTruyen`).
+ */
+const DUNG_SAI_GIO_CO_MS = 15 * 60 * 1000;
+
+/**
+ * Địa chỉ của nấc sau từ tiêu đề Location. Tuyệt đối (`https://…`) → dùng NGUYÊN chuỗi: không qua `new URL().toString()`, vì
+ * chuẩn hóa có thể đổi mã hóa ký tự trong khóa phiên của Google. Tương đối (`/…`, `//…`) → ghép với máy chủ của nấc vừa trả.
+ * Giao thức khác https (`http:`, `javascript:`…) hoặc không đọc được → '' (không đi).
+ */
+function diaChiNacSau(location, diaChiHienTai) {
+  const s = String(location == null ? '' : location).trim();
+  if (!s) return '';
+  if (/^https:\/\//i.test(s)) return s;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return '';
+  try {
+    const goc = new URL(diaChiHienTai);
+    if (s.indexOf('//') === 0) return 'https:' + s;
+    if (s.charAt(0) === '/') return 'https://' + goc.host + s;
+    return new URL(s, goc).href;
+  } catch (e) { return ''; }
+}
+
+/** Chỉ TÊN MÁY CHỦ của một địa chỉ — đường đi ghi vào nhật ký không bao giờ mang path/query (khóa phiên của Google, INV-7). */
+function tenMayChu(diaChi) {
+  try { return new URL(String(diaChi)).hostname || '(không rõ máy chủ)'; } catch (e) { return '(địa chỉ không đọc được)'; }
+}
+
+/** Mảng đường đi → một dòng người đọc được. */
+function moTaDuongDi(ds) {
+  const x = Array.isArray(ds) ? ds.filter(Boolean) : [];
+  return x.length ? x.join(' · ') : '(chưa nhận phản hồi nào)';
+}
 
 /**
  * Mã từ chối NGHIỆP VỤ của `taoThangMoi` — Web App đã xét hai file và nói KHÔNG, kèm lý do. `taoThangMoi()` trả các ca
@@ -488,6 +543,8 @@ class WebAppGoogleSheet {
     this.banDungWebApp = null;       // dấu vân tay bản dựng Google trả về (YC-38.3: in vào dòng RUN)
     this.canhBaoBanDung = [];        // câu cảnh báo lệch dấu vân tay bản dựng, điền sau lượt ping
     this.cheThemDs = [];             // link/ID không nằm trong link_thang (nút 3 vừa gõ) — `chePhu` che luôn
+    this.duongDiCuoi = [];           // 2.7.1: đường đi của lượt gọi gần nhất — `POST→302 (có Location → <máy chủ>)` · `GET→200`
+    this.nhatKyDuongTruyen = [];     // 2.7.1: đường đi từng lượt của lần `taoThangMoi` gần nhất — nút 3 in ra và ghi nhật ký
     if (this.bat) {
       if (!this.url) throw new Error('Bật ghi Google Sheet nhưng thiếu web_app_url trong CAU_HINH_VAN_HANH.json');
       // Gói giao user đã có sẵn chuỗi (YC-32), nên thiếu ở đây nghĩa là cấu hình bị sửa tay hoặc gói
@@ -549,9 +606,23 @@ class WebAppGoogleSheet {
    * @param {Object} [tuyChon] `traVeKhiTuChoi: true` — CHỈ `taoThangMoi` dùng: Web App từ chối với mã nằm trong
    *   `MA_TU_CHOI_TAO_THANG` thì TRẢ VỀ phản hồi (kèm `goiY`) thay vì ném, để nút 3 in được bảng R/K. Lỗi lệch bản,
    *   lỗi quyền, sai chuỗi bí mật vẫn ném như cũ.
+   *   `choMs` — thời gian chờ MỖI nấc của lượt này (POST và từng GET chuyển hướng), đè mặc định theo hành động. Chỉ lượt đọc cờ
+   *   `coTaoThang` dùng (`TIMEOUT_DOC_CO_MS`).
+   *   `boiCanh: 'taoThang'` — lượt `ping` chốt phiên bản mở đầu nút 3 (câu lỗi nói "chưa gửi lệnh tạo tháng nào").
+   *
+   * CHUYỂN HƯỚNG NHIỀU NẤC (2.7.1): 301/302/303/307/308 có Location → GET nấc sau, tối đa `SO_NAC_CHUYEN_HUONG_TOI_DA` nấc. Mỗi
+   * phản hồi ghi một mục vào `this.duongDiCuoi` — `POST→302 (có Location → script.googleusercontent.com)`, `GET→302 (KHÔNG có
+   * Location)`, `GET→200` — CHỈ tên máy chủ, không path/query.
+   *
+   * LỖI ĐƯỜNG TRUYỀN (2.7.1): lỗi mạng / hết giờ / đứt, chuyển hướng hỏng (`CHUYEN_HUONG_HONG`), thân không phải JSON mà cũng không
+   * phải trang HTML (`KHONG_PHAI_JSON`), HTTP ≥ 500 → lỗi mang `loiDuongTruyen = true`, `cauGoc` (phần mô tả, không kèm việc phải
+   * làm — `taoThangMoi` ghép kết luận riêng sau khi đọc lại cờ) và `duongDi`. Không ca nào trong số đó là lỗi quyền.
    */
   _goi(body, tuyChon) {
     const tc = tuyChon || {};
+    // Đường đi của lượt này — gán NGAY để lượt nào ném sớm (PII, thiếu link tháng) cũng không để lại đường đi của lượt trước.
+    const duongDi = [];
+    this.duongDiCuoi = duongDi;
     // Soát PII trên TỪNG LÔ, ngay trước khi gói thành chuỗi — không phải một lần lúc dựng kế hoạch.
     // Lô cuối mới dính dữ liệu bẩn là ca hoàn toàn có thật (một file xuất lạ trong lượt nhiều file).
     const hd = String(body && body.hanhDong || '').toLowerCase();
@@ -570,39 +641,107 @@ class WebAppGoogleSheet {
     const u = new URL(this.url);
     const opt = {
       method: 'POST', hostname: u.hostname, path: u.pathname + u.search,
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(than) },
-      timeout: choMs
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(than) }
     };
     // Lượt `ping` chốt phiên bản MỞ ĐẦU một lần tạo tháng: hỏng ở đây thì chưa lệnh tạo tháng nào rời máy.
     const pingTaoThang = hd === 'ping' && tc.boiCanh === 'taoThang';
+    let soNac = 0, nacDangCho = 'POST', daGhiDut = false;
+    /** Gắn dấu LỖI ĐƯỜNG TRUYỀN: `taoThangMoi` thấy dấu này thì đọc lại cờ trước khi kết luận (xem `_goiTaoThang`). */
+    const danhDau = (e, cauGoc) => { e.loiDuongTruyen = true; e.cauGoc = cauGoc; e.duongDi = duongDi.slice(); return e; };
+    // Việc phải làm sau một lỗi đường truyền mà KHÔNG phải mất mạng (chuyển hướng hỏng, thân rỗng). Không nói "kiểm tra mạng":
+    // mạng vẫn thông, Google trả lời được — chỉ là trả sai hình dạng. Lặp lại thì dòng đường đi là manh mối cho người phụ trách.
+    const viecDuongTruyen = pingTaoThang
+      ? 'Tool CHƯA gửi lệnh tạo tháng nào — file tháng mới chưa bị đụng, link_thang không đổi. Đợi vài phút rồi bấm lại nút 3; ' +
+        'lặp lại thì chụp màn hình (có dòng đường đi) gửi người phụ trách.'
+      : laTaoThang
+        ? 'Chưa biết Google đã chuyển sổ tới đâu; link_thang CHƯA được khai. Đợi 5 phút rồi bấm lại nút 3 chế độ 1 với đúng bảy ' +
+          'giá trị — tool chạy tiếp từ bước đã xong.'
+        : hd === 'cotaothang'
+          ? 'Lượt đọc cờ tiến độ không ghi gì.'
+          : 'Gói này CHƯA GHI ĐƯỢC, hoặc chưa biết đã ghi hay chưa. Đợi vài phút rồi chạy lại tool: phần đã ghi vẫn giữ nguyên và ' +
+            'sẽ không bị ghi trùng. Lặp lại nhiều lần thì chụp màn hình (có dòng đường đi) gửi người phụ trách.';
     // Mất mạng giữa chừng (bài D-12). Câu báo phải nói được ba điều, vì đây là lúc người vận hành
     // hoang mang nhất: chuyện gì xảy ra, dữ liệu có sao không, và bấm gì tiếp.
     // Cố ý KHÔNG khẳng định "chưa ghi gì": Apps Script có thể đã ghi xong rồi mới rớt phản hồi
     // (đo được ở bài T-WA-05: 0 lên 9 dòng trong khi máy vẫn báo lỗi). Nói chắc là nói sai.
     // Tạo tháng có câu riêng: "không bị ghi trùng" là chuyện của kéo đơn; ở đây điều người bấm cần biết là
     // file tháng mới có thể đã dở dang, link CHƯA khai, và bấm lại thì tool tự chạy tiếp từ cờ tiến độ.
-    const loiMang = (e) => new Error('Không gọi được Web App (' + this.chePhu(e && e.message) + '). ' +
-      (pingTaoThang
-        ? 'Tool CHƯA gửi lệnh tạo tháng nào — file tháng mới chưa bị đụng, link_thang không đổi. Kiểm tra mạng rồi bấm lại nút 3.'
-        : laTaoThang
-          ? 'Chưa biết Google đã chuyển sổ tới đâu. link_thang CHƯA được khai. Kiểm tra mạng rồi bấm lại nút 3 chế độ 1 ' +
-            'với đúng bảy giá trị: tool chạy tiếp từ bước đã xong; nếu nó báo [DA_KHOI_TAO] thì chọn chế độ 2 để khai link.'
-          : 'Gói này CHƯA GHI ĐƯỢC, hoặc chưa biết đã ghi hay chưa. Kiểm tra mạng rồi chạy lại tool: ' +
-            'phần đã ghi vẫn giữ nguyên và sẽ không bị ghi trùng.'));
-    return new Promise((giaiQuyet, tuChoi) => {
-      const req = https.request(opt, (res) => {
-        // Apps Script trả 302 sang script.googleusercontent.com — phải đi theo, và đi bằng GET.
-        if (res.statusCode === 302 && res.headers.location) {
+    const loiMang = (e) => {
+      const lyDo = this.chePhu(e && e.message);
+      // Một lượt đứt có thể báo hai lần (lỗi của `req` rồi `close` của phản hồi) — đường đi chỉ ghi lần đầu.
+      if (!daGhiDut) { daGhiDut = true; duongDi.push(nacDangCho + '→đứt (' + lyDo + ')'); }
+      const cauGoc = 'Không gọi được Web App (' + lyDo + ').';
+      return danhDau(new Error(cauGoc + ' ' +
+        (pingTaoThang
+          ? 'Tool CHƯA gửi lệnh tạo tháng nào — file tháng mới chưa bị đụng, link_thang không đổi. Kiểm tra mạng rồi bấm lại nút 3.'
+          : laTaoThang
+            ? 'Chưa biết Google đã chuyển sổ tới đâu. link_thang CHƯA được khai. Kiểm tra mạng rồi bấm lại nút 3 chế độ 1 ' +
+              'với đúng bảy giá trị: tool chạy tiếp từ bước đã xong; nếu nó báo [DA_KHOI_TAO] thì chọn chế độ 2 để khai link.'
+            : 'Gói này CHƯA GHI ĐƯỢC, hoặc chưa biết đã ghi hay chưa. Kiểm tra mạng rồi chạy lại tool: ' +
+              'phần đã ghi vẫn giữ nguyên và sẽ không bị ghi trùng.')), cauGoc);
+    };
+    // Chuỗi chuyển hướng hỏng: 3xx không có Location, quá trần nấc, hoặc Location không đi được. TUYỆT ĐỐI không gọi `loiQuyen`:
+    // đúng câu gọi nhầm này làm người bấm nút 3 ngày 14/9 23:01 đi kiểm quyền trong khi Google đã chạy.
+    const loiChuyenHuong = (maCuoi, lyDo) => {
+      const cauGoc = 'Google chuyển hướng ' + soNac + ' nấc mà không về JSON (nấc cuối HTTP ' + maCuoi + ', ' + lyDo + '). ' +
+        'Đây là lỗi ĐƯỜNG TRUYỀN, KHÔNG phải lỗi quyền truy cập. Đường đi: ' + moTaDuongDi(duongDi) + '.';
+      const e = danhDau(new Error(cauGoc + ' ' + viecDuongTruyen), cauGoc);
+      e.maKeodon = 'CHUYEN_HUONG_HONG';
+      e.maHttp = maCuoi;
+      return e;
+    };
+    // Thân rỗng hay chữ lạ mà KHÔNG phải trang HTML/đăng nhập — cũng là đường truyền, không phải quyền.
+    const loiKhongPhaiJson = (maHttp, buf) => {
+      const rong = String(buf == null ? '' : buf).trim() === '';
+      const cauGoc = 'Web App trả về ' + (rong ? 'thân rỗng' : 'thân không phải JSON') + ' (HTTP ' + maHttp + ')' +
+        (rong ? '' : ': "' + this.chePhu(buf).replace(/\s+/g, ' ').slice(0, 160) + '"') +
+        ' — lỗi ĐƯỜNG TRUYỀN, KHÔNG phải lỗi quyền truy cập. Đường đi: ' + moTaDuongDi(duongDi) + '.';
+      const e = danhDau(new Error(cauGoc + ' ' + viecDuongTruyen), cauGoc);
+      e.maKeodon = 'KHONG_PHAI_JSON';
+      e.maHttp = maHttp;
+      return e;
+    };
+    // `choMs` của lượt này: tùy chọn `choMs` (lượt đọc cờ) đè mặc định theo hành động ở trên. Tham số CỐ Ý cùng tên — mọi nấc
+    // bên dưới (POST lẫn từng GET) chờ đúng một số, và câu "không trả lời sau N giây" nói đúng số đã chờ.
+    const guiDi = (choMs) => new Promise((giaiQuyet, tuChoi) => {
+      opt.timeout = choMs;
+      let diaChiHienTai = this.url;
+      // Một phản hồi tới. 3xx: đi theo Location bằng GET (Apps Script đòi GET từ nấc thứ hai), hoặc dừng CHUYEN_HUONG_HONG.
+      // Còn lại: đọc thân.
+      const nhanPhanHoi = (res, kieu) => {
+        const ma = res.statusCode;
+        if (MA_CHUYEN_HUONG.indexOf(ma) >= 0) {
+          soNac++;
+          res.resume();
+          const location = String((res.headers && res.headers.location) || '').trim();
+          const diaChi = location ? diaChiNacSau(location, diaChiHienTai) : '';
+          duongDi.push(kieu + '→' + ma + (location
+            ? ' (có Location → ' + tenMayChu(diaChi || location) + ')'
+            : ' (KHÔNG có Location)'));
+          if (!location) return tuChoi(loiChuyenHuong(ma, 'không có địa chỉ Location'));
+          if (soNac > SO_NAC_CHUYEN_HUONG_TOI_DA) {
+            return tuChoi(loiChuyenHuong(ma, 'máy chỉ đi theo tối đa ' + SO_NAC_CHUYEN_HUONG_TOI_DA + ' nấc chuyển hướng'));
+          }
+          if (!diaChi) return tuChoi(loiChuyenHuong(ma, 'địa chỉ Location không đi được — không phải https'));
+          nacDangCho = 'GET';
+          daGhiDut = false;
+          diaChiHienTai = diaChi;
+          let g;
           // Tùy chọn `timeout` của Node CHỈ phát sự kiện, không tự hủy: không có trình nghe thì lượt GET treo mãi
           // khi mạng đứng ngay lúc chuyển hướng — đúng lúc Google đã làm xong việc và câu hướng dẫn quan trọng nhất.
-          const g = https.get(res.headers.location, { timeout: choMs }, (r2) => docHet(r2));
+          try {
+            g = https.get(diaChi, { timeout: choMs }, (r2) => nhanPhanHoi(r2, 'GET'));
+          } catch (eg) {
+            return tuChoi(loiChuyenHuong(ma, 'địa chỉ Location không đi được'));
+          }
           g.on('timeout', () => { g.destroy(new Error('Web App không trả lời sau ' + (choMs / 1000) + ' giây')); });
           g.on('error', (e) => tuChoi(loiMang(e)));
-          res.resume();
           return;
         }
+        duongDi.push(kieu + '→' + ma);
         docHet(res);
-      });
+      };
+      const req = https.request(opt, (res) => nhanPhanHoi(res, 'POST'));
       req.on('timeout', () => { req.destroy(new Error('Web App không trả lời sau ' + (choMs / 1000) + ' giây')); });
       req.on('error', (e) => tuChoi(loiMang(e)));
       req.write(than);
@@ -630,35 +769,49 @@ class WebAppGoogleSheet {
             // rồi không biết làm gì. Phải phân biệt được ca quá 6 phút, vì việc phải làm khác hẳn.
             const noiDung = this.chePhu(buf);
             const quaGio = /Exceeded maximum execution time|thời gian thực thi/i.test(noiDung);
+            // 2.7.1: HTTP ≥ 500 là Google trả lời hỏng giữa đường — đánh dấu đường truyền để nút 3 đọc lại cờ trước khi kết luận.
+            const laLoiGoogle = res.statusCode >= 500;
             if (laTaoThang) {
               // "Chia nhỏ file thả vào" và "tool chưa ghi gì" đều SAI với tạo tháng: không có file nào để chia, và
               // Google có thể đã làm xong vài bước. Cờ BUOC_DA_XONG giữ tiến độ nên việc đúng là bấm lại.
-              return tuChoi(new Error('Web App trả mã ' + res.statusCode + ' giữa lúc tạo tháng ' + (body.thang || '') + '. ' +
+              const moTa = 'Web App trả mã ' + res.statusCode + ' giữa lúc tạo tháng ' + (body.thang || '') + '. ' +
                 (quaGio
                   ? 'Nguyên nhân: một bước chạy quá 6 phút, Google cắt ngang. '
-                  : 'Lỗi phía Apps Script, không phải lỗi cấu hình máy này. ') +
+                  : 'Lỗi phía Apps Script, không phải lỗi cấu hình máy này. ');
+              const eTm = new Error(moTa +
                 'File tháng mới có thể đã làm được vài bước; link_thang CHƯA được khai. Việc phải làm: bấm lại nút 3 ' +
                 'chế độ 1 với đúng bảy giá trị — tool chạy tiếp từ bước đã xong (báo B5_DANG_LAM thì làm theo câu hướng dẫn ' +
-                'của nó). Nội dung Google trả về: ' + noiDung.slice(0, 300)));
+                'của nó). Nội dung Google trả về: ' + noiDung.slice(0, 300));
+              return tuChoi(laLoiGoogle
+                ? danhDau(eTm, moTa + 'Nội dung Google trả về: ' + noiDung.replace(/\s+/g, ' ').slice(0, 160) + '.')
+                : eTm);
             }
-            return tuChoi(new Error('Web App trả mã ' + res.statusCode +
+            const eKd = new Error('Web App trả mã ' + res.statusCode +
               ' (lỗi phía Apps Script, không phải lỗi cấu hình máy này). ' +
               (quaGio
                 ? 'Nguyên nhân: gói chạy quá 6 phút. Việc phải làm: chia nhỏ file thả vào rồi chạy lại. '
                 : 'Việc phải làm: chạy lại sau vài phút; vẫn lỗi thì mở dự án Apps Script xem mục Executions ' +
                   'và báo người phụ trách. ') +
-              'Tool chưa ghi gì trong lượt này. Nội dung Google trả về: ' + noiDung.slice(0, 300)));
+              'Tool chưa ghi gì trong lượt này. Nội dung Google trả về: ' + noiDung.slice(0, 300));
+            // Câu này là câu của NÚT 4 — nguyên nhân và việc phải làm dính liền nhau ("gói quá 6 phút → chia nhỏ file"), không tách
+            // được phần mô tả. `cauGoc` giữ TRỌN câu: nhánh tạo tháng ở trên mà hỏng thì câu kéo đơn lọt tới nút 3 phải lộ ra ngay.
+            return tuChoi(laLoiGoogle ? danhDau(eKd, eKd.message) : eKd);
           }
           let kq;
-          try { kq = JSON.parse(buf); } catch (e) {
-            // D-46 ca (2): Google trả trang HTML / trang đăng nhập (mã 200, hoặc 200 sau khi đi theo 302)
+          try { kq = JSON.parse(buf); } catch (e) { kq = undefined; }
+          if (!kq || typeof kq !== 'object') {
+            // D-46 ca (2): Google trả trang HTML / trang đăng nhập (mã 200, hoặc 200 sau khi đi theo chuyển hướng)
             // thay vì JSON — dấu hiệu Deploy sai "Who has access", hoặc chưa Deploy bản mới. Một câu
             // chuẩn, không đổ nguyên trang HTML tiếng Anh ra cửa sổ đen của người không đọc tiếng Anh.
-            try {
-              loiQuyen(thangGoi, 'Web App trả về không phải JSON' +
-                (laTrangHtml(buf) ? ' (trang HTML/đăng nhập của Google)' : '') +
-                '. Nội dung: ' + this.chePhu(buf).replace(/\s+/g, ' ').slice(0, 160), res.statusCode);
-            } catch (eh) { return tuChoi(eh); }
+            if (laTrangHtml(buf)) {
+              try {
+                loiQuyen(thangGoi, 'Web App trả về không phải JSON (trang HTML/đăng nhập của Google). Nội dung: ' +
+                  this.chePhu(buf).replace(/\s+/g, ' ').slice(0, 160), res.statusCode);
+              } catch (eh) { return tuChoi(eh); }
+            }
+            // 2.7.1 (sự cố 14/9 23:01): thân RỖNG, hay chữ lạ không phải trang HTML, KHÔNG phải dấu hiệu quyền. Bản 2.7.0 đưa cả ca này
+            // vào `loiQuyen` — máy báo "LỖI QUYỀN TRUY CẬP … (HTTP 302): Web App trả về không phải JSON. Nội dung: " cho một lỗi đường truyền.
+            return tuChoi(loiKhongPhaiJson(res.statusCode, buf));
           }
           // Nhớ lại bản THẬT của Web App ngay cả khi phản hồi là lỗi — nhờ vậy `ghi()` chặn được
           // trước khi gửi lô đầu tiên, không phải chờ tới lúc Google trả lời.
@@ -715,6 +868,7 @@ class WebAppGoogleSheet {
         });
       };
     });
+    return guiDi(Number(tc.choMs) > 0 ? Number(tc.choMs) : choMs);
   }
 
   /**
@@ -882,10 +1036,14 @@ class WebAppGoogleSheet {
    * @param {Object} [tc] { khiTienDo(kq, luot) · nguongGiay, toiDaLuot (hai cái cuối chỉ để test) }
    * @returns {Promise<Object>} `{ ok, loi, thongBao, goiY, kiem, lop2, nhatKy, canhBao, tenFileMoi, tenFileCu,
    *   buocDaXong, soLuot, kyCu, kyMoi }`. Web App TỪ CHỐI hay TỰ KIỂM LỆCH → `ok:false` (không ném).
-   * @throws lỗi mạng, lỗi quyền (D-46), lệch phiên bản, sai chuỗi bí mật, tham số hỏng — câu đã che link/ID/bí mật.
+   * @throws lỗi quyền (D-46), lệch phiên bản, sai chuỗi bí mật, tham số hỏng — câu đã che link/ID/bí mật. Lượt hỏng ở ĐƯỜNG
+   *   TRUYỀN (mạng, chuyển hướng, thân rỗng, HTTP ≥ 500) thì máy ĐỌC LẠI CỜ rồi mới ném, `maKeodon` là kết luận của
+   *   `ketLuanSauLoiDuongTruyen` (`GOOGLE_DANG_CHAY`, `CHUA_RO_TIEN_DO`, `DA_CHAY_XONG`, …) — xem `_goiTaoThang`.
    */
   async taoThangMoi(ts, tc) {
     const o = ts || {}, t = tc || {};
+    this.nhatKyDuongTruyen = [];
+    const batDauMs = Date.now();     // cờ DA_KHOI_TAO ghi trước mốc này không phải do lần tạo tháng này (ketLuanSauLoiDuongTruyen)
     [o.linkCu, o.linkMoi].forEach((x) => this.cheThem(x));
     const idCu = idTuLinkHoacId(o.linkCu), idMoi = idTuLinkHoacId(o.linkMoi);
     [idCu, idMoi].forEach((x) => this.cheThem(x));
@@ -907,13 +1065,13 @@ class WebAppGoogleSheet {
     const nhatKy = [], canhBao = [];
     let buocDungTruoc = null, daXongTruoc = '';
     for (let luot = 1; luot <= toiDa; luot++) {
-      const kq = await this._goi({
+      const kq = await this._goiTaoThang({
         hanhDong: 'taoThangMoi', thang: kyMoi,
         thangCu: Number(o.thangCu), namCu: Number(o.namCu), idCu: idCu,
         thangMoi: Number(o.thangMoi), namMoi: Number(o.namMoi), idMoi: idMoi,
         buocDungTruoc: buocDungTruoc || undefined,
         nguongGiay: t.nguongGiay == null ? undefined : t.nguongGiay
-      }, { traVeKhiTuChoi: true });
+      }, { luot: luot, idMoi: idMoi, kyMoi: kyMoi, batDauMs: batDauMs });
       (kq.nhatKy || []).forEach((x) => nhatKy.push(this.chePhu(x)));
       (kq.canhBao || []).forEach((x) => { const c = this.chePhu(x); if (canhBao.indexOf(c) < 0) canhBao.push(c); });
       if (typeof t.khiTienDo === 'function') t.khiTienDo(kq, luot);
@@ -944,6 +1102,134 @@ class WebAppGoogleSheet {
     throw hong('KET_TAO_THANG', 'Đã gọi ' + toiDa + ' lượt mà Web App vẫn chưa tạo xong tháng ' + kyMoi + '. Dừng để khỏi ăn quota; ' +
       'link_thang CHƯA được khai. Bấm lại nút 3 chế độ 1 sau vài phút — tool chạy tiếp từ bước đã xong.');
   }
+
+  /**
+   * MỘT lượt `taoThangMoi`, và ĐỌC LẠI CỜ khi lượt đó hỏng ở ĐƯỜNG TRUYỀN (2.7.1).
+   *
+   * Vì sao (sự cố 14/9 23:01): máy mất đường trả lời sau 36 giây và báo thất bại — nhưng lúc đó Google có thể đang chạy tiếp, đã chạy
+   * xong, hoặc dừng giữa chừng. Ba ca đó có ba việc phải làm KHÁC NHAU (đợi · khai link chế độ 2 · bấm lại chế độ 1); đoán một câu
+   * chung là bảo người bấm làm sai ở hai ca. Nên trước khi kết luận, máy hỏi Google `coTaoThang` (chỉ đọc) rồi mới nói.
+   * Lỗi KHÔNG phải đường truyền (lệch bản, quyền, sai chuỗi bí mật…) ném nguyên như cũ, không đọc cờ.
+   * Mỗi lượt ghi `lượt k: <đường đi>` vào `this.nhatKyDuongTruyen`; lượt đọc cờ ghi `đọc lại cờ: <đường đi>`.
+   * @param {Object} goi  thân gói `taoThangMoi`
+   * @param {Object} nc   { luot, idMoi, kyMoi, batDauMs }
+   */
+  async _goiTaoThang(goi, nc) {
+    let kq;
+    try {
+      kq = await this._goi(goi, { traVeKhiTuChoi: true });
+    } catch (e) {
+      const duongDi = (e && Array.isArray(e.duongDi)) ? e.duongDi : (this.duongDiCuoi || []).slice();
+      this.nhatKyDuongTruyen.push('lượt ' + nc.luot + ': ' + moTaDuongDi(duongDi));
+      if (!e || !e.loiDuongTruyen) throw e;
+      let co = null, loiDoc = null;
+      try { co = await this.docCoTaoThang(nc.idMoi, nc.kyMoi); } catch (e2) { loiDoc = e2 || new Error('lượt đọc cờ hỏng không rõ lý do'); }
+      this.nhatKyDuongTruyen.push('đọc lại cờ: ' + moTaDuongDi(this.duongDiCuoi));
+      const kl = ketLuanSauLoiDuongTruyen(e.cauGoc || e.message, co, loiDoc, duongDi, { batDauMs: nc.batDauMs });
+      const eKl = new Error(this.chePhu(kl.cau));
+      eKl.maKeodon = kl.ma;
+      eKl.loiGoc = e;
+      eKl.co = co;
+      throw eKl;
+    }
+    this.nhatKyDuongTruyen.push('lượt ' + nc.luot + ': ' + moTaDuongDi(this.duongDiCuoi));
+    return kq;
+  }
+
+  /**
+   * ĐỌC LẠI CỜ tiến độ của file tháng mới (2.7.1) — hành động CHỈ ĐỌC `coTaoThang` phía Google (`hanhDongCoTaoThang_`): không ghi ô
+   * nào, không giữ khóa, không soát PII (gói không mang dòng đơn), không gắn `spreadsheetId` (file do `idMoi` chỉ định, như `taoThangMoi`).
+   * @returns {Promise<Object>} `{ ok, hanhDong:'coTaoThang', thang, dangChay, coKhoiTao, buocDaXong, tenFileMoi }`
+   * @throws Google bản cũ (2.7.0) chưa có lệnh này → `maKeodon = 'HANH_DONG_LA'`; và mọi lỗi của `_goi`.
+   */
+  docCoTaoThang(idMoi, kyMoi) {
+    return this._goi({ hanhDong: 'coTaoThang', thang: kyMoi, idMoi: idMoi }, { choMs: TIMEOUT_DOC_CO_MS });
+  }
+}
+
+/** Nhãn giờ trong cờ `DA_KHOI_TAO_yyyy-MM-dd HH:mm` (giờ Việt Nam, múi giờ dự án Apps Script) → mili-giây; không đọc được → null. */
+function mocCoKhoiTao(co) {
+  const m = /_(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/.exec(String(co == null ? '' : co));
+  if (!m) return null;
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) - LECH_GIO_VN_MS;
+}
+
+/** Mili-giây → 'HH:mm dd/MM/yyyy' giờ Việt Nam. */
+function gioVN(ms) {
+  const d = new Date(Number(ms) + LECH_GIO_VN_MS);
+  return haiSo(d.getUTCHours()) + ':' + haiSo(d.getUTCMinutes()) + ' ' + haiSo(d.getUTCDate()) + '/' + haiSo(d.getUTCMonth() + 1) + '/' +
+    d.getUTCFullYear();
+}
+
+/**
+ * KẾT LUẬN SAU LỖI ĐƯỜNG TRUYỀN của nút 3 chế độ 1 (2.7.1) — HÀM THUẦN, kiểm được không cần mạng.
+ *
+ * Máy vừa mất đường trả lời của một lượt `taoThangMoi` và đã hỏi lại cờ (`coTaoThang`). Mỗi ca một mã, một việc phải làm:
+ *   · đọc cờ hỏng / Google cũ chưa có lệnh đọc cờ → `CHUA_RO_TIEN_DO`: chưa biết Google tới đâu, có thể VẪN ĐANG CHẠY — đợi 5 phút;
+ *   · khóa Web App đang bị giữ → `GOOGLE_DANG_CHAY`: chưa phải thất bại — đợi 5 phút, đừng bấm chồng;
+ *   · cờ `DA_KHOI_TAO_…` ghi trong lần bấm này → `DA_CHAY_XONG`: khai link bằng chế độ 2;
+ *   · cờ `DA_KHOI_TAO_…` ghi TRƯỚC lần bấm này (quá `DUNG_SAI_GIO_CO_MS`) → `CO_CU_TRUOC_LUOT_NAY`: KHÔNG kết luận "đã xong" — bản sao
+ *     tháng mới lấy từ sổ tháng trước mang nguyên cờ `DA_KHOI_TAO` của THÁNG TRƯỚC (TM-W-09); Google chưa chạy mà máy bảo chọn
+ *     chế độ 2 là khai link cho một sổ chưa chuyển. Việc an toàn: chạy lại chế độ 1 — sổ đã xong thật thì Google tự báo [DA_KHOI_TAO];
+ *   · `B5_DANG_LAM` → bản sao hỏng (`GOI_Y_TAO_THANG.B5_DANG_LAM`);
+ *   · dừng giữa chừng (có cờ bước / `DANG_KHOI_TAO_…`) → `DUNG_GIUA_CHUNG`: bấm lại chế độ 1 chạy tiếp;
+ *   · không cờ nào → `CHUA_GHI_GI`: bấm lại chế độ 1.
+ * Mọi câu mở đầu bằng `cauGoc` (+ đường đi nếu `cauGoc` chưa có) — người phụ trách vẫn thấy lỗi gốc.
+ *
+ * @param {string} cauGoc        phần mô tả lỗi của `_goi` (`e.cauGoc`)
+ * @param {Object|null} co       phản hồi `coTaoThang`
+ * @param {Error|null} loiDoc    lỗi của lượt đọc cờ
+ * @param {string[]} duongDi     đường đi của lượt hỏng
+ * @param {Object} [tuyChon]     `batDauMs` — lúc máy bắt đầu lần tạo tháng này (không có thì không xét tuổi cờ)
+ * @returns {{ma: string, cau: string}}
+ */
+function ketLuanSauLoiDuongTruyen(cauGoc, co, loiDoc, duongDi, tuyChon) {
+  const t = tuyChon || {};
+  let dau = String(cauGoc == null ? '' : cauGoc).trim();
+  const dd = Array.isArray(duongDi) ? duongDi.filter(Boolean) : [];
+  if (dd.length && dau.indexOf('Đường đi:') < 0) dau += ' Đường đi: ' + moTaDuongDi(dd) + '.';
+  const kl = (ma, cau) => ({ ma: ma, cau: (dau ? dau + ' ' : '') + '→ ' + cau });
+  const CHUA_KHAI = 'link_thang CHƯA được khai.';
+  const motDong = (x) => String(x == null ? '' : x).split('\n')[0].replace(/\s+/g, ' ').trim().slice(0, 200);
+
+  if (loiDoc || !co || typeof co !== 'object') {
+    const lyDo = (loiDoc && loiDoc.maKeodon === 'HANH_DONG_LA')
+      ? 'Google đang chạy bản cũ, chưa có lệnh đọc cờ `coTaoThang` — khi tiện chủ dự án Deploy bản mới'
+      : 'lượt đọc cờ cũng hỏng: ' + (motDong(loiDoc && (loiDoc.cauGoc || loiDoc.message)) || 'Google không trả cờ');
+    return kl('CHUA_RO_TIEN_DO', 'Máy KHÔNG đọc lại được cờ tiến độ (' + lyDo + ') nên CHƯA biết Google đã chạy tới đâu — Google có ' +
+      'thể VẪN ĐANG CHẠY. ĐỪNG bấm lại ngay: đợi 5 phút rồi bấm lại nút 3 chế độ 1 với đúng bảy giá trị (tool chạy tiếp từ bước ' +
+      'đã xong). ' + CHUA_KHAI);
+  }
+
+  const buoc = String(co.buocDaXong == null ? '' : co.buocDaXong).trim();
+  const khoiTao = String(co.coKhoiTao == null ? '' : co.coKhoiTao).trim();
+  if (co.dangChay === true) {
+    return kl('GOOGLE_DANG_CHAY', 'Google VẪN ĐANG CHẠY (cờ BUOC_DA_XONG hiện là ' + (buoc || '(trống)') + ') — máy chỉ mất đường ' +
+      'trả lời, CHƯA phải thất bại. ĐỪNG bấm lại ngay (hai lượt sẽ chạy chồng nhau): đợi 5 phút rồi bấm lại nút 3 chế độ 1 với ' +
+      'đúng bảy giá trị — tool chạy tiếp từ bước đã xong. ' + CHUA_KHAI);
+  }
+  if (/^DA_KHOI_TAO/.test(khoiTao)) {
+    const moc = mocCoKhoiTao(khoiTao);
+    if (moc != null && t.batDauMs != null && moc < Number(t.batDauMs) - DUNG_SAI_GIO_CO_MS) {
+      return kl('CO_CU_TRUOC_LUOT_NAY', 'Google không còn chạy, nhưng cờ ' + khoiTao + ' trên file tháng mới được ghi TRƯỚC lần bấm này (' +
+        gioVN(t.batDauMs) + ') — KHÔNG phải do lần này ghi; thường là cờ của sổ tháng trước đi theo bản sao. Máy KHÔNG kết luận là ' +
+        'đã xong. Việc phải làm: bấm lại nút 3 CHẾ ĐỘ 1 với đúng bảy giá trị: sổ đã khởi tạo xong thật thì Google sẽ báo [DA_KHOI_TAO] và chỉ sang ' +
+        'chế độ 2 — ĐỪNG chọn chế độ 2 trước khi thấy câu đó. ' + CHUA_KHAI);
+    }
+    return kl('DA_CHAY_XONG', 'Google ĐÃ chạy xong và tự kiểm đạt (cờ ' + khoiTao + ') — máy chỉ mất đường trả lời. ' + CHUA_KHAI +
+      ' Việc phải làm: bấm lại nút 3, chọn CHẾ ĐỘ 2 với đúng link [6/7] để khai link — ĐỪNG chọn lại chế độ 1.');
+  }
+  if (buoc === 'B5_DANG_LAM') {
+    return kl('B5_DANG_LAM', 'Google đã DỪNG (không còn chạy), cờ BUOC_DA_XONG = B5_DANG_LAM.' +
+      GOI_Y_TAO_THANG.B5_DANG_LAM.replace(/^\s*→\s*/, ' '));
+  }
+  if (buoc || /^DANG_KHOI_TAO/.test(khoiTao)) {
+    const x = buoc || '(chưa bước nào)';
+    return kl('DUNG_GIUA_CHUNG', 'Google đã DỪNG (không còn chạy), cờ BUOC_DA_XONG = ' + x + ' — file tháng mới đang dở. Việc phải làm: bấm lại nút 3 ' +
+      'chế độ 1 với đúng bảy giá trị để chạy tiếp từ sau ' + x + '. ' + CHUA_KHAI);
+  }
+  return kl('CHUA_GHI_GI', 'Google không còn chạy và file tháng mới chưa có cờ nào — chưa ô nào bị ghi. Việc phải làm: bấm lại nút 3 chế độ 1 với ' +
+    'đúng bảy giá trị (ĐỪNG chọn chế độ 2: file đó chưa được chuyển sổ). ' + CHUA_KHAI);
 }
 
 /** Tháng + năm → 'yyyy-MM'. Sai (tháng ngoài 1–12, năm không đủ 4 chữ số) → ''. */
@@ -1080,5 +1366,7 @@ module.exports = {
   idFileThang, cauThieuLinkThang, thangSau, canhBaoThangSau, RE_LINK_SHEET, thangHienTaiMay, phanNgayVN,
   cauLoiQuyen, loiQuyen, MA_LOI_QUYEN_WEBAPP, laTrangHtml,
   TIMEOUT_MS, TIMEOUT_TAO_THANG_MS, SO_LUOT_TAO_THANG_TOI_DA, MA_TU_CHOI_TAO_THANG, GOI_Y_TAO_THANG,
-  kyThangNam, idTuLinkHoacId
+  kyThangNam, idTuLinkHoacId,
+  SO_NAC_CHUYEN_HUONG_TOI_DA, MA_CHUYEN_HUONG, TIMEOUT_DOC_CO_MS, DUNG_SAI_GIO_CO_MS,
+  diaChiNacSau, tenMayChu, moTaDuongDi, ketLuanSauLoiDuongTruyen, mocCoKhoiTao
 };
