@@ -116,9 +116,10 @@ const GOI_Y_TAO_THANG = {
   FILE_CO_DU_LIEU: ' → File tháng mới KHÁC sổ tháng trước ở đúng phép R-… nêu trên (có dữ liệu gõ thêm, hoặc thiếu/đổi tên ' +
     'sheet), tool không khởi tạo để khỏi xóa mất số liệu. Kiểm lại cả hai link [3/7] và [6/7] — mọi phép R so file mới với ' +
     'file [3/7]. Đúng file thì tạo bản sao MỚI từ sổ tháng trước rồi chạy lại.',
-  B5_DANG_LAM: ' → Lượt trước dừng ĐÚNG lúc đang chèn cột `Lợi nhuận` — bước duy nhất không chạy lại được. ' +
-    'Mở sheet `Lợi nhuận` của file tháng mới, nhìn ô D5: là số tháng MỚI thì đã chèn, là số tháng CŨ thì chưa. ' +
-    'Chụp màn hình gửi người phụ trách sửa cờ; tool không tự đoán.',
+  // YC-43 điểm 4: không bắt người bấm đi đọc ô D5 rồi sửa cờ tay giữa lúc đầu tháng — bản sao kẹt ở đây là bỏ.
+  B5_DANG_LAM: ' → Lượt trước dừng ĐÚNG lúc đang chèn cột `Lợi nhuận` — bước duy nhất không chạy lại được, nên tool KHÔNG ' +
+    'chạy tiếp trên file này. Xóa bản sao đó trên Google Drive, tạo bản sao MỚI từ sổ tháng trước (Tệp → Tạo bản sao, đổi tên), ' +
+    'rồi bấm lại nút 3 chế độ 1 với link bản sao mới. link_thang CHƯA được khai.',
   TU_KIEM_LECH: ' → Tool GIỮ cờ DANG_KHOI_TAO trên file tháng mới và KHÔNG khai link. Đừng dùng file đó để kéo đơn; ' +
     'gửi nhật ký cho người phụ trách kiểm.',
   TRUNG_FILE: ' → Link [3/7] và [6/7] là CÙNG MỘT file. Tháng mới phải là bản sao riêng: Tệp → Tạo bản sao, đổi tên, ' +

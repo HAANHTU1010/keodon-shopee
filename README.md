@@ -149,7 +149,7 @@ Số bài lấy từ dòng tổng kết mỗi bộ tự in ra; chạy lại là 
 | `npm run test-gian-hang` | `T-GH-xx` | file thả nhầm thư mục gian hàng: luật D-04 trên 12 file xuất thật, và vỏ Google chặn trước khi ghi |
 | `npm run test-hop-dong` | `T-HD-xx` | YC-38.1 hợp đồng file tháng: lệch khuôn → `SAI_HOP_DONG` trước lệnh ghi đầu tiên; không chặn oan khuôn thật; Mapping ghi THEO TÊN CỘT |
 | `npm run test-dong-run` | `T-RUN-xx` | YC-38.3 dòng tổng kết RUN: RUN id giờ Việt Nam, Web App ghi nhật ký + trả số dòng CÓ và băm Mapping, thả lại cùng file ra cùng dòng |
-| `npm run test-tao-thang-moi-web` | `TM-W-xx` | YC-35 hành động `taoThangMoi` trên Web App giả, chạy trên file tháng 9 khuôn mới (bản sao → tháng 10) và tháng 8 thật (TM-01…TM-12); TM-W-19…22 phía máy trọn đường: nút 3 → `WebAppGoogleSheet.taoThangMoi` → Web App giả; bộ này GHIM múi giờ dự án (TM-W-25) |
+| `npm run test-tao-thang-moi-web` | `TM-W-xx` | YC-35 hành động `taoThangMoi` trên Web App giả, chạy trên file tháng 9 khuôn mới (bản sao → tháng 10) và tháng 8 thật (TM-01…TM-12); TM-W-19…22 phía máy trọn đường: nút 3 → `WebAppGoogleSheet.taoThangMoi` → Web App giả; bộ này GHIM múi giờ dự án (TM-W-25); TM-W-26…29 YC-43: dán vào ô gộp, đóng băng trước khi dọn, câu báo giữa chừng, bản sao kẹt B5 |
 
 **Bộ test phải 0 hỏng ở MỌI múi giờ máy**, không riêng giờ Việt Nam. Thử lại trước khi push:
 `TZ=UTC npm run test-tat-ca` (Git Bash) hoặc `$env:TZ='UTC'; npm run test-tat-ca` (PowerShell). Tên múi giờ có dấu `/`
@@ -249,6 +249,14 @@ dòng đó là sinh ra ca mất đơn mà không ai biết — file đã đi kh�
   làm nốt khối đang ghi — chờ 180 như bản cũ là máy báo "không trả lời" giữa lúc Google vẫn ghi (T-WA-32 đọc 240 thẳng
   từ `.gs`). Tạo tháng chờ 400 giây: `taoThangMoi` tự dừng ở 270 giây, và bước dở được lượt sau chạy TỚI CÙNG không
   canh giờ (`buocDungTruoc`) — một lượt có thể đi sát trần 6 phút (`TIMEOUT_TAO_THANG_MS`, bài TM-W-19).
+- **Google cấm DÁN vào vùng giao một phần với ô gộp.** `copyTo` mà vùng dán cắt ngang một cụm gộp là ném "Bạn không thể
+  thực hiện lệnh dán khi vùng dán giao một phần với một ô hợp nhất" — chèn cột còn làm cụm gộp vắt qua chỗ chèn giãn ra.
+  Nút 3 chết ở B5 đúng vì thế trên Google thật (14/9, khuôn tháng 9 gộp `Lợi nhuận`!B3:D3). Mọi lệnh dán phải gỡ gộp trước,
+  gộp lại sau (`chenCotGiuGop_`). Giả lập bắt chước luật này (`VungGia.copyTo`) — thiếu nó thì 24 bài TM-W xanh trong khi
+  Google chết (TM-W-26).
+- **Tạo tháng: đóng băng số phụ thuộc TRƯỚC, phá hủy SAU.** Bước `B2b` ghi cột tháng cũ `Lợi nhuận` thành số cứng trước khi
+  dọn bất kỳ sheet nào; chết giữa chừng sau khi dọn thì số tháng cũ trong bản sao vẫn còn (TM-W-27). Mọi ngoại lệ sau khi
+  bắt đầu ghi nói bước + cờ + việc phải làm (`loiGiuaChungTM_`); cờ `B5_DANG_LAM` là bản sao hỏng, tool bảo làm bản sao mới.
 - **Chuỗi trông như ngày bị Google đổi kiểu.** `setValues([['2026-10']])` vào ô chưa ép `@` là thành ngày 01/10/2026.
   Ô cờ `THANG` (O2) của tạo tháng vì thế ghi với định dạng `@` ĐẶT TRƯỚC giá trị (`ghiKhoiO_`), và lõi đọc cờ qua
   `chuanThangCo` (Date → `yyyy-MM`). Giả lập chỉ bắt chước bẫy này khi bật `taoGiaLap({ epNgayNhuGoogle: true })` — bài TM-W-24.

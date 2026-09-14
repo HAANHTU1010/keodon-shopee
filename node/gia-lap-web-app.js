@@ -296,6 +296,12 @@ class VungGia {
   /** Chỉ hỗ trợ `PASTE_FORMAT` (định dạng số + nền), đúng cỡ vùng đích — thứ `CHEN_COT` của Web App dùng. */
   copyTo(dich, kieu) {
     if (kieu !== 'PASTE_FORMAT') throw new Error('Giả lập copyTo chỉ hỗ trợ PASTE_FORMAT, nhận: ' + kieu);
+    // Như Google (đo thật 14/9 21:47, YC-43): vùng DÁN giao MỘT PHẦN với một cụm gộp → ném, không dán gì. Cụm nằm trọn trong
+    // vùng dán thì được. Thiếu luật này, giả lập để lọt đúng lỗi làm nút 3 chết ở B5 trên Google thật.
+    const r2 = dich.r + dich.nr - 1, c2 = dich.c + dich.nc - 1;
+    const catMotPhan = dich.sh.gopO.some((g) => !(g.r2 < dich.r || g.r1 > r2 || g.c2 < dich.c || g.c1 > c2) &&
+      !(g.r1 >= dich.r && g.r2 <= r2 && g.c1 >= dich.c && g.c2 <= c2));
+    if (catMotPhan) throw new Error('Bạn không thể thực hiện lệnh dán khi vùng dán giao một phần với một ô hợp nhất.');
     dich._ghiNhat('dinhDang');
     for (let i = 0; i < dich.nr; i++) {
       for (let j = 0; j < dich.nc; j++) {

@@ -1997,6 +1997,38 @@ function keoCongThucTM_(sh, c, r1, r2) {
   return dem;
 }
 
+/**
+ * `CHEN_COT` (B5a): chèn một cột trước `truocCot`, cho cột mới ĐỊNH DẠNG của cột tháng vừa bị đẩy sang phải (tiền, viền) —
+ * mà KHÔNG để lệnh dán cắt ngang ô gộp (YC-43).
+ *
+ * VÌ SAO. Google chặn `copyTo` khi vùng dán giao MỘT PHẦN với một ô gộp ("Bạn không thể thực hiện lệnh dán khi vùng dán
+ * giao một phần với một ô hợp nhất"). Khuôn tháng 9 gộp `Lợi nhuận`!B3:D3; chèn cột trước D làm cụm đó giãn thành B3:E3 và
+ * cột D mới cắt ngang nó → nút 3 chết ở B5 trên Google thật (14/9 21:47), cờ kẹt `B5_DANG_LAM`.
+ *
+ * CÁCH LÀM. Ghi lại MỌI cụm gộp của sheet → gỡ hết → chèn cột → chép định dạng → gộp lại đúng các cụm cũ, dời theo cột vừa
+ * chèn (cụm nằm bên phải dời một cột; cụm vắt qua chỗ chèn giãn thêm một cột — đúng như Google tự làm khi chèn). Gộp lại
+ * trong `finally`: lỗi ở giữa cũng không để sheet mất ô gộp.
+ */
+function chenCotGiuGop_(sh, truocCot) {
+  var mr = sh.getMaxRows();
+  var gop = sh.getRange(1, 1, mr, sh.getMaxColumns()).getMergedRanges().map(function (g) {
+    return { r: g.getRow(), c: g.getColumn(), nr: g.getNumRows(), nc: g.getNumColumns() };
+  });
+  gop.forEach(function (g) { sh.getRange(g.r, g.c, g.nr, g.nc).breakApart(); });
+  var daChen = false;
+  try {
+    sh.insertColumnBefore(truocCot);
+    daChen = true;
+    sh.getRange(1, truocCot + 1, mr, 1).copyTo(sh.getRange(1, truocCot, mr, 1), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+  } finally {
+    gop.forEach(function (g) {
+      var c1 = g.c, c2 = g.c + g.nc - 1;
+      if (daChen && c1 >= truocCot) { c1++; c2++; } else if (daChen && c2 >= truocCot) { c2++; }
+      sh.getRange(g.r, c1, g.nr, c2 - c1 + 1).merge();
+    });
+  }
+}
+
 /** Chạy một danh sách thao tác của lõi trên file MỚI. Dừng gọn giữa hai thao tác khi hết giờ. */
 function thucThiThaoTacTM_(ssMoi, dsThaoTac, hetGio) {
   var i = 0;
@@ -2037,11 +2069,7 @@ function thucThiThaoTacTM_(ssMoi, dsThaoTac, hetGio) {
           sh.getRange(t.r1 + k, t.c1, lo.length, rong).setValues(lo);
         }
       } else if (t.loai === 'CHEN_COT') {
-        sh.insertColumnBefore(t.truocCot);
-        // Cột mới nhận ĐỊNH DẠNG của cột tháng vừa bị đẩy sang phải (tiền, viền) — không phụ thuộc Google kế
-        // thừa định dạng từ bên nào khi chèn.
-        var mr = sh.getMaxRows();
-        sh.getRange(1, t.truocCot + 1, mr, 1).copyTo(sh.getRange(1, t.truocCot, mr, 1), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+        chenCotGiuGop_(sh, t.truocCot);
       } else if (t.loai === 'KEO_CT') {
         keoCongThucTM_(sh, t.c, t.r1, t.r2);
       } else {
@@ -2084,10 +2112,13 @@ function hanhDongTaoThangMoi_(body, batDau) {
 
   var khoa = LockService.getScriptLock();
   if (!khoa.tryLock(30000)) throw loiTM_('DANG_BAN', 'Một lệnh khác (kéo đơn hoặc tạo tháng) đang chạy trên Web App, thử lại sau vài phút. Tool chưa ghi gì.');
+  // YC-43 điểm 3: từ lúc bắt đầu GHI vào file mới, mọi ngoại lệ phải nói chết ở bước nào và việc phải làm tiếp. Trước đó (mở
+  // file, đọc, kiểm điều kiện) chưa ô nào bị ghi — lỗi đi nguyên văn như cũ để phía máy còn nhận ra lỗi quyền (D-46).
+  var buocDangLam = '', ssMoi = null;
   try {
     var canhBao = [], thongBao = [];
     var ssCu = moBangTinh_(idCu, 'tháng ' + kyCu, 'Link đó là trường [3/7] của nút 3.');
-    var ssMoi = moBangTinh_(idMoi, 'tháng ' + kyMoi, 'Link đó là trường [6/7] của nút 3.');
+    ssMoi = moBangTinh_(idMoi, 'tháng ' + kyMoi, 'Link đó là trường [6/7] của nút 3.');
     kiemTenFileKhopThang_(ssCu, kyCu, canhBao, 'tháng trước [3/7]');
     kiemTenFileKhopThang_(ssMoi, kyMoi, canhBao, 'tháng mới [6/7]');
 
@@ -2108,6 +2139,7 @@ function hanhDongTaoThangMoi_(body, batDau) {
     ke.canhBao.forEach(function (x) { canhBao.push(x); });
 
     // B1: cờ DANG_KHOI_TAO (và tạo `Mapping_san_pham` nếu chưa có) TRƯỚC khi ghi ô nào khác.
+    buocDangLam = 'B1 · Đặt cờ DANG_KHOI_TAO';
     thucThiThaoTacTM_(ssMoi, ke.batDau, function () { return false; });
     SpreadsheetApp.flush();
 
@@ -2120,6 +2152,7 @@ function hanhDongTaoThangMoi_(body, batDau) {
       // mà cờ tiến độ không bao giờ nhích. Mỗi bước đều dọn/ghi idempotent, nên chạy tiếp phần dở là an toàn.
       var epXong = body.buocDungTruoc != null && String(body.buocDungTruoc) === b.ma;
       if (!epXong && hetGio()) return traDoTM_(kyMoi, daXong, batDau, nguong, b.ma, canhBao, thongBao);
+      buocDangLam = b.ma + ' · ' + b.ten;
       if (b.mocTruoc) { ghiCoTM_(ssMoi, 5, b.mocTruoc); SpreadsheetApp.flush(); }
       var kq = thucThiThaoTacTM_(ssMoi, b.thaoTac, (b.khongLapLai || epXong) ? function () { return false; } : hetGio);
       if (!kq.xong) return traDoTM_(kyMoi, daXong, batDau, nguong, b.ma, canhBao, thongBao);
@@ -2131,6 +2164,7 @@ function hanhDongTaoThangMoi_(body, batDau) {
     }
 
     // B8: đọc lại file MỚI sau khi Google tính lại, tám phép tự kiểm.
+    buocDangLam = 'B8 · Tám phép tự kiểm';
     SpreadsheetApp.flush();
     var kiem = TaoThangMoi.tuKiem(anhCu, chupFileThangMoi_(ssMoi), ke);
     if (kiem.dat) {
@@ -2149,9 +2183,37 @@ function hanhDongTaoThangMoi_(body, batDau) {
           '. Báo người phụ trách kiểm file tháng mới trước khi dùng.',
       giay: (new Date().getTime() - batDau) / 1000
     };
+  } catch (err) {
+    if (buocDangLam) throw loiGiuaChungTM_(err, buocDangLam, docCoTM_(ssMoi, 5));
+    throw err;
   } finally {
     khoa.releaseLock();
   }
+}
+
+/** Đọc một ô cờ `Mapping_san_pham`!O<dong> của file đang tạo; đọc không được (sheet chưa có…) → ''. Không bao giờ ném. */
+function docCoTM_(ss, dong) {
+  try {
+    var sh = ss && ss.getSheetByName(TaoThangMoi.TEN_SHEET_MAPPING);
+    return sh ? String(sh.getRange(dong, 15).getDisplayValue() || '').trim() : '';
+  } catch (e) { return ''; }
+}
+
+/**
+ * YC-43 điểm 3: ngoại lệ giữa chừng của `taoThangMoi` → câu nói (1) chết ở bước nào, (2) cờ `BUOC_DA_XONG` đang là gì, (3) nguyên
+ * văn lỗi của Google, (4) việc phải làm tiếp. Giữ mã lỗi gốc nếu có (lỗi quyền giữa chừng vẫn là lỗi quyền). Cờ `B5_DANG_LAM`
+ * → bản sao đã hỏng (điểm 4): chèn cột không chạy lại được, không để người bấm lại vô ích.
+ */
+function loiGiuaChungTM_(err, buoc, co) {
+  var goc = String(err && err.message ? err.message : err);
+  var viec = co === 'B5_DANG_LAM'
+    ? TaoThangMoi.CAU_BAN_SAO_HONG
+    : 'Bấm lại nút 3 chế độ 1 với đúng bảy giá trị — tool chạy tiếp từ sau bước ' + (co || '(chưa bước nào)') +
+      '. Lỗi lặp lại ở đúng bước này thì chụp màn hình gửi người phụ trách; link_thang chưa được khai.';
+  var e = new Error('Google báo lỗi giữa chừng ở bước ' + buoc + ' (cờ BUOC_DA_XONG đang là ' + (co || '(trống)') + '): ' +
+    goc + ' → Việc phải làm: ' + viec);
+  e.maKeodon = (err && err.maKeodon) ? err.maKeodon : 'NGOAI_LE';
+  return e;
 }
 
 function traDoTM_(kyMoi, daXong, batDau, nguong, buocKe, canhBao, thongBao) {
@@ -2378,6 +2440,6 @@ function chayBoTest() {
   return 'Tổng ' + kq.length + ' · hỏng ' + hong.length;
 }
 
-var VAN_TAY_SHELL = 'bafb2742';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_SHELL = '542a314f';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
 
-var BAN_DUNG = 'f76c2f20dc04';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay
+var BAN_DUNG = '82899afce58a';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay

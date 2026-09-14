@@ -838,28 +838,39 @@ var TaoThangMoi = (function () {
 
   // ---------------------------------------------------------------- tiến độ / chạy tiếp
 
-  var THU_TU_BUOC = ['B3', 'B4', 'B5a', 'B5b', 'B6', 'B7'];
+  /**
+   * YC-43 (2.7.0): `B2b` — đóng băng cột tháng cũ — đứng TRƯỚC mọi bước phá hủy. Tới 2.6.1 thứ tự là dọn gian hàng (B3) rồi
+   * mới đóng băng (B5b): chết ở giữa hai việc (đúng ca Google thật 14/9 21:47) là cột tháng cũ trong bản sao còn công thức
+   * trỏ vào sheet đã dọn sạch → `Lợi nhuận` tháng cũ ra 0, `Tổng doanh số` ra 0. Nguyên tắc: đọc và đóng băng mọi số phụ
+   * thuộc TRƯỚC, phá hủy SAU. File dở từ bản cũ (cờ `B3`/`B4`) chạy tiếp vẫn đúng: B5b vẫn đóng băng lại cột `E`.
+   */
+  var THU_TU_BUOC = ['B2b', 'B3', 'B4', 'B5a', 'B5b', 'B6', 'B7'];
+
+  /**
+   * Câu cho người bấm khi bản sao kẹt giữa lúc chèn cột (YC-43 điểm 4, nguyên văn BA). Chèn cột không chạy lại được và tool
+   * không đoán cột đã chèn hay chưa — đường ra an toàn duy nhất là bỏ bản sao đó.
+   */
+  var CAU_BAN_SAO_HONG = 'Bản sao này đã hỏng giữa chừng — xóa nó đi, tạo bản sao MỚI từ sổ tháng trước rồi chạy lại.';
 
   /**
    * Từ cờ `BUOC_DA_XONG` suy ra bước phải chạy tiếp.
-   * `B5_DANG_LAM` → DỪNG, bắt người kiểm tay: chèn cột là thao tác KHÔNG chạy lại được,
-   * chạy hai lần là chèn hai cột và khối tháng lệch vĩnh viễn. Cách kiểm tay: nhìn `Lợi nhuận`!D5 —
-   * là số tháng mới thì đã chèn rồi, vẫn là số tháng cũ thì chưa chèn.
+   * `B5_DANG_LAM` (chưa có `B5_DA_CHEN`) → DỪNG: chèn cột là thao tác KHÔNG chạy lại được, chạy hai lần là chèn hai cột và
+   * khối tháng lệch vĩnh viễn. Tới 2.6.1 câu báo bắt người mở `Lợi nhuận`!D5 rồi tự sửa cờ — việc không ai làm đúng được giữa
+   * lúc đầu tháng; từ YC-43 tool nói thẳng bản sao đã hỏng và bảo làm bản sao mới.
    */
   function buocBatDau(buocDaXong) {
     var m = String(buocDaXong || '').trim();
     if (m === 'B5_DANG_LAM') {
       return {
         dung: true,
-        lyDo: 'Lần chạy trước dừng giữa lúc chèn cột `Lợi nhuận` (cờ B5_DANG_LAM). Chèn cột không chạy lại được. ' +
-          'Hãy mở `Lợi nhuận` xem `D5`: là số tháng mới → cột đã chèn, sửa cờ `Mapping_san_pham`!O5 thành `B5_DA_CHEN` rồi chạy lại; ' +
-          'vẫn là số tháng cũ → cột chưa chèn, sửa cờ thành `B4` rồi chạy lại. Tuyệt đối không để tool tự đoán.'
+        lyDo: CAU_BAN_SAO_HONG + ' (Lượt trước dừng giữa lúc chèn cột `Lợi nhuận` — cờ BUOC_DA_XONG = B5_DANG_LAM; chèn cột ' +
+          'không chạy lại được nên tool không chạy tiếp trên file này.)'
       };
     }
     if (m === 'B5_DA_CHEN') return { dung: false, tu: 'B5b' };
     var i = THU_TU_BUOC.indexOf(m);
     if (i >= 0) return { dung: false, tu: THU_TU_BUOC[i + 1] || null };
-    return { dung: false, tu: 'B3' };
+    return { dung: false, tu: 'B2b' };
   }
 
   // ---------------------------------------------------------------- LẬP KẾ HOẠCH
@@ -881,7 +892,7 @@ var TaoThangMoi = (function () {
 
     var kq = {
       thangMoi: thangMoi, phienBan: PHIEN_BAN, canhBao: [], thongBao: [],
-      chay: false, lyDoDung: [], kiem: null, doc: null, batDau: [], buoc: [], tuBuoc: 'B3'
+      chay: false, lyDoDung: [], kiem: null, doc: null, batDau: [], buoc: [], tuBuoc: 'B2b'
     };
 
     var kiem = kiemDieuKien(anhMoi, anhCu, thangMoi);
@@ -999,7 +1010,15 @@ var TaoThangMoi = (function () {
     var ttB6 = [{ loai: 'TAO_SHEET', ten: TEN_SHEET_MAPPING }];
     if (map && map.bang.length) ttB6.push({ loai: 'GHI_BANG', sheet: TEN_SHEET_MAPPING, r1: 1, c1: 1, bang: map.bang });
 
+    // ---- B2b (YC-43): đóng băng cột tháng cũ `Lợi nhuận`!D bằng giá trị đọc ở B2 — TRƯỚC khi dọn bất kỳ sheet nào ----
+    var ttB2b = [];
+    for (var iB = 0; iB < ln.dong6den16.length; iB++) {
+      var vB = ln.dong6den16[iB];
+      ttB2b.push({ loai: 'GHI_O', sheet: SHEET_LOI_NHUAN, r: 6 + iB, c: C('D'), gt: (vB == null || vB === '') ? null : vB });
+    }
+
     kq.buoc = [
+      { ma: 'B2b', ten: 'Đóng băng tháng cũ ở `Lợi nhuận` (trước khi dọn sheet nào)', mocSau: 'B2b', thaoTac: ttB2b },
       { ma: 'B3', ten: 'Dọn sheet gian hàng', mocSau: 'B3', thaoTac: ttB3 },
       { ma: 'B4', ten: 'Ghi khối nhập đầu kỳ vào `Tổng nhập`', mocSau: 'B4', thaoTac: b4.thaoTac },
       {
@@ -1155,6 +1174,8 @@ var TaoThangMoi = (function () {
     doVungCongThuc: doVungCongThuc,
     kiemDieuKien: kiemDieuKien,
     buocBatDau: buocBatDau,
+    THU_TU_BUOC: THU_TU_BUOC,
+    CAU_BAN_SAO_HONG: CAU_BAN_SAO_HONG,
     docDanhMuc: docDanhMuc,
     docLoiNhuanCu: docLoiNhuanCu,
     docMapping: docMapping,
@@ -1168,4 +1189,4 @@ var TaoThangMoi = (function () {
   };
 })();
 
-var VAN_TAY_TAOTHANGMOI = '0778d092';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_TAOTHANGMOI = 'cc4684e7';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

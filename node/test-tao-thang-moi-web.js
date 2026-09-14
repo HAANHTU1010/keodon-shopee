@@ -984,6 +984,105 @@ function lechCongThuc2000(ssMoi) {
     return 'múi giờ dự án ' + MUI_GIO_DU_AN + ' · ' + kq.join(' · ') + ' ← đối chứng âm đúng như phải thế';
   });
 
+  // ================================================================ YC-43: NÚT 3 CHẾT Ở B5 TRÊN GOOGLE THẬT (14/9 21:47)
+  //
+  // Giả lập từ 2.7.0 bắt chước đúng luật Google: `copyTo` vào vùng giao MỘT PHẦN với ô gộp → ném "Bạn không thể thực hiện lệnh
+  // dán khi vùng dán giao một phần với một ô hợp nhất." (xem `VungGia.copyTo`). Trước luật này 24 bài trên đều xanh trong khi
+  // Google thật chết ngay ở B5 — đúng bệnh TM-10.
+  const gopLN = (ss) => ss.getSheetByName('Lợi nhuận').gopO.map((g) => [g.r1, g.c1, g.r2, g.c2].join(':')).sort();
+  const soLN = (ss, r) => { const sh = ss.getSheetByName('Lợi nhuận'); return { ct: sh.congThuc[r + ':4'] || null, gt: sh.giaTri[r + ':4'] }; };
+  const CAU_DAN_GOP = 'Bạn không thể thực hiện lệnh dán khi vùng dán giao một phần với một ô hợp nhất.';
+  const ghep = (...fs2) => (s) => fs2.reduce((x, f) => f(x), s);
+  const CHET_B4 = sua('    var t = dsThaoTac[i];', "    var t = dsThaoTac[i];\n    if (t.sheet === 'Tổng nhập') throw new Error('GIẢ LẬP: Google cắt ngang giữa lúc ghi Tổng nhập');");
+  const CHET_B5A = sua('    daChen = true;', "    daChen = true;\n    throw new Error('GIẢ LẬP: Google cắt ngang ngay sau khi chèn cột');");
+
+  await test('TM-W-26', 'YC-43.1: `Lợi nhuận` gỡ gộp TRƯỚC lệnh dán rồi gộp lại — hết NGOAI_LE ô hợp nhất; mọi cụm gộp y nguyên, riêng khối tiêu đề (dòng 3) / năm (dòng 4) nới đúng một cột theo A.5 bước 22', async () => {
+    dung(A.kq.ok === true, 'cặp A phải xong: ' + JSON.stringify(A.kq).slice(0, 200));
+    const truoc = gopLN(A.ssCu), sau = gopLN(A.ssMoi);
+    const tieuDe = A.ssCu.getSheetByName('Lợi nhuận').gopO.filter((g) => g.r1 === 3)[0];
+    dung(tieuDe, 'khuôn tháng 9 phải có cụm gộp tiêu đề ở dòng 3');
+    const cuoiMoi = tieuDe.c2 + 1;
+    const mong = truoc.filter((k) => { const [r1, c1] = k.split(':').map(Number); return r1 !== 3 && !(r1 === 4 && c1 === 4); })
+      .concat(['3:' + tieuDe.c1 + ':3:' + cuoiMoi, '4:4:4:' + cuoiMoi]).sort();
+    bang(sau, mong, 'cụm gộp `Lợi nhuận` sau khi chạy');
+    // ĐỐI CHỨNG ÂM 1 — bỏ bước gỡ gộp: phải chết đúng câu Google thật trả ngày 14/9.
+    const khongGo = await kichBan({ suaNguon: sua('  gop.forEach(function (g) { sh.getRange(g.r, g.c, g.nr, g.nc).breakApart(); });', '') });
+    dung(khongGo.kq.loi === 'NGOAI_LE' && String(khongGo.kq.thongBao).indexOf(CAU_DAN_GOP) >= 0,
+      'ĐỐI CHỨNG ÂM KHÔNG LỆCH đúng lỗi: bỏ gỡ gộp mà được ' + JSON.stringify(khongGo.kq).slice(0, 200));
+    // ĐỐI CHỨNG ÂM 2 — gỡ mà quên gộp lại: chạy xong 8/8 nhưng mất cụm gộp nhãn B6:C6… — phép so vùng gộp phải bắt.
+    const khongGop = await kichBan({ suaNguon: sua('      sh.getRange(g.r, c1, g.nr, c2 - c1 + 1).merge();', '') });
+    const mat = mong.filter((k) => gopLN(khongGop.ssMoi).indexOf(k) < 0);
+    dung(mat.length > 0, 'ĐỐI CHỨNG ÂM KHÔNG LỆCH: quên gộp lại mà vùng gộp vẫn đủ');
+    return truoc.length + ' cụm trước → ' + sau.length + ' cụm sau (tiêu đề ' + truoc.filter((k) => k.startsWith('3:'))[0] + ' → 3:' + tieuDe.c1 + ':3:' + cuoiMoi +
+      ', năm 4:4:4:' + cuoiMoi + ', ' + (sau.length - 2) + ' cụm khác y nguyên) · đối chứng âm "bỏ gỡ gộp" -> LỆCH (NGOAI_LE: ' + CAU_DAN_GOP.slice(0, 40) +
+      '…) · "quên gộp lại" -> LỆCH (mất ' + mat.length + ' cụm, vd ' + mat[0] + ')';
+  });
+
+  await test('TM-W-27', 'YC-43.2: chết giữa chừng NGAY SAU khi đã dọn gian hàng (ở B4) → cột tháng cũ `Lợi nhuận` đã là SỐ CỨNG bằng đúng tháng cũ (K-8 lúc chết) — đóng băng TRƯỚC, phá hủy SAU', async () => {
+    const chamK8 = (x) => {
+      const lech = [];
+      const n = 18;                         // khuôn tháng 9: nhãn `Lợi nhuận` từ dòng 6 tới `CP khác` ở dòng 18
+      for (let r = 6; r <= n; r++) {
+        const moi = soLN(x.ssMoi, r), cu = soLN(x.ssCu, r);
+        const a = cu.gt == null || cu.gt === '' ? null : cu.gt, b = moi.gt == null || moi.gt === '' ? null : moi.gt;
+        const khop = (a === null && b === null) || (typeof a === 'number' && typeof b === 'number' && Math.abs(a - b) < 0.01) || a === b;
+        if (moi.ct || !khop) lech.push('D' + r + (moi.ct ? ' còn công thức' : '') + ' = ' + JSON.stringify(b) + ' (tháng cũ ' + JSON.stringify(a) + ')');
+      }
+      return lech;
+    };
+    const x = await kichBan({ suaNguon: CHET_B4 });
+    dung(x.kq.ok === false && x.kq.loi === 'NGOAI_LE', 'phải chết giữa chừng ở B4: ' + JSON.stringify(x.kq).slice(0, 160));
+    bang(coTM(x.ssMoi, 5), 'B3', 'cờ lúc chết');
+    dung(oDuLieu(x.ssMoi.getSheetByName('Shopee mall'), 4, 15).length === 0, 'B3 phải đã dọn sạch gian hàng — bài này đo đúng khoảnh khắc nguy hiểm');
+    bang(chamK8(x), [], 'cột tháng cũ `Lợi nhuận` lúc chết');
+    // ĐỐI CHỨNG ÂM — thứ tự 2.6.1: không có B2b, đóng băng mãi tới B5b (sau khi dọn) → chết ở B4 là mất số tháng cũ.
+    const cu = await kichBan({ suaNguon: ghep(CHET_B4, sua("      { ma: 'B2b', ten: 'Đóng băng tháng cũ ở `Lợi nhuận` (trước khi dọn sheet nào)', mocSau: 'B2b', thaoTac: ttB2b },\n", '')) });
+    const lechCu = chamK8(cu);
+    dung(lechCu.length > 0, 'ĐỐI CHỨNG ÂM KHÔNG LỆCH: đóng băng sau khi dọn mà chết ở B4 vẫn còn đủ số tháng cũ');
+    const d7 = soLN(x.ssMoi, 7).gt;
+    return 'chết ở B4 (cờ B3, gian hàng đã dọn) → D6:D18 là số cứng khớp tháng cũ (Tổng doanh số D7 = ' + d7 + ') · đối chứng âm "thứ tự 2.6.1" -> LỆCH ' +
+      lechCu.length + ' ô (' + lechCu.filter((s) => /^D7/.test(s))[0] + ')';
+  });
+
+  await test('TM-W-28', 'YC-43.3: mọi ngoại lệ giữa chừng nói BƯỚC ĐANG LÀM + cờ BUOC_DA_XONG + nguyên văn lỗi Google + VIỆC PHẢI LÀM; chết trong B5a → câu "bản sao đã hỏng", và vẫn gộp lại ô', async () => {
+    const x = await kichBan({ suaNguon: CHET_B4 });
+    const tb = String(x.kq.thongBao);
+    dung(/ở bước B4 · Ghi khối nhập đầu kỳ/.test(tb) && /cờ BUOC_DA_XONG đang là B3/.test(tb) && /GIẢ LẬP: Google cắt ngang giữa lúc ghi Tổng nhập/.test(tb) &&
+      /Việc phải làm: Bấm lại nút 3 chế độ 1/.test(tb), 'câu chết ở B4 thiếu bước / cờ / nguyên văn / việc phải làm: ' + tb);
+    const y = await kichBan({ suaNguon: CHET_B5A });
+    const tbY = String(y.kq.thongBao);
+    dung(/ở bước B5a/.test(tbY) && /B5_DANG_LAM/.test(tbY) && tbY.indexOf('Bản sao này đã hỏng giữa chừng — xóa nó đi, tạo bản sao MỚI từ sổ tháng trước rồi chạy lại.') >= 0,
+      'chết trong B5a phải nói bản sao đã hỏng: ' + tbY);
+    dung(gopLN(y.ssMoi).indexOf('6:2:6:3') >= 0, 'chết giữa lúc chèn cột mà cụm gộp nhãn B6:C6 không được gộp lại (finally)');
+    const tho = await kichBan({ suaNguon: ghep(CHET_B4, sua('    if (buocDangLam) throw loiGiuaChungTM_(err, buocDangLam, docCoTM_(ssMoi, 5));', '')) });
+    dung(!/ở bước B4/.test(String(tho.kq.thongBao)), 'ĐỐI CHỨNG ÂM KHÔNG LỆCH: bỏ bọc câu mà vẫn thấy tên bước');
+    return 'B4: "' + tb.slice(0, 110) + '…" · B5a: nêu B5_DANG_LAM + câu bản sao hỏng, cụm gộp vẫn đủ · đối chứng âm "ném lỗi thô" -> LỆCH ("' +
+      String(tho.kq.thongBao).slice(0, 60) + '")';
+  });
+
+  await test('TM-W-29', 'YC-43.4: bấm lại trên bản sao kẹt B5_DANG_LAM → DỪNG ngay, câu nguyên văn "Bản sao này đã hỏng giữa chừng — xóa nó đi…", không một lệnh ghi; máy in cùng việc phải làm', async () => {
+    const y = await kichBan({ suaNguon: CHET_B5A });
+    bang(coTM(y.ssMoi, 5), 'B5_DANG_LAM', 'cờ sau khi chết trong B5a');
+    const bamLai = (sim) => {
+      sim.demLai();
+      return JSON.parse(sim.vo.doPost({ postData: { contents: JSON.stringify({
+        token: sim.biMat, phienBanMongDoi: sim.vo.PHIEN_BAN, hanhDong: 'taoThangMoi', thangCu: 9, namCu: 2026, idCu: sim.idCua('2026-09'),
+        thangMoi: 10, namMoi: 2026, idMoi: sim.idCua('2026-10') }) } }).getContent());
+    };
+    const kq = bamLai(y.sim);
+    bang(kq.loi, 'B5_DANG_LAM');
+    dung(String(kq.thongBao).indexOf('KHÔNG KHỞI TẠO — Bản sao này đã hỏng giữa chừng — xóa nó đi, tạo bản sao MỚI từ sổ tháng trước rồi chạy lại.') === 0,
+      'câu dừng phải mở đầu bằng nguyên văn BA: ' + kq.thongBao);
+    bang(y.sim.nhatKyGhi.length, 0, 'bấm lại trên bản sao hỏng mà vẫn có lệnh ghi');
+    const goiY = require('./gsheet-web-app').GOI_Y_TAO_THANG.B5_DANG_LAM;
+    dung(/Xóa bản sao đó/.test(goiY) && /bản sao MỚI/.test(goiY), 'gợi ý phía máy cho B5_DANG_LAM không chỉ việc làm bản sao mới');
+    // ĐỐI CHỨNG ÂM — câu 2.6.1 (bắt người mở D5 rồi tự sửa cờ).
+    const z = await kichBan({ suaNguon: ghep(CHET_B5A, sua("        lyDo: CAU_BAN_SAO_HONG + ' (Lượt trước", "        lyDo: 'Hãy mở `Lợi nhuận` xem `D5` rồi sửa cờ' + ' (Lượt trước")) });
+    const kqZ = bamLai(z.sim);
+    dung(String(kqZ.thongBao).indexOf('Bản sao này đã hỏng giữa chừng') < 0, 'ĐỐI CHỨNG ÂM KHÔNG LỆCH: câu cũ mà vẫn chấm là đúng');
+    return 'cờ B5_DANG_LAM → dừng, 0 lệnh ghi, "' + String(kq.thongBao).slice(0, 90) + '…" · đối chứng âm "câu 2.6.1" -> LỆCH';
+  });
+
   RAC_MAY.forEach((d) => { try { fs.rmSync(d, { recursive: true, force: true }); } catch (e) { /* thư mục tạm */ } });
 
   console.log('\n=== ' + soDat + ' ĐẠT · ' + soHong + ' HỎNG · tổng ' + (soDat + soHong) + ' ===');
