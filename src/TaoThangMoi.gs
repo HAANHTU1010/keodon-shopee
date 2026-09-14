@@ -361,11 +361,24 @@ var TaoThangMoi = (function () {
    * Lớp 1 (ô cờ) + lớp 2 (nội dung). Phải CÙNG đồng ý mới được chạy (mục 3.3).
    * @returns { chay, lop1:{trangThai, buocDaXong}, lop2:[{ma,dat,chiTiet}], lyDoDung:[] }
    */
+  /**
+   * Ô cờ `THANG` (O2) đọc về có thể là NGÀY chứ không phải chuỗi: Google tự đổi chuỗi '2026-10' ghi bằng setValues
+   * thành ngày 01/10/2026 khi ô chưa ép định dạng văn bản (bẫy đã ghi ở `ghiMotSheet_`). Không chuẩn hóa thì cờ của
+   * CHÍNH file đang tạo bị coi là cờ chép theo bản sao — lượt chạy tiếp thành FILE_CO_DU_LIEU, bấm lại sau khi xong
+   * không còn ra DA_KHOI_TAO. Bản 2.6.1 ghi O2 với định dạng '@', hàm này đỡ cho file đã ghi trước đó.
+   */
+  function chuanThangCo(v) {
+    if (v && Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime())) {
+      return v.getFullYear() + '-' + ('0' + (v.getMonth() + 1)).slice(-2);
+    }
+    return String(v == null ? '' : v).trim();
+  }
+
   function kiemDieuKien(anhMoi, anhCu, thangMoi) {
     var ssMap = sheet(anhMoi, TEN_SHEET_MAPPING) || sheet(anhMoi, 'Mapping sản phẩm');
     var trangThai = ssMap ? String(tinh(ssMap, 1, C('O')) || '').trim() : '';
     var buocDaXong = ssMap ? String(tinh(ssMap, 5, C('O')) || '').trim() : '';
-    var thangCo = ssMap ? String(tinh(ssMap, 2, C('O')) || '').trim() : '';
+    var thangCo = ssMap ? chuanThangCo(tinh(ssMap, 2, C('O'))) : '';
     var lyDo = [], ghiChu = [];
 
     // D-45: vỏ là BẢN SAO file tháng cũ nên mang theo nguyên khối cờ của tháng cũ. Cờ có ghi tháng (`O2`) và
@@ -817,7 +830,8 @@ var TaoThangMoi = (function () {
     var tt = [];
     for (var i = 0; i < nhan.length; i++) {
       tt.push({ loai: 'GHI_O', sheet: TEN_SHEET_MAPPING, r: i + 1, c: C('N'), gt: nhan[i] });
-      tt.push({ loai: 'GHI_O', sheet: TEN_SHEET_MAPPING, r: i + 1, c: C('O'), gt: giaTri[i] });
+      // '@' (văn bản): không ép thì Google đổi '2026-10' ở O2 thành ngày — xem `chuanThangCo`.
+      tt.push({ loai: 'GHI_O', sheet: TEN_SHEET_MAPPING, r: i + 1, c: C('O'), gt: giaTri[i], dinhDang: '@' });
     }
     return tt;
   }
@@ -1154,4 +1168,4 @@ var TaoThangMoi = (function () {
   };
 })();
 
-var VAN_TAY_TAOTHANGMOI = '2b8cffc1';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_TAOTHANGMOI = '0778d092';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

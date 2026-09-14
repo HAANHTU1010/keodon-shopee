@@ -87,8 +87,8 @@ quả khác nhau trên cùng một sổ. Nay máy chỉ gửi bảng dòng đã 
     DanhMuc.gs              danh mục hàng, tồn kho, chọn lô
     KeyIn.gs                lớp 3 cho vỏ Excel
     Main.gs                 điều phối vỏ Excel
-    TaoThangMoi.gs          lõi chuyển sổ sang tháng mới (chưa nối vào Web App)
-    ShellAppsScript.gs      VỎ GOOGLE: doPost, 4 hành động, mọi hàng rào khi ghi
+    TaoThangMoi.gs          lõi chuyển sổ sang tháng mới — Web App hành động `taoThangMoi` gọi vào đây
+    ShellAppsScript.gs      VỎ GOOGLE: doPost, 5 hành động (ping/doc/ghi/xuLy/taoThangMoi), mọi hàng rào khi ghi
     adapters/               lớp 1 — nơi duy nhất biết tên sàn
     tests/                  bộ test chạy được cả trong Apps Script
 
@@ -97,6 +97,7 @@ quả khác nhau trên cùng một sổ. Nay máy chỉ gửi bảng dòng đã 
     gsheet-web-app.js       phía máy của Web App: gói POST, tra link_thang, dịch lỗi sang tiếng người
     gia-lap-web-app.js      Web App giả: chạy CHÍNH src/ShellAppsScript.gs với SpreadsheetApp giả
     chay-thu.js             nút 4 gọi vào đây
+    nut-3-thang-moi.js      nút 3 gọi vào đây: hỏi 7 trường, chế độ 1 (gọi `taoThangMoi`) / 2, ghi `link_thang`
     dong-goi.js             dựng gói giao user, tự kiểm, nén ra .zip
     dau-van-tay.js          băm từng file src/ để biết Google đang chạy bản nào
     nghiem-thu.js           bộ nghiệm thu trên dữ liệu thật tháng 8
@@ -140,14 +141,14 @@ Số bài lấy từ dòng tổng kết mỗi bộ tự in ra; chạy lại là 
 | `npm run test-chep-cong-thuc` | `T-CT-xx` | chép công thức E/F/L/M/N xuống dòng mới, dấu thời gian ô P1 |
 | `npm run test-quyen-mo-file` | `T-QM-xx` | Google từ chối mở/ghi file → câu tiếng Việt nói đúng việc phải làm |
 | `npm run test-gia-von-0` | — | bán trúng lô giá vốn 0 → tô vàng + ghi chú |
-| `npm run test-nut-van-hanh` | `N-xx` | bốn file `.bat`: ASCII, CRLF, cái bẫy `!`, câu báo lỗi |
+| `npm run test-nut-van-hanh` | `N-xx` | bốn file `.bat`: ASCII, CRLF, cái bẫy `!`, câu báo lỗi; nút 3 (N-33, N-36…N-42): 7 trường, từng trường sai, khoảng trắng, ghi đè khóa bằng file tạm, chế độ 1 lệch K không ghi link |
 | `npm run test-dong-goi` | `DG-xx`, `CN-xx` | gói giao user và nút cập nhật — chạy `.bat` thật bằng `cmd.exe` |
 | `npm run test-dau-van-tay` | `DV-xx` | dấu vân tay bản dựng; hằng và hàm mà máy trông đợi ở vỏ Google |
 | `npm run test-tao-thang-moi` | `TM-01…TM-12` | chuyển sổ sang tháng mới, đo trên cặp tháng 8→9 thật |
 | `npm run test-gian-hang` | `T-GH-xx` | file thả nhầm thư mục gian hàng: luật D-04 trên 12 file xuất thật, và vỏ Google chặn trước khi ghi |
 | `npm run test-hop-dong` | `T-HD-xx` | YC-38.1 hợp đồng file tháng: lệch khuôn → `SAI_HOP_DONG` trước lệnh ghi đầu tiên; không chặn oan khuôn thật; Mapping ghi THEO TÊN CỘT |
 | `npm run test-dong-run` | `T-RUN-xx` | YC-38.3 dòng tổng kết RUN: RUN id giờ Việt Nam, Web App ghi nhật ký + trả số dòng CÓ và băm Mapping, thả lại cùng file ra cùng dòng |
-| `npm run test-tao-thang-moi-web` | `TM-W-xx` | YC-35 hành động `taoThangMoi` trên Web App giả, chạy trên file tháng 9 khuôn mới (bản sao → tháng 10) và tháng 8 thật (TM-01…TM-12) |
+| `npm run test-tao-thang-moi-web` | `TM-W-xx` | YC-35 hành động `taoThangMoi` trên Web App giả, chạy trên file tháng 9 khuôn mới (bản sao → tháng 10) và tháng 8 thật (TM-01…TM-12); TM-W-19…22 phía máy trọn đường: nút 3 → `WebAppGoogleSheet.taoThangMoi` → Web App giả |
 
 **Luật số một của bộ test: mọi tiêu chí phải có đối chứng âm.** Dựng lại đúng khuyết tật nó phải bắt, rồi
 chứng minh phép chấm báo TRƯỢT. Một phép kiểm chỉ có bài ĐẠT là một phép kiểm chưa được kiểm — bệnh này
@@ -235,6 +236,12 @@ dòng đó là sinh ra ca mất đơn mà không ai biết — file đã đi kh�
   phải giữ**, chỉ đi kênh nội bộ.
 - **Giới hạn 6 phút.** Lô 200 đơn, khối 100 dòng, tự dừng ở ngưỡng 240 giây rồi báo máy gọi tiếp. Tô màu
   phải gọi `setBackgrounds` một lần cho cả vùng; tô từng ô là nguyên nhân số một gây hết giờ.
+- **Tạo tháng chờ 400 giây mỗi lượt, không phải 180.** `taoThangMoi` tự dừng gọn ở 270 giây, và bước dở
+  được lượt sau chạy TỚI CÙNG không canh giờ (`buocDungTruoc`) — một lượt có thể đi sát trần 6 phút. Chờ 180 giây như
+  kéo đơn là máy báo "không trả lời" trong khi Google vẫn đang chuyển sổ (`TIMEOUT_TAO_THANG_MS`, bài TM-W-19).
+- **Chuỗi trông như ngày bị Google đổi kiểu.** `setValues([['2026-10']])` vào ô chưa ép `@` là thành ngày 01/10/2026.
+  Ô cờ `THANG` (O2) của tạo tháng vì thế ghi với định dạng `@` ĐẶT TRƯỚC giá trị (`ghiKhoiO_`), và lõi đọc cờ qua
+  `chuanThangCo` (Date → `yyyy-MM`). Giả lập chỉ bắt chước bẫy này khi bật `taoGiaLap({ epNgayNhuGoogle: true })` — bài TM-W-24.
 - **Định tuyến tháng nằm trên MÁY** (`link_thang` trong `CAU_HINH_VAN_HANH.json`), không nằm trên Google.
   Máy gửi `spreadsheetId` trong gói. Không có link của tháng đang chạy thì **dừng**, không ghi lùi vào
   tháng trước. Web App còn kiểm chéo tên file với tháng và từ chối nếu lệch.
@@ -266,7 +273,7 @@ kho: chiều đi là `bat/` → `03_VAN_HANH/`, và `DG-06` bắt mọi khác bi
 |---|---|
 | `1_CAI_DAT_LAN_DAU.bat` | 6 bước kiểm: Node, mã nguồn, thư viện, cấu hình, gọi thử Web App, kết luận |
 | `2_CAP_NHAT.bat` | tải bản mã mới nhất từ GitHub. **Không bao giờ ghi đè `CAU_HINH_VAN_HANH.json`** — chỉ THÊM khóa còn thiếu |
-| `3_TAO_FILE_THANG_MOI.bat` | khai link tháng mới vào `link_thang`, hoặc chuyển sổ sang tháng mới |
+| `3_TAO_FILE_THANG_MOI.bat` | hỏi 7 trường. Chế độ 1: chuyển sổ trên Google (`taoThangMoi`), đủ 8/8 phép K mới khai `link_thang`. Chế độ 2: chỉ khai `link_thang`, không gọi mạng. File `.bat` chỉ tìm cấu hình/mã/Node rồi gọi `node/nut-3-thang-moi.js` |
 | `4_CHAY_TOOL.bat` | nút dùng hằng ngày |
 
 Nút 2 không tự ghi đè chính nó — Windows khóa file `.bat` đang chạy. Nó in một dòng nhắc thay vì chép.

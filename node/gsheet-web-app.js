@@ -5,8 +5,9 @@
  * Web App chạy bằng quyền của chủ dự án nên mở được file Sheet của mọi tháng, máy này không cần
  * đăng nhập Google, không giữ khóa dịch vụ, không cần quyền chia sẻ.
  *
- * Bốn hành động: `ping` (thử cửa) · `doc` (lấy mã đơn đã có + Mapping + tồn kho) · `ghi` (nối dòng) ·
- * `xuLy` (gửi thẳng bảng dòng đã qua lớp 1, Web App tự làm lớp 2 + lớp 3 + ghi trong một lần gọi).
+ * Năm hành động: `ping` (thử cửa) · `doc` (lấy mã đơn đã có + Mapping + tồn kho) · `ghi` (nối dòng) ·
+ * `xuLy` (gửi thẳng bảng dòng đã qua lớp 1, Web App tự làm lớp 2 + lớp 3 + ghi trong một lần gọi) ·
+ * `taoThangMoi` (nút 3 chế độ 1 — chuyển sổ sang tháng mới, xem `WebAppGoogleSheet.taoThangMoi`).
  *
  * `xuLy` là đường mặc định từ bản 2.4.0. `doc` + `ghi` GIỮ NGUYÊN làm đường lùi (khóa `duong` trong
  * `CAU_HINH_VAN_HANH.json` → `google_sheet.duong = "ghi"`), vì đó là đường đã nghiệm thu.
@@ -38,7 +39,7 @@ const https = require('https');
 const { URL } = require('url');
 
 /** Phải khớp `var PHIEN_BAN` trong `src/ShellAppsScript.gs`. Đổi hợp đồng gói JSON thì đổi cả hai. */
-const PHIEN_BAN = '2.6.0';
+const PHIEN_BAN = '2.6.1';
 
 const TOI_DA_DON_MOT_LO = 200;      // Apps Script chỉ có 6 phút một lần chạy; chia lô cho chắc
 
@@ -59,6 +60,58 @@ const TOI_DA_DON_MOT_LO_XU_LY = 200;
 const SO_LAN_GOI_TIEP_TOI_DA = 12;
 
 const TIMEOUT_MS = 180000;
+
+/**
+ * Thời gian chờ MỘT lượt `taoThangMoi` (nút 3 chế độ 1) — 400 giây, dài hơn hẳn 180 giây của kéo đơn.
+ *
+ * Vì sao phải riêng: Web App tạo tháng tự dừng gọn ở `TM_NGUONG_GIAY` = 270 giây, và một bước dở được lượt
+ * sau chạy TỚI CÙNG không canh giờ (`buocDungTruoc`) — tức một lượt có thể đi sát trần 6 phút của Google.
+ * Chờ 180 giây như kéo đơn thì máy báo "Web App không trả lời" giữa chừng trong khi Google VẪN đang chuyển sổ,
+ * người bấm tưởng hỏng rồi bấm lại chồng lên. 400 = 6 phút trần của Google + 40 giây cho chuyển hướng 302.
+ */
+const TIMEOUT_TAO_THANG_MS = 400000;
+
+/**
+ * Số lượt gọi tối đa cho MỘT lần tạo tháng. Sáu bước (B3, B4, B5a, B5b, B6, B7): mỗi lượt sau khi dừng gọn chắc chắn
+ * làm xong ít nhất bước vừa dở, nên tối đa ~7 lượt là xong. 20 là trần chống vòng lặp, không phải con số mong đợi.
+ */
+const SO_LUOT_TAO_THANG_TOI_DA = 20;
+
+/**
+ * Mã từ chối NGHIỆP VỤ của `taoThangMoi` — Web App đã xét hai file và nói KHÔNG, kèm lý do. `taoThangMoi()` trả các ca
+ * này về như một kết quả (`ok:false`) để nút 3 in bảng R/K và nguyên nhân; mọi mã khác (sai chuỗi, lệch bản, quyền,
+ * hành động lạ, ngoại lệ) vẫn là LỖI ném ra như mọi hành động khác.
+ */
+const MA_TU_CHOI_TAO_THANG = ['DA_KHOI_TAO', 'FILE_CO_DU_LIEU', 'B5_DANG_LAM', 'TU_KIEM_LECH', 'TRUNG_FILE',
+  'THAM_SO_SAI', 'SAI_THANG_FILE', 'DANG_BAN', 'THIEU_SHEET'];
+
+/**
+ * Việc phải làm cho từng mã của `taoThangMoi`. Viết cho người bấm nút 3, không cho người đọc mã: câu nào cũng
+ * nói (1) file tháng mới đang ra sao, (2) link tháng có được khai không, (3) bấm gì tiếp.
+ */
+const GOI_Y_TAO_THANG = {
+  DA_KHOI_TAO: ' → File tháng mới ĐÃ được khởi tạo từ trước, tool không bao giờ khởi tạo lại (Phụ lục A.3). ' +
+    'Nếu đó đúng là sổ tháng mới đã làm xong — ở máy khác, hoặc lượt trước đã xong mà mạng rớt — bấm lại nút 3 và ' +
+    'chọn CHẾ ĐỘ 2 để khai link. Nếu sổ đó hỏng: xóa bản sao, tạo bản sao mới từ sổ tháng trước rồi chạy lại chế độ 1.',
+  FILE_CO_DU_LIEU: ' → File tháng mới KHÁC sổ tháng trước ở đúng phép R-… nêu trên (có dữ liệu gõ thêm, hoặc thiếu/đổi tên ' +
+    'sheet), tool không khởi tạo để khỏi xóa mất số liệu. Kiểm lại cả hai link [3/7] và [6/7] — mọi phép R so file mới với ' +
+    'file [3/7]. Đúng file thì tạo bản sao MỚI từ sổ tháng trước rồi chạy lại.',
+  B5_DANG_LAM: ' → Lượt trước dừng ĐÚNG lúc đang chèn cột `Lợi nhuận` — bước duy nhất không chạy lại được. ' +
+    'Mở sheet `Lợi nhuận` của file tháng mới, nhìn ô D5: là số tháng MỚI thì đã chèn, là số tháng CŨ thì chưa. ' +
+    'Chụp màn hình gửi người phụ trách sửa cờ; tool không tự đoán.',
+  TU_KIEM_LECH: ' → Tool GIỮ cờ DANG_KHOI_TAO trên file tháng mới và KHÔNG khai link. Đừng dùng file đó để kéo đơn; ' +
+    'gửi nhật ký cho người phụ trách kiểm.',
+  TRUNG_FILE: ' → Link [3/7] và [6/7] là CÙNG MỘT file. Tháng mới phải là bản sao riêng: Tệp → Tạo bản sao, đổi tên, ' +
+    'lấy link của bản sao.',
+  THAM_SO_SAI: ' → Kiểm lại tháng/năm vừa gõ rồi bấm lại nút 3.',
+  SAI_THANG_FILE: ' → Đổi tên file đó trên Google theo mẫu THÁNG-10-2026-KINH-DOANH (bản sao mới tạo mang tên "Bản sao của …"), ' +
+    'hoặc kiểm lại link của trường vừa nêu, rồi chạy lại CHẾ ĐỘ 1. ĐỪNG chọn chế độ 2: sổ đó chưa được chuyển sang tháng mới.',
+  DANG_BAN: ' → Một máy khác đang kéo đơn hoặc tạo tháng trên Web App. Đợi vài phút rồi bấm lại nút 3 — tool chưa ghi ô nào.',
+  THIEU_SHEET: ' → File tháng mới thiếu một sheet của sổ tháng trước. Đừng đổi tên hay xóa sheet của bản sao; tạo bản sao ' +
+    'mới rồi chạy lại.',
+  VI_PHAM_INV2: ' → Lỗi lập trình (lõi xin tạo sheet lạ) — tool đã dừng. Gửi nhật ký cho người phụ trách.',
+  THAO_TAC_LA: ' → Lỗi lập trình (máy và Web App lệch bản lõi) — tool đã dừng. Gửi nhật ký cho người phụ trách.'
+};
 
 /** 'yyyy-MM' theo giờ máy — chỉ dùng để điền vào câu lỗi khi gói không mang `thang` (ví dụ lượt ping). */
 /**
@@ -354,6 +407,7 @@ class WebAppGoogleSheet {
     this.phienBanWebApp = null;      // điền từ phản hồi đầu tiên; null = chưa nói chuyện lần nào
     this.banDungWebApp = null;       // dấu vân tay bản dựng Google trả về (YC-38.3: in vào dòng RUN)
     this.canhBaoBanDung = [];        // câu cảnh báo lệch dấu vân tay bản dựng, điền sau lượt ping
+    this.cheThemDs = [];             // link/ID không nằm trong link_thang (nút 3 vừa gõ) — `chePhu` che luôn
     if (this.bat) {
       if (!this.url) throw new Error('Bật ghi Google Sheet nhưng thiếu web_app_url trong CAU_HINH_VAN_HANH.json');
       // Gói giao user đã có sẵn chuỗi (YC-32), nên thiếu ở đây nghĩa là cấu hình bị sửa tay hoặc gói
@@ -376,12 +430,27 @@ class WebAppGoogleSheet {
    * INV-7: che link Web App, link file tháng và ID file khỏi một đoạn văn bản trước khi in hay ghi nhật ký.
    * Che theo HAI đường: giá trị thật đang cầm trên tay, và mẫu chung — chuỗi lạ Google ném ra cũng bị che.
    */
+  /**
+   * Đăng ký thêm một link hay ID phải che — dùng cho link nút 3 vừa gõ, chưa nằm trong `link_thang`. Chuỗi quá ngắn
+   * (dưới 20 ký tự) bỏ qua: che một chuỗi ngắn là xóa bừa chữ trong câu báo lỗi.
+   */
+  cheThem(x) {
+    const s = String(x == null ? '' : x).trim();
+    if (s.length < 20 || this.cheThemDs.indexOf(s) >= 0) return;
+    this.cheThemDs.push(s);
+    const m = s.match(RE_LINK_SHEET);
+    if (m && this.cheThemDs.indexOf(m[1]) < 0) this.cheThemDs.push(m[1]);
+    // Link dài che TRƯỚC ID nằm trong nó, không thì còn trơ lại đuôi `/edit#gid=…` ghép với nhãn ID.
+    this.cheThemDs.sort((a, b) => b.length - a.length);
+  }
+
   chePhu(text) {
     let s = String(text == null ? '' : text);
     // Chuỗi bí mật che TRƯỚC hết: nó có thể nằm lẫn trong thân gói mà câu lỗi trích lại.
     if (this.biMat) s = s.split(this.biMat).join('***');
     if (this.url) s = s.split(this.url).join('<link Web App>');
     if (this.spreadsheetId) s = s.split(this.spreadsheetId).join('<ID file tháng>');
+    this.cheThemDs.forEach((x) => { s = s.split(x).join(RE_LINK_SHEET.test(x) ? '<link file tháng>' : '<ID file tháng>'); });
     Object.keys(this.linkThang || {}).forEach((k) => {
       const l = String(this.linkThang[k] || '').trim();
       if (l) s = s.split(l).join('<link tháng ' + k + '>');
@@ -395,11 +464,19 @@ class WebAppGoogleSheet {
       .replace(/"spreadsheetId"\s*:\s*"[^"]*"/g, '"spreadsheetId":"<ID>"');
   }
 
-  /** Gửi một gói JSON và trả về đối tượng đã phân tích. Ném lỗi với thông báo đã che bí mật. */
-  _goi(body) {
+  /**
+   * Gửi một gói JSON và trả về đối tượng đã phân tích. Ném lỗi với thông báo đã che bí mật.
+   * @param {Object} [tuyChon] `traVeKhiTuChoi: true` — CHỈ `taoThangMoi` dùng: Web App từ chối với mã nằm trong
+   *   `MA_TU_CHOI_TAO_THANG` thì TRẢ VỀ phản hồi (kèm `goiY`) thay vì ném, để nút 3 in được bảng R/K. Lỗi lệch bản,
+   *   lỗi quyền, sai chuỗi bí mật vẫn ném như cũ.
+   */
+  _goi(body, tuyChon) {
+    const tc = tuyChon || {};
     // Soát PII trên TỪNG LÔ, ngay trước khi gói thành chuỗi — không phải một lần lúc dựng kế hoạch.
     // Lô cuối mới dính dữ liệu bẩn là ca hoàn toàn có thật (một file xuất lạ trong lượt nhiều file).
     const hd = String(body && body.hanhDong || '').toLowerCase();
+    const laTaoThang = hd === 'taothangmoi';
+    const choMs = laTaoThang ? TIMEOUT_TAO_THANG_MS : TIMEOUT_MS;
     if (hd === 'ghi' || hd === 'xuly') kiemPII(body, this.cotPII);
     const goi = Object.assign({ token: this.biMat, phienBanMongDoi: PHIEN_BAN }, body);
     // D-42: file tháng do MÁY chỉ định. Tra TRƯỚC khi gọi mạng — thiếu link tháng là dừng ngay tại đây,
@@ -414,34 +491,54 @@ class WebAppGoogleSheet {
     const opt = {
       method: 'POST', hostname: u.hostname, path: u.pathname + u.search,
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(than) },
-      timeout: TIMEOUT_MS
+      timeout: choMs
     };
+    // Lượt `ping` chốt phiên bản MỞ ĐẦU một lần tạo tháng: hỏng ở đây thì chưa lệnh tạo tháng nào rời máy.
+    const pingTaoThang = hd === 'ping' && tc.boiCanh === 'taoThang';
+    // Mất mạng giữa chừng (bài D-12). Câu báo phải nói được ba điều, vì đây là lúc người vận hành
+    // hoang mang nhất: chuyện gì xảy ra, dữ liệu có sao không, và bấm gì tiếp.
+    // Cố ý KHÔNG khẳng định "chưa ghi gì": Apps Script có thể đã ghi xong rồi mới rớt phản hồi
+    // (đo được ở bài T-WA-05: 0 lên 9 dòng trong khi máy vẫn báo lỗi). Nói chắc là nói sai.
+    // Tạo tháng có câu riêng: "không bị ghi trùng" là chuyện của kéo đơn; ở đây điều người bấm cần biết là
+    // file tháng mới có thể đã dở dang, link CHƯA khai, và bấm lại thì tool tự chạy tiếp từ cờ tiến độ.
+    const loiMang = (e) => new Error('Không gọi được Web App (' + this.chePhu(e && e.message) + '). ' +
+      (pingTaoThang
+        ? 'Tool CHƯA gửi lệnh tạo tháng nào — file tháng mới chưa bị đụng, link_thang không đổi. Kiểm tra mạng rồi bấm lại nút 3.'
+        : laTaoThang
+          ? 'Chưa biết Google đã chuyển sổ tới đâu. link_thang CHƯA được khai. Kiểm tra mạng rồi bấm lại nút 3 chế độ 1 ' +
+            'với đúng bảy giá trị: tool chạy tiếp từ bước đã xong; nếu nó báo [DA_KHOI_TAO] thì chọn chế độ 2 để khai link.'
+          : 'Gói này CHƯA GHI ĐƯỢC, hoặc chưa biết đã ghi hay chưa. Kiểm tra mạng rồi chạy lại tool: ' +
+            'phần đã ghi vẫn giữ nguyên và sẽ không bị ghi trùng.'));
     return new Promise((giaiQuyet, tuChoi) => {
       const req = https.request(opt, (res) => {
         // Apps Script trả 302 sang script.googleusercontent.com — phải đi theo, và đi bằng GET.
         if (res.statusCode === 302 && res.headers.location) {
-          https.get(res.headers.location, { timeout: TIMEOUT_MS }, (r2) => docHet(r2)).on('error', tuChoi);
+          // Tùy chọn `timeout` của Node CHỈ phát sự kiện, không tự hủy: không có trình nghe thì lượt GET treo mãi
+          // khi mạng đứng ngay lúc chuyển hướng — đúng lúc Google đã làm xong việc và câu hướng dẫn quan trọng nhất.
+          const g = https.get(res.headers.location, { timeout: choMs }, (r2) => docHet(r2));
+          g.on('timeout', () => { g.destroy(new Error('Web App không trả lời sau ' + (choMs / 1000) + ' giây')); });
+          g.on('error', (e) => tuChoi(loiMang(e)));
           res.resume();
           return;
         }
         docHet(res);
       });
-      req.on('timeout', () => { req.destroy(new Error('Web App không trả lời sau ' + (TIMEOUT_MS / 1000) + ' giây')); });
-      // Mất mạng giữa chừng (bài D-12). Câu báo phải nói được ba điều, vì đây là lúc người vận hành
-      // hoang mang nhất: chuyện gì xảy ra, dữ liệu có sao không, và bấm gì tiếp.
-      // Cố ý KHÔNG khẳng định "chưa ghi gì": Apps Script có thể đã ghi xong rồi mới rớt phản hồi
-      // (đo được ở bài T-WA-05: 0 lên 9 dòng trong khi máy vẫn báo lỗi). Nói chắc là nói sai.
-      req.on('error', (e) => tuChoi(new Error('Không gọi được Web App (' + this.chePhu(e.message) + '). ' +
-        'Gói này CHƯA GHI ĐƯỢC, hoặc chưa biết đã ghi hay chưa. Kiểm tra mạng rồi chạy lại tool: ' +
-        'phần đã ghi vẫn giữ nguyên và sẽ không bị ghi trùng.')));
+      req.on('timeout', () => { req.destroy(new Error('Web App không trả lời sau ' + (choMs / 1000) + ' giây')); });
+      req.on('error', (e) => tuChoi(loiMang(e)));
       req.write(than);
       req.end();
 
       const docHet = (res) => {
         let buf = '';
+        let daHet = false;
         res.setEncoding('utf8');
         res.on('data', (d) => { buf += d; });
+        // Phản hồi bị cắt SAU tiêu đề, TRƯỚC khi hết thân: Node chỉ phát 'aborted'/'close', không 'end' — không nghe
+        // thì lời hứa không bao giờ xong, nút 3 treo ở "ĐỪNG đóng cửa sổ". Chờ một nhịp để lỗi của `req` (nếu có) nói trước.
+        res.on('error', (e) => tuChoi(loiMang(e)));
+        res.on('close', () => setImmediate(() => { if (!daHet) tuChoi(loiMang(new Error('Web App ngắt kết nối giữa lúc trả lời'))); }));
         res.on('end', () => {
+          daHet = true;
           // D-46 ca (1): 401/403 là quyền truy cập — một câu chuẩn, mã HTTP thật ở dòng chi tiết.
           if (res.statusCode === 401 || res.statusCode === 403) {
             try { loiQuyen(thangGoi, 'Google từ chối lời gọi tới Web App', res.statusCode); }
@@ -453,6 +550,17 @@ class WebAppGoogleSheet {
             // rồi không biết làm gì. Phải phân biệt được ca quá 6 phút, vì việc phải làm khác hẳn.
             const noiDung = this.chePhu(buf);
             const quaGio = /Exceeded maximum execution time|thời gian thực thi/i.test(noiDung);
+            if (laTaoThang) {
+              // "Chia nhỏ file thả vào" và "tool chưa ghi gì" đều SAI với tạo tháng: không có file nào để chia, và
+              // Google có thể đã làm xong vài bước. Cờ BUOC_DA_XONG giữ tiến độ nên việc đúng là bấm lại.
+              return tuChoi(new Error('Web App trả mã ' + res.statusCode + ' giữa lúc tạo tháng ' + (body.thang || '') + '. ' +
+                (quaGio
+                  ? 'Nguyên nhân: một bước chạy quá 6 phút, Google cắt ngang. '
+                  : 'Lỗi phía Apps Script, không phải lỗi cấu hình máy này. ') +
+                'File tháng mới có thể đã làm được vài bước; link_thang CHƯA được khai. Việc phải làm: bấm lại nút 3 ' +
+                'chế độ 1 với đúng bảy giá trị — tool chạy tiếp từ bước đã xong (báo B5_DANG_LAM thì làm theo câu hướng dẫn ' +
+                'của nó). Nội dung Google trả về: ' + noiDung.slice(0, 300)));
+            }
             return tuChoi(new Error('Web App trả mã ' + res.statusCode +
               ' (lỗi phía Apps Script, không phải lỗi cấu hình máy này). ' +
               (quaGio
@@ -488,7 +596,15 @@ class WebAppGoogleSheet {
             const tb = this.chePhu(kq.thongBao || '');
             if (MA_LOI_QUYEN_WEBAPP.indexOf(kq.loi) >= 0 ||
                 (kq.loi === 'NGOAI_LE' && /không mở được|không ghi được|permission|quyền/i.test(tb))) {
-              try { loiQuyen(thangGoi, tb, res.statusCode); } catch (ew) { return tuChoi(ew); }
+              // Tạo tháng mở HAI file: câu chi tiết của Apps Script nêu đúng file nào ("tháng 2026-09"), nên câu chuẩn
+              // D-46 phải nói cùng tháng đó — nói tháng mới trong khi file hỏng quyền là file tháng cũ là chỉ sai chỗ.
+              const mTh = laTaoThang ? /tháng (\d{4}-\d{2})/.exec(tb) : null;
+              try { loiQuyen(mTh ? mTh[1] : thangGoi, tb, res.statusCode); } catch (ew) { return tuChoi(ew); }
+            }
+            if (laTaoThang && tc.traVeKhiTuChoi && MA_TU_CHOI_TAO_THANG.indexOf(kq.loi) >= 0) {
+              kq.thongBao = tb;
+              kq.goiY = GOI_Y_TAO_THANG[kq.loi] || '';
+              return giaiQuyet(kq);
             }
             const GOI_Y = {
               SAI_GIAN_HANG: ' → kéo file sang đúng thư mục gian hàng rồi bấm lại; tool CHƯA ghi ô nào',
@@ -499,8 +615,10 @@ class WebAppGoogleSheet {
               THIEU_ID_FILE: ' → bản Node trên máy cũ hơn Web App: bấm 2_CAP_NHAT.bat rồi chạy lại',
               HANH_DONG_LA: ' → phía máy tính và Web App lệch phiên bản; Deploy lại bản mới của ShellAppsScript.gs'
             };
-            const goiY = GOI_Y[kq.loi] || '';
-            return tuChoi(new Error('Web App từ chối [' + (kq.loi || '?') + ']: ' + tb + goiY));
+            const goiY = (laTaoThang && GOI_Y_TAO_THANG[kq.loi]) || GOI_Y[kq.loi] || '';
+            const eTc = new Error('Web App từ chối [' + (kq.loi || '?') + ']: ' + tb + goiY);
+            eTc.maKeodon = kq.loi || null;
+            return tuChoi(eTc);
           }
           giaiQuyet(kq);
         });
@@ -512,14 +630,14 @@ class WebAppGoogleSheet {
    * Thử cửa: máy chủ Google đang ở tháng nào, và Web App đang chạy BẢN NÀO (`phienBan` + `banDung`) —
    * hai số đó là thứ duy nhất trả lời được câu "đã Deploy lại chưa". Không mở file tháng nào.
    */
-  ping() { return this._goi({ hanhDong: 'ping' }); }
+  ping(tuyChon) { return this._goi({ hanhDong: 'ping' }, tuyChon); }
 
   /**
    * Chặn ghi khi lệch bản. Chưa nói chuyện lần nào thì ping một cái trước — thà tốn một lượt gọi
    * còn hơn gửi cả gói tiền cho một bản `.gs` cũ rồi tưởng đã ghi đúng.
    */
-  async chotPhienBan() {
-    if (this.phienBanWebApp === null) await this.ping();
+  async chotPhienBan(tuyChon) {
+    if (this.phienBanWebApp === null) await this.ping(tuyChon);
     return kiemPhienBan(this.phienBanWebApp, PHIEN_BAN);
   }
 
@@ -645,6 +763,98 @@ class WebAppGoogleSheet {
     }
     return gop;
   }
+
+  /**
+   * NÚT 3 CHẾ ĐỘ 1 (YC-35 phía máy, D-45): chuyển sổ sang tháng mới trên Google — hành động `taoThangMoi`.
+   *
+   * Hai file do NGƯỜI BẤM chỉ định (trường [3/7] và [6/7] của nút 3), không tra `link_thang`: file tháng mới lúc này
+   * CHƯA có trong `link_thang`, và khai nó vào đó chính là việc nút 3 làm SAU khi hàm này báo xong.
+   *
+   * Gọi lại khi Web App dừng gọn vì giờ (`xong:false`), mỗi lượt gửi `buocDungTruoc` = bước vừa dừng dở để Web App
+   * chạy bước đó tới cùng (không có thì một bước dài hơn ngưỡng dừng dở mãi — TM-W-13). Lượt sau mà Web App vẫn
+   * báo dừng ở ĐÚNG bước vừa ép chạy tới cùng là kẹt thật: dừng, không quay vòng ăn quota.
+   *
+   * @param {Object} ts  { thangCu, namCu, linkCu, thangMoi, namMoi, linkMoi } — link đầy đủ hoặc ID
+   * @param {Object} [tc] { khiTienDo(kq, luot) · nguongGiay, toiDaLuot (hai cái cuối chỉ để test) }
+   * @returns {Promise<Object>} `{ ok, loi, thongBao, goiY, kiem, lop2, nhatKy, canhBao, tenFileMoi, tenFileCu,
+   *   buocDaXong, soLuot, kyCu, kyMoi }`. Web App TỪ CHỐI hay TỰ KIỂM LỆCH → `ok:false` (không ném).
+   * @throws lỗi mạng, lỗi quyền (D-46), lệch phiên bản, sai chuỗi bí mật, tham số hỏng — câu đã che link/ID/bí mật.
+   */
+  async taoThangMoi(ts, tc) {
+    const o = ts || {}, t = tc || {};
+    [o.linkCu, o.linkMoi].forEach((x) => this.cheThem(x));
+    const idCu = idTuLinkHoacId(o.linkCu), idMoi = idTuLinkHoacId(o.linkMoi);
+    [idCu, idMoi].forEach((x) => this.cheThem(x));
+    const kyCu = kyThangNam(o.thangCu, o.namCu), kyMoi = kyThangNam(o.thangMoi, o.namMoi);
+    // Soát lại NGAY TRÊN MÁY những gì Web App cũng soát — sai ở đây thì không tốn một lượt gọi mạng nào.
+    const hong = (ma, cau) => { const e = new Error(cau); e.maKeodon = ma; return e; };
+    if (!kyCu) throw hong('THAM_SO_SAI', 'Tháng/năm trước không hợp lệ (tháng 1–12, năm đủ 4 chữ số). Tool chưa gọi Google.');
+    if (!kyMoi) throw hong('THAM_SO_SAI', 'Tháng/năm mới không hợp lệ (tháng 1–12, năm đủ 4 chữ số). Tool chưa gọi Google.');
+    if (kyCu === kyMoi) throw hong('THAM_SO_SAI', 'Tháng trước và tháng mới cùng là ' + kyMoi + '. Tool chưa gọi Google.');
+    if (!idCu || !idMoi) {
+      throw hong('LINK_THANG_HONG', 'Link file tháng ' + (!idCu ? 'trước [3/7]' : 'mới [6/7]') + ' không phải link Google Sheet ' +
+        '(https://docs.google.com/spreadsheets/d/<ID>…). Tool chưa gọi Google.');
+    }
+    if (idCu === idMoi) throw hong('TRUNG_FILE', 'Link tháng trước và link tháng mới là CÙNG MỘT file.' + GOI_Y_TAO_THANG.TRUNG_FILE);
+
+    await this.chotPhienBan({ boiCanh: 'taoThang' });   // lệch bản là dừng TRƯỚC lượt tạo tháng đầu tiên, chưa ghi ô nào
+
+    const toiDa = Math.max(1, Number(t.toiDaLuot) || SO_LUOT_TAO_THANG_TOI_DA);
+    const nhatKy = [], canhBao = [];
+    let buocDungTruoc = null, daXongTruoc = '';
+    for (let luot = 1; luot <= toiDa; luot++) {
+      const kq = await this._goi({
+        hanhDong: 'taoThangMoi', thang: kyMoi,
+        thangCu: Number(o.thangCu), namCu: Number(o.namCu), idCu: idCu,
+        thangMoi: Number(o.thangMoi), namMoi: Number(o.namMoi), idMoi: idMoi,
+        buocDungTruoc: buocDungTruoc || undefined,
+        nguongGiay: t.nguongGiay == null ? undefined : t.nguongGiay
+      }, { traVeKhiTuChoi: true });
+      (kq.nhatKy || []).forEach((x) => nhatKy.push(this.chePhu(x)));
+      (kq.canhBao || []).forEach((x) => { const c = this.chePhu(x); if (canhBao.indexOf(c) < 0) canhBao.push(c); });
+      if (typeof t.khiTienDo === 'function') t.khiTienDo(kq, luot);
+      const kqGon = {
+        ok: kq.ok === true, loi: kq.loi || null, thongBao: this.chePhu(kq.thongBao || ''), goiY: kq.goiY || '',
+        kiem: Array.isArray(kq.kiem) ? kq.kiem : null, lop2: Array.isArray(kq.lop2) ? kq.lop2 : null,
+        nhatKy: nhatKy, canhBao: canhBao, tenFileMoi: kq.tenFileMoi || null, tenFileCu: kq.tenFileCu || null,
+        buocDaXong: kq.buocDaXong || null, soLuot: luot, kyCu: kyCu, kyMoi: kyMoi
+      };
+      if (!kq.ok) {
+        // Từ lượt 2 trở đi, file tháng mới ĐÃ được các lượt trước sửa (cờ DANG_KHOI_TAO, tới bước buocDaXong). Câu
+        // "tool chưa ghi ô nào" của Web App (ví dụ DANG_BAN) chỉ đúng cho LƯỢT NÀY — nói rõ để người bấm khỏi tưởng file còn nguyên.
+        if (luot > 1) {
+          kqGon.goiY += ' (Lưu ý: các lượt trước ĐÃ làm tới bước ' + (daXongTruoc || '?') + ' trên file tháng mới, cờ đang là ' +
+            'DANG_KHOI_TAO. Bấm lại nút 3 chế độ 1 với đúng bảy giá trị để chạy tiếp; link_thang CHƯA được khai.)';
+        }
+        return kqGon;
+      }
+      daXongTruoc = kq.buocDaXong || daXongTruoc;
+      if (kq.xong !== false) return kqGon;
+      if (buocDungTruoc && kq.buocKe === buocDungTruoc) {
+        throw hong('KET_TAO_THANG', 'Web App báo dừng ở bước ' + kq.buocKe + ' hai lượt liền dù đã được ép chạy bước đó tới cùng ' +
+          '(lượt ' + luot + '). Dừng để khỏi ăn quota. File tháng mới đang dở ở cờ ' + (kq.buocDaXong || '(chưa bước nào)') +
+          '; link_thang CHƯA được khai. Gửi nhật ký cho người phụ trách.');
+      }
+      buocDungTruoc = kq.buocKe;
+    }
+    throw hong('KET_TAO_THANG', 'Đã gọi ' + toiDa + ' lượt mà Web App vẫn chưa tạo xong tháng ' + kyMoi + '. Dừng để khỏi ăn quota; ' +
+      'link_thang CHƯA được khai. Bấm lại nút 3 chế độ 1 sau vài phút — tool chạy tiếp từ bước đã xong.');
+  }
+}
+
+/** Tháng + năm → 'yyyy-MM'. Sai (tháng ngoài 1–12, năm không đủ 4 chữ số) → ''. */
+function kyThangNam(thang, nam) {
+  const t = String(thang == null ? '' : thang).trim(), n = String(nam == null ? '' : nam).trim();
+  if (!/^\d{1,2}$/.test(t) || +t < 1 || +t > 12 || !/^\d{4}$/.test(n)) return '';
+  return n + '-' + haiSo(+t);
+}
+
+/** Link Google Sheet đầy đủ (hoặc ID trần) → ID; không nhận ra → ''. Cùng luật ID ≥ 20 ký tự với `RE_LINK_SHEET`. */
+function idTuLinkHoacId(x) {
+  const s = String(x == null ? '' : x).trim();
+  const m = s.match(RE_LINK_SHEET);
+  if (m) return m[1];
+  return /^[a-zA-Z0-9_-]{20,}$/.test(s) ? s : '';
 }
 
 /** 'xuly' → 'xuLy', 'ghi' → 'ghi'; rỗng/lạ → 'xuLy' (mặc định). */
@@ -764,5 +974,7 @@ module.exports = {
   PHIEN_BAN, kiemPhienBan, thongBaoLechPhienBan, soDauVanTay,
   kiemPII, TRUONG_DONG_LOP_1, RE_DIEN_THOAI,
   idFileThang, cauThieuLinkThang, thangSau, canhBaoThangSau, RE_LINK_SHEET, thangHienTaiMay, phanNgayVN,
-  cauLoiQuyen, loiQuyen, MA_LOI_QUYEN_WEBAPP, laTrangHtml
+  cauLoiQuyen, loiQuyen, MA_LOI_QUYEN_WEBAPP, laTrangHtml,
+  TIMEOUT_MS, TIMEOUT_TAO_THANG_MS, SO_LUOT_TAO_THANG_TOI_DA, MA_TU_CHOI_TAO_THANG, GOI_Y_TAO_THANG,
+  kyThangNam, idTuLinkHoacId
 };

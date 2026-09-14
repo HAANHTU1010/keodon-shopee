@@ -71,8 +71,10 @@ Bấm đúp 3_TAO_FILE_THANG_MOI.bat. Nó hỏi đúng bảy câu:
    2   ·   Chỉ khai link tháng mới cho máy này, không đụng vào dữ liệu   ·   Sổ tháng mới đã được làm xong ở máy khác, hoặc bạn chỉ cần đổi link
 
 - Gõ sai một câu thì nó báo câu nào sai rồi hỏi lại từ đầu. Sai ba lượt thì nó thoát, không đổi gì.
-- Trước khi làm, nó in lại bảy giá trị và hỏi Dung chua? (c/k). Gõ c mới làm.
-- Chế độ 1 tự kiểm tám phép so trước khi báo xong. Lệch một phép là dừng, không ghi link.
+- Trước khi làm, nó in lại bảy giá trị và hỏi Dung chua? (c/k). Gõ c mới làm, gõ k để nhập lại. Link không in ra màn hình, chỉ báo "hợp lệ".
+- Chế độ 1 cần mạng và mất vài phút với sổ lớn — đừng đóng cửa sổ. Nó tự kiểm tám phép so trước khi báo xong. Lệch một phép là dừng, không ghi link.
+- Xong thì cửa sổ in DA GHI link thang …. Từ ngày đầu tháng đó, 4_CHAY_TOOL.bat ghi đơn vào sổ mới.
+- Chế độ 1 báo KHÔNG TẠO ĐƯỢC THÁNG … [DA_KHOI_TAO] nghĩa là sổ đó đã được chuyển xong từ trước (ở máy khác, hoặc lượt trước mạng rớt): bấm lại, chọn chế độ 2. Báo [SAI_THANG_FILE] thì đổi tên bản sao cho đúng tháng rồi chạy lại chế độ 1.
 
 ---
 
@@ -110,6 +112,8 @@ Khi thấy báo lỗi
    KHÔNG CÓ FILE MỚI   ·   Không phải lỗi. Chưa thả file, thả sai thư mục, hoặc file lần trước đã sang đã xử lý
    FILE NÀY GIỐNG GIAN …, ĐANG THẢ VÀO …   ·   File bị thả nhầm thư mục gian hàng. Kéo file sang đúng thư mục rồi bấm lại. Tool chưa ghi gì
    CHƯA CÓ LINK FILE THÁNG …   ·   Sang tháng mới mà máy này chưa khai link. Bấm 3_TAO_FILE_THANG_MOI.bat
+   KHÔNG TẠO ĐƯỢC THÁNG … (nút 3)   ·   Link tháng không bị đổi. Đọc câu sau dấu → — nó nói đúng việc phải làm
+   MA CUA TOOL TREN MAY NAY LA BAN CU (nút 3)   ·   Bấm 2_CAP_NHAT.bat một lần rồi bấm lại nút 3
    LỖI QUYỀN TRUY CẬP   ·   Sổ tháng chưa chia sẻ quyền Chỉnh sửa cho tài khoản chạy tool. Báo người phụ trách
    … KHÔNG CÒN CÔNG THỨC NÀO   ·   Một cột công thức trong sổ bị xóa sạch. Làm đúng câu nó chỉ, tool chưa ghi gì
    SỔ THÁNG KHÔNG ĐÚNG KHUÔN   ·   Sổ bị đổi tên cột hoặc mất sheet. Báo người phụ trách, đừng tự sửa
@@ -127,7 +131,7 @@ Khi người phụ trách báo có bản mới, bấm đúp 2_CAP_NHAT.bat, đ�
 
    Cửa sổ đen báo   ·   Nghĩa là
    DANG LA BAN MOI NHAT   ·   Không có gì mới. Làm tiếp như thường
-   DA CAP NHAT XONG.  2.5.0  ->  2.6.0   ·   Xong rồi. Bấm 4_CHAY_TOOL.bat làm việc như mọi ngày
+   DA CAP NHAT XONG.  2.5.0  ->  2.6.1   ·   Xong rồi. Bấm 4_CHAY_TOOL.bat làm việc như mọi ngày
    Dòng bắt đầu bằng LOI:   ·   Đọc câu ngay dưới nó. Chưa có gì trên máy bị thay đổi, vẫn chạy 4_CHAY_TOOL.bat bình thường được
 
 Nút này chỉ thay mã của tool. Nó không đụng link, chuỗi bí mật hay thư mục 1_THA_FILE_XUAT. Trước khi thay, nó cất bản đang chạy vào một thư mục tên _ban_cu_... trong Cấu hình, để lùi lại được.

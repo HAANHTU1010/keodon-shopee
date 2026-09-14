@@ -60,7 +60,7 @@
  * Đổi số này MỖI KHI sửa hợp đồng gói JSON (thêm/bớt trường, đổi ý nghĩa hành động) rồi Deploy
  * New version. Không đổi thì Google im lặng chạy bản cũ và tool tưởng đã ghi đúng.
  */
-var PHIEN_BAN = '2.6.0';
+var PHIEN_BAN = '2.6.1';
 
 /**
  * Khóa Script Property giữ chuỗi bí mật. GIỮ NGUYÊN từ bản 09/9 — chuỗi đã cài trên dự án Apps Script
@@ -435,7 +435,12 @@ function thangTrongTenFile_(ten) {
  * tháng sai. Tên file không theo mẫu nào (chủ dự án đặt tên tùy ý) thì CẢNH BÁO chứ không chặn: tool
  * không đoán, và chặn oan là tắc cả buổi chạy.
  */
-function kiemTenFileKhopThang_(ss, thang, canhBao) {
+/**
+ * @param {string} [viecTaoThang] có = gọi từ nút 3 (tạo tháng): nhãn trường chứa link, ví dụ '[6/7]'. Câu lỗi khi đó
+ *   nói việc của NÚT 3 (đổi tên bản sao / kiểm lại link trường đó) — câu của nút 4 bảo "khai link_thang hoặc chế độ 2"
+ *   mà theo ở đây là khai link cho một bản sao CHƯA chuyển sổ.
+ */
+function kiemTenFileKhopThang_(ss, thang, canhBao, viecTaoThang) {
   var ten = ss.getName();
   var mong = chuanHoaThang_(thang);
   var doc = thangTrongTenFile_(ten);
@@ -446,6 +451,12 @@ function kiemTenFileKhopThang_(ss, thang, canhBao) {
   }
   var cua = doc.nam + '-' + hai_(doc.thang);
   if (cua === mong) return true;
+  if (viecTaoThang) {
+    var e2 = new Error('Link ' + viecTaoThang + ' trỏ tới file "' + ten + '" (tên file ghi tháng ' + cua + ') — không phải file của tháng ' +
+      mong + '. Tool DỪNG, chưa ghi ô nào.');
+    e2.maKeodon = 'SAI_THANG_FILE';
+    throw e2;
+  }
   var e = new Error('Link tháng ' + mong + ' đang trỏ tới file "' + ten + '" (tháng ' + cua + ') — không phải ' +
     'file của tháng ' + mong + '. Tool DỪNG, không ghi ô nào. Sửa link_thang["' + mong + '"] trong ' +
     'CAU_HINH_VAN_HANH.json (mở bằng Notepad), hoặc bấm 3_TAO_FILE_THANG_MOI.bat chế độ 2, rồi chạy lại.');
@@ -1901,6 +1912,9 @@ function ghiKhoiO_(sh, dsOp) {
     if (k && k.c1 === d.c1 && k.c2 === d.c2 && k.r2 === d.r - 1 && k.r2 - k.r1 + 1 < TM_LO_DONG) k.r2 = d.r;
     else khoi.push({ r1: d.r, r2: d.r, c1: d.c1, c2: d.c2 });
   });
+  // ĐỊNH DẠNG TRƯỚC, GIÁ TRỊ SAU (cùng bài học ở `ghiMotSheet_`): đặt '@' sau setValues thì Google đã kịp đổi
+  // chuỗi '2026-10' thành ngày, đổi định dạng sau không hoàn nguyên được.
+  dinhDang.forEach(function (t) { sh.getRange(t.r, t.c).setNumberFormat(t.dinhDang); });
   khoi.forEach(function (k) {
     var bang = [];
     for (var r = k.r1; r <= k.r2; r++) {
@@ -1910,7 +1924,6 @@ function ghiKhoiO_(sh, dsOp) {
     }
     sh.getRange(k.r1, k.c1, bang.length, k.c2 - k.c1 + 1).setValues(bang);
   });
-  dinhDang.forEach(function (t) { sh.getRange(t.r, t.c).setNumberFormat(t.dinhDang); });
   return khoi.length;
 }
 
@@ -2037,8 +2050,8 @@ function hanhDongTaoThangMoi_(body, batDau) {
     var canhBao = [], thongBao = [];
     var ssCu = moBangTinh_(idCu, 'tháng ' + kyCu, 'Link đó là trường [3/7] của nút 3.');
     var ssMoi = moBangTinh_(idMoi, 'tháng ' + kyMoi, 'Link đó là trường [6/7] của nút 3.');
-    kiemTenFileKhopThang_(ssCu, kyCu, canhBao);
-    kiemTenFileKhopThang_(ssMoi, kyMoi, canhBao);
+    kiemTenFileKhopThang_(ssCu, kyCu, canhBao, 'tháng trước [3/7]');
+    kiemTenFileKhopThang_(ssMoi, kyMoi, canhBao, 'tháng mới [6/7]');
 
     var anhCu = chupFileThangMoi_(ssCu);
     var anhMoi = chupFileThangMoi_(ssMoi);
@@ -2327,6 +2340,6 @@ function chayBoTest() {
   return 'Tổng ' + kq.length + ' · hỏng ' + hong.length;
 }
 
-var VAN_TAY_SHELL = 'ddb055d8';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_SHELL = '450d5d77';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
 
-var BAN_DUNG = 'a64b28ec0e6f';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay
+var BAN_DUNG = '01e6c75f7ce3';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay

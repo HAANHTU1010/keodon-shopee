@@ -1,29 +1,34 @@
 @echo off
 chcp 65001 >nul
-setlocal enabledelayedexpansion
+setlocal
 cd /d "%~dp0"
-title Tao file tracking thang moi
+title Tao so thang moi
 
 rem ============================================================
-rem  3_TAO_FILE_THANG_MOI.bat - dau thang bam mot lan.
-rem  Hoi dung BA tham so ngay tren cua so den:
-rem      Thang truoc: (vi du dien 9)
-rem      Thang can tao: (vi du dien 10)
-rem      Link thang moi:
-rem  roi kiem tra tung tham so va ghi lai de buoc tao file chay.
+rem  3_TAO_FILE_THANG_MOI.bat - dau thang bam mot lan (YC-34, D-45).
 rem
-rem  CA FILE PHAI LA ASCII THUAN VA XUONG DONG CRLF - NOTES_DEV muc 4.1.
-rem  Ba cau hoi tren PHAI hien dung chinh ta tieng Viet co dau, ma .bat thi
-rem  khong chua duoc chu co dau, nen ba cau do nam duoi dang Base64 trong
-rem  khoi PowerShell o cuoi file. Moi chuoi Base64 deu co chu thich khong
-rem  dau ngay ben canh de nguoi sau doc duoc.
+rem  Hoi dung bay truong, moi truong mot dong:
+rem      [1/7] Thang truoc     [2/7] Nam truoc     [3/7] Link file thang truoc
+rem      [4/7] Thang moi       [5/7] Nam moi       [6/7] Link file thang moi
+rem      [7/7] Che do
+rem            1 = tao/chuyen so sang thang moi tren Google, du 8 phep tu kiem moi ghi link
+rem            2 = chi khai bao link thang moi, khong dong vao du lieu
+rem  Sai truong nao thi bao dong do va hoi lai tu dau, toi da ba luot.
+rem
+rem  File .bat nay CHI tim cau hinh, bo ma va Node.js. Viec hoi, kiem tung
+rem  truong, goi Web App va ghi link nam trong node\nut-3-thang-moi.js:
+rem  cau tieng Viet co dau khong viet duoc trong file .bat.
+rem
+rem  CA FILE PHAI LA ASCII THUAN VA XUONG DONG CRLF - README.md muc 6.4.
+rem  KHONG bat enabledelayedexpansion: file nay khong can, ma bat len thi dau cham
+rem  than trong duong dan cai dat hay trong cau tra loi bi cmd nuot mat.
 rem
 rem  Tham so an, chi dung khi chay thu:
-rem      /tra-loi "9|10|https://..."   tra loi san, khong hoi
-rem      /tu-dong                      khong dung lai cho bam phim
+rem      /tra-loi "..."   cac cau tra loi noi nhau bang dau gach dung, dung thu
+rem                       tu nguoi go - ke ca cau tra loi cho  Dung chua  cuoi cung
+rem      /tu-dong         khong dung lai cho bam phim
 rem ============================================================
 
-set "TM_TEP=%~f0"
 set "TM_BASE=%~dp0"
 set "TM_TRA_LOI="
 set "TM_TU_DONG="
@@ -46,7 +51,7 @@ goto doc_tham_so
 :het_tham_so
 
 echo ============================================================
-echo   TAO FILE TRACKING THANG MOI
+echo   TAO SO THANG MOI
 echo ============================================================
 echo.
 
@@ -60,181 +65,92 @@ if not defined CFGDIR (
   echo LOI: Khong tim thay file CAU_HINH_VAN_HANH.json.
   echo.
   echo   Cach sua: bam dup  1_CAI_DAT_LAN_DAU.bat  mot lan roi chay lai file nay.
+  echo   Chua co gi bi thay doi.
   echo.
   if not defined TM_TU_DONG pause
   exit /b 1
 )
-set "TM_CFGDIR=%CFGDIR%"
 
-rem ---- 2. Chay khoi PowerShell o cuoi file --------------------------------
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$m='#PS'+'_BAT_DAU'; $d=Get-Content -LiteralPath $env:TM_TEP; $n=($d | Select-String -SimpleMatch $m | Select-Object -Last 1).LineNumber; & ([scriptblock]::Create(($d | Select-Object -Skip $n) -join [char]10)); exit [int]$global:TM_MA"
+rem ---- 2. Tim bo ma cua tool ---------------------------------------------
+set "TOOL_GOC="
+for /d %%D in ("%TM_BASE%*") do if exist "%%~fD\keodon-apps-script\node\chay-thu.js" set "TOOL_GOC=%%~fD\keodon-apps-script"
+if not defined TOOL_GOC if exist "%TM_BASE%..\02_CODE\keodon-apps-script\node\chay-thu.js" set "TOOL_GOC=%TM_BASE%..\02_CODE\keodon-apps-script"
+if not defined TOOL_GOC (
+  echo MAY CHUA CAI DAT. Bam dup  1_CAI_DAT_LAN_DAU.bat  truoc.
+  echo.
+  echo   Goi giao cho may user khong kem san ma nguon: ma ve may khi bam
+  echo   nut cai dat. Chay xong nut cai dat mot lan roi quay lai bam file nay.
+  echo   Chua co gi bi thay doi.
+  echo.
+  if not defined TM_TU_DONG pause
+  exit /b 1
+)
+rem  May co bo ma nhung la ban CU, chua co nut 3 moi: phai cap nhat truoc.
+set "TOOL="
+if exist "%TOOL_GOC%\node\nut-3-thang-moi.js" set "TOOL=%TOOL_GOC%"
+if not defined TOOL (
+  echo MA CUA TOOL TREN MAY NAY LA BAN CU, CHUA CO NUT 3 MOI.
+  echo.
+  echo   Cach sua: bam dup  2_CAP_NHAT.bat  mot lan, doi no bao cap nhat xong,
+  echo   roi bam lai file nay. Chua co gi bi thay doi.
+  echo.
+  if not defined TM_TU_DONG pause
+  exit /b 1
+)
+
+rem ---- 3. Tim Node.js ----------------------------------------------------
+set "NODE="
+if exist "%CFGDIR%\node-portable\node.exe" set "NODE=%CFGDIR%\node-portable\node.exe"
+if not defined NODE ( where node >nul 2>&1 && set "NODE=node" )
+if not defined NODE (
+  echo LOI: May chua co Node.js nen tool khong chay duoc.
+  echo.
+  echo   Cach sua: bam dup  1_CAI_DAT_LAN_DAU.bat  va lam theo huong dan trong do.
+  echo   Chua co gi bi thay doi.
+  echo.
+  if not defined TM_TU_DONG pause
+  exit /b 1
+)
+
+rem ---- 4. Chay -----------------------------------------------------------
+rem  Cau tra loi an di qua bien moi truong TM_TRA_LOI, khong qua dong lenh:
+rem  link Google hay co dau va, ma dau va tren dong lenh la cmd cat lenh.
+"%NODE%" "%TOOL%\node\nut-3-thang-moi.js" --van-hanh "%TM_BASE%."
 set "MA=%ERRORLEVEL%"
-if "%MA%"=="9009" goto khong_co_powershell
 
+echo.
+if "%MA%"=="0" (
+  echo ------------------------------------------------------------
+  echo   XONG. Doc dong  DA GHI link thang  o tren: tu ngay do nut 4
+  echo   ghi don vao file thang moi.
+  echo ------------------------------------------------------------
+) else if "%MA%"=="1" (
+  echo ------------------------------------------------------------
+  echo   CHUA LAM GI. CAU_HINH_VAN_HANH.json khong doi.
+  echo   Doc cac dong o tren de biet vi sao, roi bam lai file nay.
+  echo ------------------------------------------------------------
+) else if "%MA%"=="3" (
+  echo ------------------------------------------------------------
+  echo   KHONG TAO DUOC THANG MOI - Google tu choi hoac tu kiem lech.
+  echo   link thang KHONG doi. Doc cau  KHONG TAO DUOC  o tren, trong do
+  echo   co viec phai lam.
+  echo ------------------------------------------------------------
+) else if "%MA%"=="4" (
+  echo ------------------------------------------------------------
+  echo   KHONG GOI XONG WEB APP - mang, quyen truy cap, hoac lech ban.
+  echo   link thang KHONG doi. Lam theo cau bao loi o tren roi bam lai.
+  echo ------------------------------------------------------------
+) else if "%MA%"=="5" (
+  echo ------------------------------------------------------------
+  echo   GOOGLE DA TAO XONG THANG MOI NHUNG MAY CHUA GHI DUOC LINK.
+  echo   Bam lai file nay, chon CHE DO 2 voi dung link thang moi.
+  echo   DUNG chon lai che do 1.
+  echo ------------------------------------------------------------
+) else (
+  echo ------------------------------------------------------------
+  echo   LOI KHONG DOAN TRUOC - ma %MA%. Chup man hinh gui nguoi phu trach.
+  echo ------------------------------------------------------------
+)
 echo.
 if not defined TM_TU_DONG pause
 exit /b %MA%
-
-:khong_co_powershell
-echo LOI: May nay khong goi duoc PowerShell.
-echo      Nut nay can PowerShell, ban Windows nao cung co san.
-echo      Bao nguoi phu trach ky thuat. Trong luc cho, van bam dup
-echo      4_CHAY_TOOL.bat de keo don binh thuong nhu moi ngay.
-echo.
-if not defined TM_TU_DONG pause
-exit /b 1
-
-rem ==================================================================
-rem  Tu day tro xuong la ma PowerShell. cmd.exe khong bao gio doc toi
-rem  vi da exit /b o tren. Dong ngay duoi la moc de PowerShell cat file.
-rem ==================================================================
-#PS_BAT_DAU
-
-$ErrorActionPreference = 'Stop'
-$global:TM_MA = 1
-
-try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
-
-function Bao($t) { Write-Host $t }
-function Gach()  { Write-Host '------------------------------------------------------------' }
-
-# Chuoi tieng Viet CO DAU, cat trong Base64 vi file .bat bat buoc la ASCII thuan.
-function V($b64) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64)) }
-
-# 'Thang truoc: (vi du dien 9)'
-$HOI_CU   = 'VGjDoW5nIHRyxrDhu5tjOiAodsOtIGThu6UgxJFp4buBbiA5KQ=='
-# 'Thang can tao: (vi du dien 10)'
-$HOI_MOI  = 'VGjDoW5nIGPhuqduIHThuqFvOiAodsOtIGThu6UgxJFp4buBbiAxMCk='
-# 'Link thang moi: '
-$HOI_LINK = 'TGluayB0aMOhbmcgbeG7m2k6IA=='
-
-$base   = $env:TM_BASE
-$cfgDir = $env:TM_CFGDIR
-$traLoi = $env:TM_TRA_LOI
-
-function Hoi($b64) {
-  Write-Host (V $b64) -NoNewline
-  return [Console]::ReadLine()
-}
-
-try {
-
-  # ---- 1. Ba cau hoi ---------------------------------------------------
-  if ($traLoi) {
-    $p = $traLoi -split '\|'
-    if ($p.Count -lt 3) { Bao 'LOI: /tra-loi phai co du ba phan, ngan cach bang dau gach dung.'; $global:TM_MA = 1; return }
-    $sCu = $p[0]; $sMoi = $p[1]; $link = $p[2]
-    Write-Host ((V $HOI_CU)   + $sCu)
-    Write-Host ((V $HOI_MOI)  + $sMoi)
-    Write-Host ((V $HOI_LINK) + $link)
-  } else {
-    $sCu  = Hoi $HOI_CU
-    $sMoi = Hoi $HOI_MOI
-    $link = Hoi $HOI_LINK
-  }
-  Write-Host ''
-
-  # ---- 2. Kiem tung tham so -------------------------------------------
-  $sCu  = ([string]$sCu).Trim()
-  $sMoi = ([string]$sMoi).Trim()
-  $link = ([string]$link).Trim()
-
-  if ($sCu -notmatch '^\d{1,2}$' -or [int]$sCu -lt 1 -or [int]$sCu -gt 12) {
-    Bao ('LOI: Thang truoc phai la so tu 1 den 12. Ban vua go: "' + $sCu + '"')
-    Bao '     Bam dup lai file nay va go lai. Chua co gi bi thay doi.'
-    $global:TM_MA = 1; return
-  }
-  if ($sMoi -notmatch '^\d{1,2}$' -or [int]$sMoi -lt 1 -or [int]$sMoi -gt 12) {
-    Bao ('LOI: Thang can tao phai la so tu 1 den 12. Ban vua go: "' + $sMoi + '"')
-    Bao '     Bam dup lai file nay va go lai. Chua co gi bi thay doi.'
-    $global:TM_MA = 1; return
-  }
-
-  $mCu  = [int]$sCu
-  $mMoi = [int]$sMoi
-  $namNay  = (Get-Date).Year
-  $namCu   = $namNay
-  $namMoi  = $namNay
-
-  # Thang can tao phai LIEN SAU thang truoc. 12 -> 1 thi tang nam.
-  if ($mCu -eq 12) {
-    if ($mMoi -ne 1) {
-      Bao ('LOI: Thang truoc la 12 thi thang can tao phai la 1, khong phai ' + $mMoi + '.')
-      Bao '     Tool khong tao nhay thang. Bam dup lai file nay va go lai.'
-      $global:TM_MA = 1; return
-    }
-    $namMoi = $namNay + 1
-  } elseif ($mMoi -ne ($mCu + 1)) {
-    Bao ('LOI: Thang can tao phai lien sau thang truoc. ' + $mCu + ' thi phai la ' + ($mCu + 1) + ', ban go ' + $mMoi + '.')
-    Bao '     Tool khong tao nhay thang, cung khong tao lui thang. Bam dup lai file nay va go lai.'
-    $global:TM_MA = 1; return
-  }
-
-  # Link phai la link Google Sheet that, va lay duoc id file.
-  $id = ''
-  $m = [regex]::Match($link, '^https://docs\.google\.com/spreadsheets/d/([A-Za-z0-9_-]{20,})')
-  if ($m.Success) { $id = $m.Groups[1].Value }
-  if (-not $id) {
-    Bao 'LOI: Link thang moi khong phai link Google Sheet.'
-    Bao ''
-    Bao ('  Ban vua dan: ' + $link)
-    Bao '  Link dung co dang:  https://docs.google.com/spreadsheets/d/<chuoi chu va so>/edit'
-    Bao '  Cach lay: mo file thang moi tren Google, bam thanh dia chi cua trinh duyet,'
-    Bao '            Ctrl+C, roi dan vao day bang Ctrl+V.'
-    Bao '  Chua co gi bi thay doi.'
-    $global:TM_MA = 1; return
-  }
-
-  $thangMoi = ('{0}-{1:d2}' -f $namMoi, $mMoi)
-  $thangCu  = ('{0}-{1:d2}' -f $namCu,  $mCu)
-
-  Gach
-  Bao '  DA HIEU DUNG NHU SAU'
-  Bao ('    Thang truoc   : ' + $thangCu)
-  Bao ('    Thang can tao : ' + $thangMoi)
-  Bao ('    File thang moi: ' + $id)
-  Gach
-  Bao ''
-
-  # ---- 3. Ghi lai de buoc tao file dung -------------------------------
-  $tep = Join-Path $cfgDir ('thang-moi-' + $thangMoi + '.json')
-  $obj = [ordered]@{
-    thang_truoc    = $thangCu
-    thang_can_tao  = $thangMoi
-    link_thang_moi = $link
-    id_thang_moi   = $id
-    ghi_luc        = (Get-Date).ToString('yyyy-MM-dd HH:mm')
-  }
-  Set-Content -LiteralPath $tep -Value ($obj | ConvertTo-Json) -Encoding UTF8
-  Bao ('Da ghi ba tham so vao: ' + (Split-Path $tep -Leaf))
-  Bao ''
-
-  # ---- 4. Buoc tao file tren Google -----------------------------------
-  # Ban nay CHUA co hanh dong "taoThangMoi" tren Web App. src/ShellAppsScript.gs
-  # moi nhan bon hanh dong: ping, doc, ghi, xuLy. Noi doi la user tuong
-  # da tao xong roi di keo don vao mot file chua khoi tao.
-  Gach
-  Bao '  BUOC TAO FILE TREN GOOGLE CHUA BAT O BAN NAY.'
-  Bao ''
-  Bao '  Ba tham so cua ban da duoc kiem het va ghi lai o tren, khong phai go lai.'
-  Bao '  Con thieu dung mot thu: hanh dong "taoThangMoi" tren Web App Apps Script.'
-  Bao '  Ban dang Deploy moi nhan bon hanh dong: ping, doc, ghi, xuLy.'
-  Bao ''
-  Bao '  Viec phai lam bay gio:'
-  Bao '   1. Dua file vua ghi o tren cho nguoi phu trach ky thuat.'
-  Bao '   2. Trong luc cho, VAN keo don binh thuong bang 4_CHAY_TOOL.bat.'
-  Bao '      Tool luon ghi vao file cua thang theo NGAY CHAY, khong ghi lui.'
-  Bao ''
-  Bao '  Chua co o nao tren Google bi ghi. Bam lai file nay bao nhieu lan cung duoc.'
-  Gach
-  $global:TM_MA = 3
-
-} catch {
-  Bao ''
-  Bao 'LOI KHONG DOAN TRUOC.'
-  Bao ''
-  Bao ('  Chi tiet ky thuat:  ' + $_.Exception.Message)
-  Bao '  Chup man hinh cua so nay gui nguoi phu trach ky thuat.'
-  Bao '  Chua co o nao tren Google bi ghi.'
-  $global:TM_MA = 9
-}

@@ -327,7 +327,12 @@ class VungGia {
         delete this.sh.giaTri[khoaO(r, c)];
         return;
       }
-      this.sh.giaTri[khoaO(r, c)] = v === undefined ? '' : v;
+      // `epNgayNhuGoogle`: như Google, chuỗi trông như năm-tháng(-ngày) ghi vào ô CHƯA ép '@' bị đổi thành NGÀY.
+      // Tắt mặc định (bộ cũ chấm theo chuỗi); bài nào canh bẫy này thì bật.
+      const simX = this.sh.ss && this.sh.ss.sim;
+      const mNgay = simX && simX.epNgayNhuGoogle && typeof v === 'string' && this.sh.dinhDang[khoaO(r, c)] !== '@' &&
+        /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/.exec(v.trim());
+      this.sh.giaTri[khoaO(r, c)] = mNgay ? new Date(+mNgay[1], +mNgay[2] - 1, +(mNgay[3] || 1)) : (v === undefined ? '' : v);
       // Bản trước chỉ gỡ công thức khi giá trị KHÁC rỗng — Google gỡ cả khi ghi '' (ghi đè là ghi đè). Để lệch
       // chỗ này là giả lập che mất đúng lỗi "ghi rỗng vào cột công thức".
       if (v !== undefined) delete this.sh.congThuc[khoaO(r, c)];
@@ -595,7 +600,8 @@ function taoGiaLap(tc) {
     khoaDangGiu: false,
     khoaBiMayKhacGiu: false,
     soLanFlush: 0,
-    demGoiGhi: 0
+    demGoiGhi: 0,
+    epNgayNhuGoogle: o.epNgayNhuGoogle === true
   };
 
   const hopThoiGian = { moc: (o.ngay ? new Date(o.ngay) : new Date('2026-09-08T03:00:00Z')).getTime() };

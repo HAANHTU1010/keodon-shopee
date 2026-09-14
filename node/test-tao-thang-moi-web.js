@@ -10,7 +10,7 @@
  * Google tính lại công thức sau mỗi `flush` được thay bằng `node/tinh-lai-gia-lap.js` (cùng bộ tính của vỏ Excel).
  *
  * Mỗi chỉ tiêu kèm ĐỐI CHỨNG ÂM dựng lại đúng khuyết tật (sửa nguồn qua `suaNguon`) và chứng minh phép chấm LỆCH.
- * Mã bài `TM-W-xx`.
+ * Mã bài `TM-W-xx`. TM-W-19…22 (2.6.1): PHÍA MÁY — nút 3 chế độ 1 → `WebAppGoogleSheet.taoThangMoi` → Web App giả, trọn đường.
  */
 'use strict';
 
@@ -603,6 +603,351 @@ function lechCongThuc2000(ssMoi) {
       return d.n !== 2000 ? ['Babyiu!M ' + d.n + ' ô'] : [];
     }, 'gỡ một ô công thức Babyiu!M1000');
   });
+
+  // ---------------------------------------------------------------- phía MÁY: nút 3 chế độ 1 → WebAppGoogleSheet → Web App giả
+  //
+  // YC-34 + YC-35 phía máy, TRỌN ĐƯỜNG: `node/nut-3-thang-moi.js` → `WebAppGoogleSheet.taoThangMoi` → đường truyền giả (302)
+  // → `doPost` của MÃ THẬT `ShellAppsScript.gs` + `TaoThangMoi.gs` trên cặp A (tháng 9 thật → bản sao tháng 10).
+  // Đối chứng âm ở phần này nạp BẢN SỬA của file máy (`napBanSua`) trong bộ nhớ — không ghi file nào ra đĩa.
+  console.log('\n--- phía máy (YC-34/35): nút 3 chế độ 1 → WebAppGoogleSheet.taoThangMoi → Web App giả chạy mã .gs thật ---');
+  const Module = require('module');
+  const os = require('os');
+  const gw = require('./gsheet-web-app');
+  const NUT3 = require('./nut-3-thang-moi');
+  const httpsGia = require('https');                      // chính là bản giả `gia-lap-web-app` đã cắm vào require.cache
+  const RAC_MAY = [];
+
+  /** Nạp bản sửa của một file trong node/. `doi` = [[mốc, thay], …], mỗi mốc đúng MỘT chỗ. */
+  function napBanSua(tenFile, doi) {
+    const tep = path.join(__dirname, tenFile);
+    let src = fs.readFileSync(tep, 'utf8');
+    for (const [moc, thay] of doi) {
+      const n = src.split(moc).length - 1;
+      if (n !== 1) throw new Error('mốc đối chứng âm trong ' + tenFile + ' cần 1 chỗ, tìm được ' + n + ': ' + moc.slice(0, 70) + ' — mã đã đổi, sửa mốc, ĐỪNG bỏ bài');
+      src = src.split(moc).join(thay);
+    }
+    const m = new Module(tep, module);
+    m.filename = tep;
+    m.paths = Module._nodeModulePaths(__dirname);
+    m._compile(src, tep);
+    return m.exports;
+  }
+
+  /** Dựng cặp A cho phía máy: Web App giả + hai file + thư mục vận hành có cấu hình thật hình dạng. */
+  function dungMay(o) {
+    o = o || {};
+    const sim = gl.taoGiaLap({ ngay: '2026-09-28T02:00:00Z', suaNguon: o.suaNguon, epNgayNhuGoogle: o.epNgay === true });
+    const ssCu = saoFile(MAU.T9.ss, sim.khaiThang('2026-09', MAU.T9.ten));
+    const ssMoi = saoFile(MAU.T9.ss, sim.khaiThang('2026-10', o.tenMoi || 'THÁNG-10-2026-KINH-DOANH', { khongKhaiLink: true }));
+    if (o.vo) o.vo(ssMoi, ssCu, sim);
+    sim.khiFlush = () => { tinhLaiBangTinh(ssMoi); if (o.sauTinh) o.sauTinh(ssMoi); };
+    if (o.buocMs) sim.datBuocDongHo(o.buocMs);
+    const vh = fs.mkdtempSync(path.join(os.tmpdir(), 'keodon-tmw-may-'));
+    RAC_MAY.push(vh);
+    const ch = path.join(vh, 'Cấu hình');
+    fs.mkdirSync(ch);
+    const tep = path.join(ch, 'CAU_HINH_VAN_HANH.json');
+    fs.writeFileSync(tep, JSON.stringify({
+      google_sheet: { bat: true, web_app_url: sim.url, chuoi_bi_mat: sim.biMat },
+      link_thang: { '2026-08': sim.linkCua('2026-08'), '2026-09': sim.linkCua('2026-09') }
+    }, null, 2) + '\n', 'utf8');
+    return { sim, ssCu, ssMoi, vh, ch, tep, truocCu: chup(ssCu) };
+  }
+  const TL1 = (sim) => ['9', '2026', sim.linkCua('2026-09'), '10', '2026', sim.linkCua('2026-10'), '1', 'c'];
+
+  async function bamNut3(X, tc) {
+    let ra = '';
+    const mod = (tc && tc.mod) || NUT3;
+    const ma = await mod.chay(Object.assign({
+      vh: X.vh, traLoi: TL1(X.sim), mau: false, ra: (s) => { ra += s; }, thoiDiem: '2026-09-28T02:00:00Z'
+    }, (tc && tc.them) || {}));
+    const dNk = path.join(X.ch, 'nhật ký');
+    const nhatKy = fs.existsSync(dNk) ? fs.readdirSync(dNk).map((t) => fs.readFileSync(path.join(dNk, t), 'utf8')).join('\n') : '';
+    X.sim.datBuocDongHo(0);
+    return { ma, ra, nhatKy };
+  }
+
+  /** Mọi thứ phía máy in ra + nhật ký: không ID, không link file tháng, không chuỗi bí mật, không link Web App. */
+  function lotMay(X, chu) {
+    return ['2026-08', '2026-09', '2026-10'].filter((k) => chu.indexOf(X.sim.idCua(k)) >= 0).map((k) => 'ID ' + k)
+      .concat(/docs\.google\.com\/spreadsheets\/d\/\w/.test(chu) ? ['link file tháng'] : [])
+      .concat(chu.indexOf(X.sim.biMat) >= 0 ? ['chuỗi bí mật'] : [])
+      .concat(chu.indexOf(X.sim.url) >= 0 ? ['link Web App'] : []);
+  }
+
+  /** Bơm lỗi của giả lập CHỈ vào gói `ping` (lượt chốt phiên bản mở đầu nút 3). */
+  async function voiLoiPing(X, loi, fn) {
+    const goc = httpsGia.request;
+    httpsGia.request = function (opt, cb) {
+      const req = goc.call(this, opt, cb);
+      const viet = req.write;
+      req.write = (d) => { if (/"hanhDong":"ping"/.test(String(d))) X.sim.datLoi(loi); else X.sim.xoaLoi(); return viet(d); };
+      return req;
+    };
+    try { return await fn(); } finally { httpsGia.request = goc; X.sim.xoaLoi(); }
+  }
+
+  /** Bơm lỗi của giả lập CHỈ vào gói `taoThangMoi` (lượt `ping` chốt phiên bản đi qua bình thường). */
+  async function voiLoiTaoThang(X, loi, fn) {
+    const goc = httpsGia.request;
+    httpsGia.request = function (opt, cb) {
+      const req = goc.call(this, opt, cb);
+      const viet = req.write;
+      req.write = (d) => { if (/"hanhDong":"taoThangMoi"/.test(String(d))) X.sim.datLoi(loi); else X.sim.xoaLoi(); return viet(d); };
+      return req;
+    };
+    try { return await fn(); } finally { httpsGia.request = goc; X.sim.xoaLoi(); }
+  }
+
+  await test('TM-W-19', 'phía máy `WebAppGoogleSheet.taoThangMoi`: qua đường truyền 302, bước dài hơn ngưỡng thì gọi lại kèm `buocDungTruoc` tới khi xong 8/8, kết quả y hệt chạy một hơi; mỗi lượt chờ 400 giây, không 180', async () => {
+    const chayMay = async (Lop, X) => {
+      const web = new Lop.WebAppGoogleSheet(X.sim.cauHinhMay());
+      const goiDi = [];
+      const goc = httpsGia.request;
+      httpsGia.request = function (opt, cb) {
+        const req = goc.call(this, opt, cb);
+        const ghi = { cho: opt.timeout, goi: null };
+        goiDi.push(ghi);
+        const viet = req.write;
+        req.write = (d) => { const g = JSON.parse(String(d)); ghi.goi = { hanhDong: g.hanhDong, buocDungTruoc: g.buocDungTruoc }; return viet(d); };
+        return req;
+      };
+      try {
+        const kq = await web.taoThangMoi({ thangCu: 9, namCu: 2026, linkCu: X.sim.linkCua('2026-09'), thangMoi: 10, namMoi: 2026, linkMoi: X.sim.linkCua('2026-10') }, { nguongGiay: 20 });
+        return { kq, goiDi };
+      } finally { httpsGia.request = goc; X.sim.datBuocDongHo(0); }
+    };
+    const X = dungMay({ buocMs: 450 });
+    const { kq, goiDi } = await chayMay(gw, X);
+    dung(kq.ok === true && kq.kiem.length === 8 && kq.kiem.every((p) => p.dat), 'phải xong 8/8: ' + JSON.stringify(kq).slice(0, 300));
+    const tt = goiDi.filter((g) => g.goi && g.goi.hanhDong === 'taoThangMoi');
+    dung(goiDi[0].goi.hanhDong === 'ping', 'lượt đầu phải là ping chốt phiên bản');
+    dung(tt.length >= 2 && kq.soLuot === tt.length, 'bước dài hơn ngưỡng phải gọi lại ≥ 2 lượt, được ' + tt.length);
+    dung(tt[0].goi.buocDungTruoc === undefined && tt[1].goi.buocDungTruoc === 'B3', 'lượt 2 phải báo lại bước vừa dừng dở B3, được ' + tt[1].goi.buocDungTruoc);
+    bang(tt.map((g) => g.cho).filter((c) => c !== gw.TIMEOUT_TAO_THANG_MS), [], 'thời gian chờ lượt taoThangMoi');
+    dung(gw.TIMEOUT_TAO_THANG_MS >= 370000 && goiDi[0].cho === gw.TIMEOUT_MS, 'chờ tạo tháng phải ≥ 6 phút 10 giây; ping giữ 180 giây');
+    bang(soOKhac(chupBoCo(A.ssMoi), chupBoCo(X.ssMoi)), 0, 'khác bản chạy một hơi');
+    return tt.length + ' lượt · chờ ' + (gw.TIMEOUT_TAO_THANG_MS / 1000) + ' giây/lượt · ' + await doiChungAm(async () => {
+      const Sai = napBanSua('gsheet-web-app.js', [['        buocDungTruoc: buocDungTruoc || undefined,\n', '        buocDungTruoc: undefined,\n']]);
+      const Y = dungMay({ buocMs: 450 });
+      try { const r = await chayMay(Sai, Y); return r.kq.ok ? [] : ['không xong: ' + r.kq.loi]; } catch (e) { return ['kẹt: ' + e.message.slice(0, 90)]; }
+    }, 'không gửi buocDungTruoc') + ' · ' + await doiChungAm(async () => {
+      const Sai = napBanSua('gsheet-web-app.js', [['    const choMs = laTaoThang ? TIMEOUT_TAO_THANG_MS : TIMEOUT_MS;', '    const choMs = TIMEOUT_MS;']]);
+      const Y = dungMay({});
+      const r = await chayMay(Sai, Y);
+      return r.goiDi.filter((g) => g.goi && g.goi.hanhDong === 'taoThangMoi' && g.cho < 370000).map((g) => 'lượt tạo tháng chờ ' + g.cho / 1000 + ' giây');
+    }, 'chờ 180 giây như kéo đơn');
+  });
+
+  await test('TM-W-20', 'nút 3 chế độ 1 TRỌN ĐƯỜNG: 8/8 → ghi link_thang["2026-10"], file tháng mới y hệt chạy thẳng Web App, file tháng 9 không đổi ô nào; màn hình + nhật ký không lọt ID/link/chuỗi bí mật', async () => {
+    const X = dungMay({ buocMs: 300 });
+    const r = await bamNut3(X, { them: { nguongGiay: 20 } });
+    dung(r.ma === 0, 'phải thoát mã 0: ' + r.ra.slice(-500));
+    const cfg = JSON.parse(fs.readFileSync(X.tep, 'utf8'));
+    dung(cfg.link_thang['2026-10'] === X.sim.linkCua('2026-10'), 'link_thang["2026-10"] không đúng link [6/7]');
+    dung(/^DA_KHOI_TAO_/.test(coTM(X.ssMoi, 1)), 'O1: ' + coTM(X.ssMoi, 1));
+    bang((r.ra.match(/K-[1-8] ĐẠT /g) || []).length, 8, 'bảng 8 phép K ĐẠT trên màn hình');
+    dung(/DA GHI link thang 2026-10\. Tu ngay 1\/10\/2026/.test(r.ra), 'thiếu câu DA GHI link thang 2026-10');
+    bang(soOKhac(chupBoCo(A.ssMoi), chupBoCo(X.ssMoi)), 0, 'file tháng mới khác bản chạy thẳng Web App');
+    bang(soOKhac(X.truocCu, chup(X.ssCu)), 0, 'số ô file tháng 9 bị đổi');
+    bang(lotMay(X, r.ra + '\n' + r.nhatKy), [], 'INV-7 phía máy');
+    dung(/Chế độ: 1 · Mã thoát: 0/.test(r.nhatKy), 'nhật ký LOG_TAO_THANG_ thiếu dòng tổng');
+    return 'mã 0 · ' + (r.ra.match(/lượt \d+\)/g) || []).length + ' lần gọi tiếp · ' + await doiChungAm(async () => {
+      // Máy coi lượt dừng gọn đầu tiên là "xong" và không gọi tiếp.
+      const Sai = napBanSua('gsheet-web-app.js', [['      if (kq.xong !== false) return kqGon;\n', '      return kqGon;\n']]);
+      const Y = dungMay({ buocMs: 300 });
+      const y = await bamNut3(Y, { them: { nguongGiay: 20, WebApp: Sai.WebAppGoogleSheet } });
+      const c = JSON.parse(fs.readFileSync(Y.tep, 'utf8'));
+      return (y.ma !== 0 || !c.link_thang['2026-10'] || !/^DA_KHOI_TAO_/.test(coTM(Y.ssMoi, 1)))
+        ? ['thoát ' + y.ma + ', O1 = ' + coTM(Y.ssMoi, 1) + ', link ' + (c.link_thang['2026-10'] ? 'có' : 'không')] : [];
+    }, 'không gọi tiếp khi Google dừng gọn');
+  });
+
+  await test('TM-W-21', 'nút 3 chế độ 1 TỰ KIỂM LỆCH (sót doanh số Shopee mall!L3) → mã 3, CAU_HINH_VAN_HANH.json y nguyên từng byte, O1 giữ DANG_KHOI_TAO_, màn hình nêu K-7 và việc phải làm', async () => {
+    const sauTinh = (ss) => { ss.getSheetByName('Shopee mall').giaTri['3:12'] = 999000; ss.getSheetByName('Lợi nhuận').giaTri['7:4'] = 999000; };
+    const X = dungMay({ sauTinh });
+    const truoc = fs.readFileSync(X.tep);
+    const r = await bamNut3(X);
+    bang(r.ma, 3, 'mã thoát');
+    dung(Buffer.compare(fs.readFileSync(X.tep), truoc) === 0, 'tự kiểm lệch mà CAU_HINH_VAN_HANH.json đã bị ghi');
+    dung(/^DANG_KHOI_TAO_/.test(coTM(X.ssMoi, 1)), 'O1: ' + coTM(X.ssMoi, 1));
+    dung(/K-7 LỆCH/.test(r.ra) && /\[TU_KIEM_LECH\]/.test(r.ra) && /KHÔNG khai link/.test(r.ra), 'màn hình thiếu K-7 / mã / việc phải làm: ' + r.ra.slice(-400));
+    return await doiChungAm(async () => {
+      const Sai = napBanSua('nut-3-thang-moi.js', [['    if (!du8) {', '    if (false) {']]);
+      const Y = dungMay({ sauTinh });
+      const t = fs.readFileSync(Y.tep);
+      await bamNut3(Y, { mod: Sai });
+      return Buffer.compare(fs.readFileSync(Y.tep), t) !== 0 ? ['khai link cho file tháng mới đang lệch K-7'] : [];
+    }, 'ghi link dù tự kiểm lệch');
+  });
+
+  await test('TM-W-22', 'nút 3 chế độ 1 các ca hỏng qua đường truyền — bấm lại lần hai, lệch bản, lỗi quyền file tháng cũ, Google cắt 6 phút, đứt mạng: đúng mã thoát, đúng câu việc phải làm, cấu hình y nguyên', async () => {
+    const ra = [];
+    const kiemCa = async (ten, X, maMong, rxCo, rxKhong, lam) => {
+      const truoc = fs.readFileSync(X.tep);
+      const r = await (lam ? lam() : bamNut3(X));
+      dung(r.ma === maMong, ten + ': phải thoát mã ' + maMong + ', được ' + r.ma + ' — ' + r.ra.slice(-300));
+      rxCo.forEach((rx) => dung(rx.test(r.ra), ten + ': thiếu ' + rx + ' — ' + r.ra.slice(-400)));
+      (rxKhong || []).forEach((rx) => dung(!rx.test(r.ra), ten + ': không được có ' + rx));
+      dung(Buffer.compare(fs.readFileSync(X.tep), truoc) === 0, ten + ': CAU_HINH_VAN_HANH.json đã bị ghi');
+      bang(lotMay(X, r.ra + r.nhatKy), [], ten + ' INV-7');
+      ra.push(ten + '→' + r.ma);
+      return r;
+    };
+    // (a) file đã khởi tạo → bấm lại lần hai → gợi ý chế độ 2
+    const Xa = dungMay({ vo: (ssMoi) => { saoKetQua(A.ssMoi, ssMoi); } });
+    await kiemCa('đã khởi tạo', Xa, 3, [/\[DA_KHOI_TAO\]/, /CHẾ ĐỘ 2/]);
+    // (b) Web App còn bản cũ → dừng ở ping, KHÔNG gửi gói taoThangMoi nào
+    const Xb = dungMay({});
+    Xb.sim.datLoi({ lechPhienBan: { dangChay: '2.5.0', can: gw.PHIEN_BAN } });
+    await kiemCa('lệch bản', Xb, 4, [/2\.5\.0/, /KHÔNG TẠO ĐƯỢC THÁNG 2026-10/]);
+    bang(Xb.sim.nhatKyGoi.filter((g) => g.hanhDong === 'taothangmoi').length, 0, 'lệch bản mà vẫn gửi gói taoThangMoi');
+    Xb.sim.xoaLoi();
+    // (c) tài khoản deploy không có quyền mở file THÁNG CŨ → câu chuẩn D-46 nêu đúng tháng 2026-09
+    const Xc = dungMay({});
+    const QUYEN = { loiMoFile: 'Exception: You do not have permission to access the requested document.' };
+    await kiemCa('lỗi quyền', Xc, 4, [/LỖI QUYỀN TRUY CẬP/, /file Google Sheet tháng 2026-09 phải/], [], () => voiLoiTaoThang(Xc, QUYEN, () => bamNut3(Xc)));
+    // (d) Google cắt ngang ở 6 phút → bảo bấm lại nút 3, KHÔNG bảo "chia nhỏ file", KHÔNG nói "chưa ghi gì"
+    const Xd = dungMay({});
+    await kiemCa('quá 6 phút', Xd, 4, [/bấm lại nút 3/, /link_thang CHƯA được khai/], [/chia nhỏ file/, /Tool chưa ghi gì/],
+      () => voiLoiTaoThang(Xd, { quaSauPhut: true }, () => bamNut3(Xd)));
+    // (f) Google ném một câu LẠ có dán mã file tháng mới (chưa nằm trong link_thang) → vẫn không lọt ra màn hình / nhật ký
+    const Xf = dungMay({});
+    const LA = (X) => ({ loiMoFile: 'Service Spreadsheets failed while accessing document with id ' + X.sim.idCua('2026-10') + '.' });
+    await kiemCa('câu lạ có mã file', Xf, 4, [/NGOAI_LE/, /<ID file tháng>/], [], () => voiLoiTaoThang(Xf, LA(Xf), () => bamNut3(Xf)));
+    // (g) MẤT MẠNG NGAY LƯỢT PING chốt phiên bản (ca mất mạng hay gặp nhất) → câu nút 3 "chưa gửi lệnh tạo tháng", không câu kéo đơn
+    const Xg = dungMay({});
+    await kiemCa('mất mạng ở ping', Xg, 4, [/CHƯA gửi lệnh tạo tháng nào/], [/không bị ghi trùng/, /Chưa biết Google đã chuyển sổ/],
+      () => voiLoiPing(Xg, { loiKetNoi: 'getaddrinfo ENOTFOUND' }, () => bamNut3(Xg)));
+    bang(Xg.sim.nhatKyGoi.filter((g) => g.hanhDong === 'taothangmoi').length, 0, 'mất mạng ở ping mà vẫn gửi gói taoThangMoi');
+    // (h) quên đổi tên bản sao ("Bản sao của …" mang tháng 9) → câu của NÚT 3: nêu trường [6/7], cấm chế độ 2 — không câu nút 4
+    const Xh = dungMay({ tenMoi: 'Bản sao của ' + MAU.T9.ten });
+    await kiemCa('quên đổi tên bản sao', Xh, 3, [/\[SAI_THANG_FILE\]/, /tháng mới \[6\/7\]/, /ĐỪNG chọn chế độ 2/], [/link_thang\["2026-10"\] trong/, /bấm 3_TAO_FILE_THANG_MOI\.bat chế độ 2/]);
+    // (e) đứt mạng
+    const Xe = dungMay({});
+    await kiemCa('đứt mạng', Xe, 4, [/link_thang CHƯA được khai/, /chế độ 2/], [/không bị ghi trùng/],
+      () => voiLoiTaoThang(Xe, { loiKetNoi: 'ECONNRESET' }, () => bamNut3(Xe)));
+    return ra.join(' · ') + ' · ' + await doiChungAm(async () => {
+      const Sai = napBanSua('gsheet-web-app.js', [['      const mTh = laTaoThang ? /tháng (\\d{4}-\\d{2})/.exec(tb) : null;', '      const mTh = null;']]);
+      const Y = dungMay({});
+      const y = await voiLoiTaoThang(Y, QUYEN, () => bamNut3(Y, { them: { WebApp: Sai.WebAppGoogleSheet } }));
+      return /file Google Sheet tháng 2026-09 phải/.test(y.ra) ? [] : ['câu lỗi quyền chỉ sai file: ' + ((y.ra.match(/file Google Sheet tháng \d{4}-\d{2}/) || ['?'])[0])];
+    }, 'câu lỗi quyền nêu tháng mới thay vì file hỏng quyền') + ' · ' + await doiChungAm(async () => {
+      const Sai = napBanSua('gsheet-web-app.js', [['            if (laTaoThang) {\n              // "Chia nhỏ file thả vào"', '            if (false) {\n              // "Chia nhỏ file thả vào"']]);
+      const Y = dungMay({});
+      const y = await voiLoiTaoThang(Y, { quaSauPhut: true }, () => bamNut3(Y, { them: { WebApp: Sai.WebAppGoogleSheet } }));
+      return /chia nhỏ file/.test(y.ra) ? ['bảo "chia nhỏ file thả vào" giữa lúc tạo tháng'] : [];
+    }, 'dùng câu 6 phút của kéo đơn') + ' · ' + await doiChungAm(async () => {
+      // Bỏ CẢ HAI lớp che link/ID vừa gõ (phía máy Web App và nút 3) — chỉ còn mẫu chung, không che được mã file trơ trọi.
+      const Sai = napBanSua('gsheet-web-app.js', [['    [idCu, idMoi].forEach((x) => this.cheThem(x));\n', ''], ['    [o.linkCu, o.linkMoi].forEach((x) => this.cheThem(x));\n', '']]);
+      const SaiN3 = napBanSua('nut-3-thang-moi.js', [['        if (LA_LINK[i]) cheThem(String(x).trim());\n', ''],
+        ["    if (typeof w.cheThem === 'function') [gt.linkCu, gt.linkMoi].forEach((x) => w.cheThem(x));\n", '']]);
+      const Y = dungMay({});
+      const y = await voiLoiTaoThang(Y, LA(Y), () => bamNut3(Y, { mod: SaiN3, them: { WebApp: Sai.WebAppGoogleSheet } }));
+      return lotMay(Y, y.ra + y.nhatKy);
+    }, 'không che link/ID vừa gõ') + ' · ' + await doiChungAm(async () => {
+      const Sai = napBanSua('gsheet-web-app.js', [["    await this.chotPhienBan({ boiCanh: 'taoThang' });", '    await this.chotPhienBan();']]);
+      const Y = dungMay({});
+      const y = await voiLoiPing(Y, { loiKetNoi: 'getaddrinfo ENOTFOUND' }, () => bamNut3(Y, { them: { WebApp: Sai.WebAppGoogleSheet } }));
+      return /không bị ghi trùng/.test(y.ra) ? ['mất mạng ở ping in câu kéo đơn "không bị ghi trùng"'] : [];
+    }, 'ping chốt bản không mang bối cảnh tạo tháng') + ' · ' + await doiChungAm(async () => {
+      const Y = dungMay({ tenMoi: 'Bản sao của ' + MAU.T9.ten,
+        suaNguon: sua("    kiemTenFileKhopThang_(ssMoi, kyMoi, canhBao, 'tháng mới [6/7]');", '    kiemTenFileKhopThang_(ssMoi, kyMoi, canhBao);') });
+      const y = await bamNut3(Y);
+      return /chế độ 2, rồi chạy lại/.test(y.ra) ? ['bảo khai link_thang / chế độ 2 cho bản sao chưa chuyển sổ'] : [];
+    }, 'dùng câu SAI_THANG_FILE của nút 4');
+  });
+
+  await test('TM-W-23', 'đường truyền cắt ngang KHÔNG làm treo nút 3: phản hồi đứt giữa thân (Node chỉ báo close, không end) và lượt GET chuyển hướng đứng im đều ra LỖI có câu nút 3', async () => {
+    const TS = (X) => ({ thangCu: 9, namCu: 2026, linkCu: X.sim.linkCua('2026-09'), thangMoi: 10, namMoi: 2026, linkMoi: X.sim.linkCua('2026-10') });
+    const hanChot = (p, ms) => Promise.race([p.then((v) => ({ v }), (e) => ({ e })), new Promise((r) => setTimeout(() => r({ treo: true }), ms))]);
+    // (a) phản hồi của gói taoThangMoi bị cắt giữa thân: có 'data' nửa chừng rồi 'close', không 'end', không 'error'
+    const catThan = async (Lop) => {
+      const X = dungMay({});
+      const web = new Lop.WebAppGoogleSheet(X.sim.cauHinhMay());
+      const goc = httpsGia.request;
+      httpsGia.request = function (opt, cb) {
+        const { EventEmitter } = require('events');
+        const req = new EventEmitter();
+        let than = '';
+        req.write = (d) => { than += d; return true; };
+        req.destroy = () => { };
+        req.end = () => {
+          if (!/"hanhDong":"taoThangMoi"/.test(than)) {
+            const that = goc.call(httpsGia, opt, cb);
+            that.on('error', (e) => req.emit('error', e));
+            that.on('timeout', () => req.emit('timeout'));
+            that.write(than); that.end();
+            return;
+          }
+          setImmediate(() => {
+            const res = new EventEmitter();
+            res.statusCode = 200; res.headers = {}; res.setEncoding = () => res; res.resume = () => res;
+            cb(res);
+            setImmediate(() => { res.emit('data', '{"ok":true,"xo'); res.emit('close'); });
+          });
+        };
+        return req;
+      };
+      try { return await hanChot(web.taoThangMoi(TS(X)), 4000); } finally { httpsGia.request = goc; }
+    };
+    const a = await catThan(gw);
+    dung(!a.treo && a.e && /ngắt kết nối giữa lúc trả lời/.test(a.e.message) && /link_thang CHƯA được khai/.test(a.e.message),
+      'đứt giữa thân phải ra lỗi có câu nút 3: ' + (a.treo ? 'TREO' : (a.e ? a.e.message.slice(0, 160) : 'không lỗi')));
+    // (b) lượt GET theo chuyển hướng 302 của gói taoThangMoi đứng im tới hết giờ
+    const dungGet = async (Lop) => {
+      const X = dungMay({});
+      const web = new Lop.WebAppGoogleSheet(X.sim.cauHinhMay());
+      const gocReq = httpsGia.request, gocGet = httpsGia.get;
+      let sauTaoThang = false;
+      httpsGia.request = function (opt, cb) {
+        const req = gocReq.call(this, opt, cb);
+        const viet = req.write;
+        req.write = (d) => { sauTaoThang = /"hanhDong":"taoThangMoi"/.test(String(d)); return viet(d); };
+        return req;
+      };
+      httpsGia.get = function (u, o2, cb) {
+        if (!sauTaoThang) return gocGet.call(this, u, o2, cb);
+        const { EventEmitter } = require('events');
+        const g = new EventEmitter();
+        g.destroy = (e) => { if (e) setImmediate(() => g.emit('error', e)); };
+        setImmediate(() => g.emit('timeout'));            // hết `timeout` của Node: chỉ PHÁT sự kiện, không tự hủy
+        return g;
+      };
+      try { return await hanChot(web.taoThangMoi(TS(X)), 4000); } finally { httpsGia.request = gocReq; httpsGia.get = gocGet; }
+    };
+    const b = await dungGet(gw);
+    dung(!b.treo && b.e && /không trả lời sau 400 giây/.test(b.e.message) && /link_thang CHƯA được khai/.test(b.e.message),
+      'GET đứng im phải ra lỗi hết giờ có câu nút 3: ' + (b.treo ? 'TREO' : (b.e ? b.e.message.slice(0, 160) : 'không lỗi')));
+    return '(a) ' + a.e.message.slice(0, 70) + '… · (b) ' + b.e.message.slice(0, 70) + '… · ' + await doiChungAm(async () => {
+      const Sai = napBanSua('gsheet-web-app.js', [["        res.on('close', () => setImmediate(() => { if (!daHet) tuChoi(loiMang(new Error('Web App ngắt kết nối giữa lúc trả lời'))); }));\n", '']]);
+      const x = await catThan(Sai);
+      return x.treo ? ['treo vô hạn khi phản hồi đứt giữa thân'] : [];
+    }, 'không nghe close của phản hồi') + ' · ' + await doiChungAm(async () => {
+      const Sai = napBanSua('gsheet-web-app.js', [["          g.on('timeout', () => { g.destroy(new Error('Web App không trả lời sau ' + (choMs / 1000) + ' giây')); });\n", '']]);
+      const x = await dungGet(Sai);
+      return x.treo ? ['treo vô hạn khi GET chuyển hướng đứng im'] : [];
+    }, 'GET chuyển hướng không nghe timeout');
+  });
+
+  await test('TM-W-24', 'Google tự đổi chuỗi "2026-10" ở ô cờ O2 thành NGÀY: chạy tiếp nhiều lượt vẫn xong 8/8 và ghi link; bấm lại vẫn ra DA_KHOI_TAO (O2 ghi dạng văn bản + đọc cờ chịu kiểu ngày)', async () => {
+    const X = dungMay({ epNgay: true, buocMs: 300 });
+    const r = await bamNut3(X, { them: { nguongGiay: 20 } });
+    dung(r.ma === 0, 'Google đổi kiểu mà lượt chạy tiếp không xong: ' + r.ra.slice(-400));
+    dung(coTM(X.ssMoi, 2) === '2026-10', 'O2 phải là VĂN BẢN "2026-10", đang là ' + String(coTM(X.ssMoi, 2)));
+    const r2 = await bamNut3(X);
+    dung(r2.ma === 3 && /\[DA_KHOI_TAO\]/.test(r2.ra), 'bấm lại lần hai phải ra [DA_KHOI_TAO], được mã ' + r2.ma + ': ' + r2.ra.slice(-300));
+    return (r.ra.match(/lượt \d+\)/g) || []).length + ' lần gọi tiếp · bấm lại → [DA_KHOI_TAO] · ' + await doiChungAm(async () => {
+      const Y = dungMay({ epNgay: true, buocMs: 300, suaNguon: (src) => sua("gt: giaTri[i], dinhDang: '@' });", 'gt: giaTri[i] });')(
+        sua("    var thangCo = ssMap ? chuanThangCo(tinh(ssMap, 2, C('O'))) : '';", "    var thangCo = ssMap ? String(tinh(ssMap, 2, C('O')) || '').trim() : '';")(src)) });
+      const y = await bamNut3(Y, { them: { nguongGiay: 20 } });
+      const y2 = y.ma === 0 ? await bamNut3(Y) : null;
+      return (y.ma !== 0 || !y2 || !/\[DA_KHOI_TAO\]/.test(y2.ra))
+        ? ['mã ' + y.ma + (y2 ? ', bấm lại ra ' + ((y2.ra.match(/\[[A-Z_]+\]/) || ['?'])[0]) : '') + ' — ' + ((y.ra.match(/\[[A-Z_]+\]/) || [''])[0])] : [];
+    }, 'ghi O2 không ép văn bản và đọc cờ bằng String()');
+  });
+
+  RAC_MAY.forEach((d) => { try { fs.rmSync(d, { recursive: true, force: true }); } catch (e) { /* thư mục tạm */ } });
 
   console.log('\n=== ' + soDat + ' ĐẠT · ' + soHong + ' HỎNG · tổng ' + (soDat + soHong) + ' ===');
   if (soHong) { hong.forEach((h) => console.log('  ' + h)); process.exit(1); }

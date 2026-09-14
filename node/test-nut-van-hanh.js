@@ -291,6 +291,7 @@ function dungMay(o) {
     google_sheet: Object.assign({ bat: true, web_app_url: LINK_MOI, chuoi_bi_mat: BI_MAT_MOI }, o.googleSheet || {}),
     cap_nhat: Object.assign({ chu_tai_khoan: 'ai-do', ten_repo: 'kho-nao-do', nhanh: 'main' }, o.capNhat || {})
   };
+  if (o.linkThang) cfg.link_thang = o.linkThang;
   if (!o.khongCfg) {
     fs.writeFileSync(path.join(ch, 'CAU_HINH_VAN_HANH.json'),
       o.cfgTho !== undefined ? o.cfgTho : JSON.stringify(cfg, null, 2), 'utf8');
@@ -321,6 +322,12 @@ function dungMay(o) {
       'class W{constructor(g){if(!g||!String(g.web_app_url||"").trim())throw new Error("chua dien du cau hinh");}\n'
       + '  ping(){return Promise.reject(new Error("GIA LAP: bai test khong goi ra mang"));}}\n'
       + 'module.exports={WebAppGoogleSheet:W};\n', 'utf8');
+    // Nút 3 (YC-34) chạy MÃ THẬT: script nút 3 và phía máy của Web App. Mạng vẫn không ra được — ca nào cần Web App
+    // thì nạp `https` giả qua NODE_OPTIONS (xem `SHIM_HTTPS_NUT3`).
+    if (o.nut3That) {
+      ['nut-3-thang-moi.js', 'gsheet-web-app.js'].forEach((t) =>
+        fs.copyFileSync(path.join(__dirname, t), path.join(tool, 'node', t)));
+    }
   }
   fs.mkdirSync(path.join(may, '1_THA_FILE_XUAT', 'Shopee mall', DA_XU_LY), { recursive: true });
   return { may: may, cfgTep: path.join(ch, 'CAU_HINH_VAN_HANH.json'), tool: tool, cauHinh: ch };
@@ -330,19 +337,6 @@ function chayNut(may, ten, themTv, giay) {
   const r = spawnSync('cmd.exe', ['/c', path.join(may, ten), '/tu-dong'].concat(themTv || []),
     { cwd: may, encoding: 'latin1', timeout: (giay || 180) * 1000 });
   return { ma: r.status, tinHieu: r.signal, ra: String(r.stdout || '') + String(r.stderr || '') };
-}
-
-/**
- * Nút 3 nhận `/tra-loi "9|10|link"`. Dấu `|` là dấu ống của cmd; truyền thẳng qua
- * mảng tham số thì cmd cắt câu lệnh làm đôi. Gói vào một file .bat trung gian —
- * trong file .bat, phần nằm giữa hai dấu nháy kép được giữ nguyên.
- */
-function chayNut3(may, traLoi) {
-  const w = path.join(tamMoi('goi3'), 'goi_nut_3.bat');
-  fs.writeFileSync(w, '@echo off\r\ncall "' + path.join(may, '3_TAO_FILE_THANG_MOI.bat')
-    + '" /tu-dong /tra-loi "' + traLoi + '"\r\nexit /b %ERRORLEVEL%\r\n', 'ascii');
-  const r = spawnSync('cmd.exe', ['/c', w], { cwd: may, encoding: 'latin1', timeout: 120000 });
-  return { ma: r.status, ra: String(r.stdout || '') + String(r.stderr || '') };
 }
 
 function docCfg(t) { return JSON.parse(fs.readFileSync(t, 'utf8').replace(/^﻿/, '')); }
@@ -514,58 +508,547 @@ test('N-32 2_CAP_NHAT.bat khong bao gio KEO LUI may ve ban cu hon ban dang chay'
 
 /* ---------------------------------------------------------------- NÚT 3 --- */
 
-test('N-33 3_TAO_FILE_THANG_MOI.bat: cac cua kiem tham so deu phai TRUOT khi dang truot', async () => {
-  // Năm cửa, cửa nào cũng `$global:TM_MA = 1; return` và KHÔNG ghi file tham số.
-  // Trước bài này chưa bài test nào chạy nút 3 lấy một lần: "validate tốt" mới chỉ là
-  // kết luận đọc từ mã. Hỏng thì tool ghi nhận một cặp tháng sai hoặc một link không
-  // phải Google Sheet, rồi bước tạo file tháng (mục 1.6) làm việc trên tham số rác đó.
-  const CA = [
-    ['thang truoc khong phai so', 'abc|10|' + LINK_SHEET, /Thang truoc phai la so tu 1 den 12/],
-    ['thang truoc ngoai 1..12', '13|1|' + LINK_SHEET, /Thang truoc phai la so tu 1 den 12/],
-    ['thang can tao khong phai so', '9|muoi|' + LINK_SHEET, /Thang can tao phai la so tu 1 den 12/],
-    ['nhay thang', '3|11|' + LINK_SHEET, /phai lien sau thang truoc/],
-    ['lui thang', '10|9|' + LINK_SHEET, /phai lien sau thang truoc/],
-    ['thang 12 khong noi sang 1', '12|5|' + LINK_SHEET, /Thang truoc la 12 thi thang can tao phai la 1/],
-    ['link khong phai Google Sheet', '9|10|https://example.com/gi-do', /Link thang moi khong phai link Google Sheet/],
-    ['thieu phan thu ba', '9|10', /tra-loi phai co du ba phan/]
-  ];
-  const m = dungMay({});
-  for (const ca of CA) {
-    const r = chayNut3(m.may, ca[1]);
-    dung(r.ma === 1, 'ca "' + ca[0] + '" phải thoát mã 1, nhận được ' + r.ma + ' — cửa này không chặn ai cả');
-    dung(ca[2].test(r.ra), 'ca "' + ca[0] + '" thiếu câu báo lỗi đúng: ' + r.ra.slice(-200));
-  }
-  dung(dsThangMoi(m.cauHinh).length === 0,
-    'đã từ chối hết mà vẫn ghi file tham số: ' + dsThangMoi(m.cauHinh).join(', '));
+/*
+ * YC-34 (D-45): nút 3 hỏi 7 trường, 2 chế độ. Hai tầng test:
+ *   · N-33 chạy THẬT `3_TAO_FILE_THANG_MOI.bat` bằng cmd.exe trên máy giả — tầng ống nối: tìm bộ mã + Node, chuyển
+ *     `/tra-loi` sang script, mã thoát và câu cuối, máy còn mã cũ phải bảo cập nhật.
+ *   · N-36…N-42 chạy `node/nut-3-thang-moi.js` TRONG TIẾN TRÌNH — tầng nghiệp vụ: bảy trường, từng trường sai, khoảng
+ *     trắng, ghi đè khóa, chế độ 1 lệch K. Web App ở tầng này là lớp giả tiêm vào (`tc.WebApp`); đường thật qua Web App
+ *     giả chạy mã `.gs` thật nằm ở `test-tao-thang-moi-web.js` TM-W-19…22.
+ * Đối chứng âm tầng nghiệp vụ nạp BẢN SỬA của chính file nút 3 trong bộ nhớ (`nut3Sua`), không ghi file nào ra đĩa.
+ */
+const Module = require('module');
+const TEP_NUT3 = path.join(__dirname, 'nut-3-thang-moi.js');
+const NGUON_NUT3 = fs.readFileSync(TEP_NUT3, 'utf8');
+const NUT3 = require('./nut-3-thang-moi');
+const PHIEN_BAN_MAY = require('./gsheet-web-app').PHIEN_BAN;
 
-  // Ca hợp lệ: phải đi lọt và ghi đúng một file. Không có ca này thì một cửa
-  // "luôn luôn TỪ CHỐI" cũng làm tám ca trên xanh hết.
-  const ok = chayNut3(m.may, '9|10|' + LINK_SHEET);
-  dung(ok.ma === 3, 'ca hợp lệ phải thoát mã 3 (da ghi tham so, buoc tao file chua bat), nhận được ' + ok.ma);
-  dung(/DA HIEU DUNG NHU SAU/.test(ok.ra), 'ca hợp lệ phải in lại ba tham số đã hiểu');
-  const ds = dsThangMoi(m.cauHinh);
-  dung(ds.length === 1 && /^thang-moi-\d{4}-10\.json$/.test(ds[0]),
-    'file tham số phải là thang-moi-<nam>-10.json, đang là: ' + (ds.join(', ') || '(không có file nào)'));
-
-  const hongLienThang = nutHong('3_TAO_FILE_THANG_MOI.bat', (s) =>
-    s.replace('} elseif ($mMoi -ne ($mCu + 1)) {', () => '} elseif ($false) {'));
-  const dc1 = await doiChungAm('bo cua "thang can tao phai lien sau thang truoc"', async () => {
-    const h = dungMay({ thayNut: { '3_TAO_FILE_THANG_MOI.bat': hongLienThang } });
-    const r = chayNut3(h.may, '3|11|' + LINK_SHEET);
-    if (r.ma !== 1) {
-      throw new Error('nhận bừa cặp thang 3 -> 11 (thoát mã ' + r.ma + '), ghi ra '
-        + (dsThangMoi(h.cauHinh).join(', ') || 'khong file nao'));
+/**
+ * Nạp bản SỬA của nút 3: `doi` = [[mốc, thay], …], mỗi mốc phải có ĐÚNG MỘT chỗ trong mã — không thì hỏng to ở đây
+ * (mã đã đổi, sửa mốc), chứ không lặng lẽ thành một đối chứng âm không cắm được gì.
+ */
+function nut3Sua(doi) {
+  let src = NGUON_NUT3;
+  for (const [moc, thay] of doi) {
+    const n = src.split(moc).length - 1;
+    if (n !== 1) {
+      throw new Error('KHÔNG CẮM ĐƯỢC KHUYẾT TẬT vào nut-3-thang-moi.js — mốc cần 1 chỗ, tìm được ' + n + ': "' +
+        moc.slice(0, 80) + '". Sửa lại bài test, đừng bỏ qua.');
     }
-  });
+    src = src.split(moc).join(thay);
+  }
+  const m = new Module(TEP_NUT3, module);
+  m.filename = TEP_NUT3;
+  m.paths = Module._nodeModulePaths(__dirname);
+  m._compile(src, TEP_NUT3);
+  return m.exports;
+}
 
-  const hongLink = nutHong('3_TAO_FILE_THANG_MOI.bat', (s) =>
-    s.replace("'^https://docs\\.google\\.com/spreadsheets/d/([A-Za-z0-9_-]{20,})'", () => "'^(.+)$'"));
-  const dc2 = await doiChungAm('noi cua kiem link cho khop moi thu', async () => {
-    const h = dungMay({ thayNut: { '3_TAO_FILE_THANG_MOI.bat': hongLink } });
-    const r = chayNut3(h.may, '9|10|https://example.com/gi-do');
-    if (r.ma !== 1) throw new Error('nhận bừa link không phải Google Sheet (thoát mã ' + r.ma + ')');
+// Link giả DỰNG LÚC CHẠY: một dòng mã chứa sẵn `…/spreadsheets/d/` + mã ≥ 25 ký tự là INV-7 báo "link thật lọt vào mã".
+const TIEN_SHEET = 'https://docs.google.com/spreadsheets/d/';
+const idGia = (nhan) => ('ID_GIA_' + nhan + '_').padEnd(30, 'x');
+const LK = (nhan, duoi) => TIEN_SHEET + idGia(nhan) + (duoi == null ? '/edit#gid=0' : duoi);
+const TL_CHE_DO_2 = () => ['9', '2026', LK('T9'), '10', '2026', LK('T10'), '2', 'c'];
+
+/** Thư mục vận hành giả cho tầng nghiệp vụ. `o.tho` = chuỗi ghi thẳng làm file cấu hình. */
+function dungVh3(o) {
+  o = o || {};
+  const vh = tamMoi('vh3');
+  const ch = path.join(vh, CAU_HINH);
+  fs.mkdirSync(ch, { recursive: true });
+  const cfg = {
+    thu_muc_tha_file: '1_THA_FILE_XUAT',
+    google_sheet: { bat: true, web_app_url: LINK_MOI, chuoi_bi_mat: BI_MAT_MOI },
+    link_thang: o.linkThang || { '2026-08': LK('T8'), '2026-09': LK('T9') },
+    cap_nhat: { chu_tai_khoan: 'ai-do', ten_repo: 'kho-nao-do', nhanh: 'main' }
+  };
+  let s = o.tho != null ? o.tho : JSON.stringify(cfg, null, 2) + '\n';
+  if (o.crlf) s = s.replace(/\r?\n/g, '\r\n');
+  const tep = path.join(ch, 'CAU_HINH_VAN_HANH.json');
+  fs.writeFileSync(tep, (o.bom ? '\uFEFF' : '') + s, 'utf8');
+  return { vh, ch, tep };
+}
+
+async function chay3(v, traLoi, tc) {
+  let ra = '';
+  const mod = (tc && tc.mod) || NUT3;
+  const ma = await mod.chay(Object.assign({
+    vh: v.vh, traLoi: traLoi, mau: false, ra: (s) => { ra += s; }, thoiDiem: '2026-09-20T03:00:00Z'
+  }, (tc && tc.them) || {}));
+  return { ma, ra };
+}
+
+const tho = (t) => fs.readFileSync(t);
+const cungByte = (a, b) => Buffer.compare(a, b) === 0;
+function nhatKy3(v) {
+  const d = path.join(v.ch, NHAT_KY);
+  return fs.existsSync(d) ? fs.readdirSync(d).map((t) => fs.readFileSync(path.join(d, t), 'utf8')).join('\n') : '';
+}
+
+/** Web App GIẢ cho tầng nghiệp vụ: `kichBan(thamSo, tuyChon)` quyết định phản hồi. Ghi lại tham số mọi lần gọi. */
+function webGia(kichBan, nhat) {
+  return class WebGia {
+    constructor(g) {
+      if (!g || !String(g.web_app_url || '').trim()) throw new Error('Bật ghi Google Sheet nhưng thiếu web_app_url');
+      this.canhBaoBanDung = [];
+    }
+    cheThem() { }
+    chePhu(s) { return String(s); }
+    async taoThangMoi(ts, tc) { if (nhat) nhat.push(ts); return kichBan(ts, tc || {}); }
+  };
+}
+const KIEM8 = (lech) => ['K-1', 'K-2', 'K-3', 'K-4', 'K-5', 'K-6', 'K-7', 'K-8'].map((ma) =>
+  ({ ma: ma, ten: 'phép ' + ma, dat: (lech || []).indexOf(ma) < 0, chiTiet: (lech || []).indexOf(ma) < 0 ? 'khớp' : 'lệch 999000' }));
+
+/**
+ * `https` GIẢ nạp qua NODE_OPTIONS cho N-33 ca chế độ 1: `ping` trả đúng phiên bản máy, `taoThangMoi` trả tự kiểm lệch
+ * K-7. Không một byte nào ra mạng thật.
+ */
+function shimHttpsNut3() {
+  const tep = path.join(tamMoi('shim3'), 'https-gia.js');
+  fs.writeFileSync(tep, [
+    "'use strict';",
+    "const { EventEmitter } = require('events');",
+    'const PB = ' + JSON.stringify(PHIEN_BAN_MAY) + ';',
+    "const KIEM = ['K-1','K-2','K-3','K-4','K-5','K-6','K-7','K-8'].map((ma) => ({ ma: ma, ten: 'phép ' + ma, dat: ma !== 'K-7', chiTiet: ma === 'K-7' ? '999000' : 'khớp' }));",
+    'function tra(obj, cb) {',
+    "  const res = new EventEmitter(); res.statusCode = 200; res.headers = {}; res.setEncoding = () => res; res.resume = () => res;",
+    "  setImmediate(() => { cb(res); setImmediate(() => { res.emit('data', JSON.stringify(obj)); res.emit('end'); }); });",
+    '}',
+    'const gia = {',
+    '  request(opt, cb) {',
+    "    const req = new EventEmitter(); let than = '';",
+    '    req.write = (d) => { than += d; return true; }; req.destroy = () => {}; req.setTimeout = () => req;',
+    '    req.end = () => {',
+    '      const g = JSON.parse(than);',
+    "      if (g.hanhDong === 'ping') return tra({ ok: true, phienBan: PB }, cb);",
+    "      if (g.hanhDong === 'taoThangMoi') return tra({ ok: false, loi: 'TU_KIEM_LECH', xong: true, kiem: KIEM, nhatKy: ['B3 · Dọn — xong'], thongBao: 'TỰ KIỂM LỆCH 1/8 phép — K-7 (999000).' }, cb);",
+    "      return tra({ ok: false, loi: 'HANH_DONG_LA', thongBao: 'giả lập' }, cb);",
+    '    };',
+    '    return req;',
+    '  },',
+    "  get() { throw new Error('https giả: không có chuyển hướng'); }",
+    '};',
+    "for (const t of ['https', 'node:https']) require.cache[t] = { id: t, filename: t, loaded: true, exports: gia, children: [], paths: [] };"
+  ].join('\n'), 'utf8');
+  // NODE_OPTIONS đọc `` trong chuỗi có nháy kép là ký tự thoát: đưa đường dẫn kiểu `/`, Windows vẫn hiểu.
+  return tep.split(path.sep).join('/');
+}
+
+/** Chạy nút 3 thật bằng cmd.exe. Câu trả lời gói trong file .bat trung gian (dấu `|` là ống của cmd, xem chayNut3). */
+function chayNut3Moi(may, traLoiDs, env) {
+  const w = path.join(tamMoi('goi3'), 'goi_nut_3.bat');
+  fs.writeFileSync(w, '@echo off\r\ncall "' + path.join(may, '3_TAO_FILE_THANG_MOI.bat')
+    + '" /tu-dong /tra-loi "' + traLoiDs.join('|') + '"\r\nexit /b %ERRORLEVEL%\r\n', 'ascii');
+  const r = spawnSync('cmd.exe', ['/c', w], {
+    cwd: may, encoding: 'utf8', timeout: 120000, env: Object.assign({}, process.env, { TM_TRA_LOI: '' }, env || {})
   });
-  return CA.length + ' ca tu choi + 1 ca hop le, khong ca tu choi nao ghi file · ' + dc1 + ' · ' + dc2;
+  return { ma: r.status, ra: String(r.stdout || '') + String(r.stderr || '') };
+}
+
+test('N-33 3_TAO_FILE_THANG_MOI.bat chạy thật: chuyển /tra-loi sang nút 3, mã thoát + câu cuối đúng từng ca, máy còn mã cũ thì bảo cập nhật', async () => {
+  // (a) chế độ 2 hợp lệ, link có khoảng trắng → mã 0, ghi đúng khóa, không in link
+  const a = dungMay({ banMa: '9.9.0', nut3That: true, linkThang: { '2026-09': LK('T9') } });
+  const ra = chayNut3Moi(a.may, ['9', '2026', LK('T9'), '10', '2026', '  ' + LK('T10') + '  ', '2', 'c']);
+  dung(ra.ma === 0, 'chế độ 2 hợp lệ phải thoát mã 0, nhận được ' + ra.ma + ': ' + ra.ra.slice(-300));
+  dung(/DA GHI link thang 2026-10\./.test(ra.ra) && /XONG\. Doc dong/.test(ra.ra), 'thiếu câu DA GHI / câu XONG: ' + ra.ra.slice(-300));
+  const ca = docCfg(a.cfgTep);
+  dung(ca.link_thang['2026-10'] === LK('T10'), 'link_thang["2026-10"] không đúng link đã cắt khoảng trắng');
+  dung(ca.google_sheet.chuoi_bi_mat === BI_MAT_MOI && ca.link_thang['2026-09'] === LK('T9'), 'khóa khác của cấu hình bị đụng');
+  dung(ra.ra.indexOf(idGia('T10')) < 0 && ra.ra.indexOf(idGia('T9')) < 0, 'INV-7: mã file tháng lọt ra màn hình');
+  // Đề bài bỏ file thang-moi-<yyyy-MM>.json — chấm ở tầng NÚT BẤM thật, vì bản cũ sinh file đó ngay trong .bat.
+  dung(dsThangMoi(a.cauHinh).length === 0, 'nút bấm vẫn sinh file thang-moi-*.json: ' + dsThangMoi(a.cauHinh).join(', '));
+
+  // (b) sai ba lượt → mã 1, file cấu hình y nguyên TỪNG BYTE
+  const b = dungMay({ banMa: '9.9.0', nut3That: true });
+  const tb = tho(b.cfgTep);
+  const rb = chayNut3Moi(b.may, ['13', '9', '26', '9', '2026', 'https://example.com/khong-phai-sheet']);
+  dung(rb.ma === 1, 'sai ba lượt phải thoát mã 1, nhận được ' + rb.ma);
+  dung(/LỖI \[1\/7\]/.test(rb.ra) && /LỖI \[2\/7\]/.test(rb.ra) && /LỖI \[3\/7\]/.test(rb.ra) && /CHUA LAM GI/.test(rb.ra),
+    'phải có đủ ba dòng LỖI [1/7], [2/7], [3/7] và câu CHUA LAM GI: ' + rb.ra.slice(-400));
+  dung(cungByte(tho(b.cfgTep), tb), 'sai ba lượt mà CAU_HINH_VAN_HANH.json đã bị ghi');
+
+  // (c) chế độ 1, Web App trả TỰ KIỂM LỆCH (https giả qua NODE_OPTIONS) → mã 3, link không đổi
+  const shim = shimHttpsNut3();
+  const c = dungMay({ banMa: '9.9.0', nut3That: true, linkThang: { '2026-09': LK('T9') } });
+  const tc = tho(c.cfgTep);
+  const rc = chayNut3Moi(c.may, ['9', '2026', LK('T9'), '10', '2026', LK('T10'), '1', 'c'], { NODE_OPTIONS: '--require "' + shim + '"' });
+  dung(rc.ma === 3, 'chế độ 1 tự kiểm lệch phải thoát mã 3, nhận được ' + rc.ma + ': ' + rc.ra.slice(-400));
+  dung(/K-7 LỆCH/.test(rc.ra) && /KHONG TAO DUOC THANG MOI/.test(rc.ra), 'thiếu dòng K-7 LỆCH / câu KHONG TAO DUOC: ' + rc.ra.slice(-400));
+  dung(cungByte(tho(c.cfgTep), tc), 'tự kiểm lệch mà CAU_HINH_VAN_HANH.json đã bị ghi');
+
+  // (d) máy còn bộ mã CŨ (chưa có nut-3-thang-moi.js) → mã 1, bảo bấm nút 2, không vệt lỗi Node
+  const d = dungMay({ banMa: '2.5.0' });
+  const rd = chayNut3Moi(d.may, TL_CHE_DO_2());
+  dung(rd.ma === 1, 'mã cũ phải thoát mã 1, nhận được ' + rd.ma);
+  dung(/BAN CU, CHUA CO NUT 3 MOI/.test(rd.ra) && /2_CAP_NHAT\.bat/.test(rd.ra), 'phải bảo bấm 2_CAP_NHAT.bat: ' + rd.ra.slice(-300));
+  dung(!/Cannot find module|node:internal/.test(rd.ra), 'vệt lỗi thô của Node lọt ra màn hình');
+
+  const hong1 = nutHong('3_TAO_FILE_THANG_MOI.bat', (s) => s.replace('set "TM_TRA_LOI=%~2"', () => 'set "TM_TRA_LOI_BO=%~2"'));
+  const dc1 = await doiChungAm('nut bam khong chuyen /tra-loi sang script', async () => {
+    const h = dungMay({ banMa: '9.9.0', nut3That: true, thayNut: { '3_TAO_FILE_THANG_MOI.bat': hong1 } });
+    const r = chayNut3Moi(h.may, TL_CHE_DO_2());
+    if (r.ma !== 0 || docCfg(h.cfgTep).link_thang['2026-10'] !== LK('T10')) throw new Error('câu trả lời không tới script, thoát mã ' + r.ma);
+  });
+  const hong2 = nutHong('3_TAO_FILE_THANG_MOI.bat', (s) =>
+    s.replace('if exist "%TOOL_GOC%\\node\\nut-3-thang-moi.js" set "TOOL=%TOOL_GOC%"', () => 'set "TOOL=%TOOL_GOC%"'));
+  const dc2 = await doiChungAm('bo cua kiem ma cu', async () => {
+    const h = dungMay({ banMa: '2.5.0', thayNut: { '3_TAO_FILE_THANG_MOI.bat': hong2 } });
+    const r = chayNut3Moi(h.may, TL_CHE_DO_2());
+    if (!/BAN CU, CHUA CO NUT 3 MOI/.test(r.ra)) throw new Error('không còn câu bảo cập nhật; ' + ((r.ra.match(/Cannot find module[^\r\n]*/) || ['?'])[0]));
+  });
+  const hongFileThamSo = nutHong('3_TAO_FILE_THANG_MOI.bat', (s) => s.replace('rem ---- 4. Chay ---', () =>
+    'echo {} > "%CFGDIR%\\thang-moi-2026-10.json"\r\nrem ---- 4. Chay ---'));
+  const dcTs = await doiChungAm('nut bam lai sinh file thang-moi-*.json', async () => {
+    const h = dungMay({ banMa: '9.9.0', nut3That: true, thayNut: { '3_TAO_FILE_THANG_MOI.bat': hongFileThamSo } });
+    chayNut3Moi(h.may, TL_CHE_DO_2());
+    if (dsThangMoi(h.cauHinh).length) throw new Error('có ' + dsThangMoi(h.cauHinh).join(', '));
+  });
+  const hong3 = nutHong('3_TAO_FILE_THANG_MOI.bat', (s) => s.replace(') else if "%MA%"=="3" (', () => ') else if "%MA%"=="33" ('));
+  const dc3 = await doiChungAm('ma thoat 3 khong con cau KHONG TAO DUOC', async () => {
+    const h = dungMay({ banMa: '9.9.0', nut3That: true, thayNut: { '3_TAO_FILE_THANG_MOI.bat': hong3 } });
+    const r = chayNut3Moi(h.may, ['9', '2026', LK('T9'), '10', '2026', LK('T10'), '1', 'c'], { NODE_OPTIONS: '--require "' + shim + '"' });
+    if (!/KHONG TAO DUOC THANG MOI/.test(r.ra)) throw new Error('mã 3 in câu khác: ' + ((r.ra.match(/LOI KHONG DOAN TRUOC[^\r\n]*/) || ['?'])[0]));
+  });
+  return 'chế độ 2 → mã 0 · sai 3 lượt → mã 1, cấu hình y nguyên · chế độ 1 lệch K-7 → mã 3, cấu hình y nguyên · mã cũ → bảo nút 2 · '
+    + dc1 + ' · ' + dc2 + ' · ' + dc3 + ' · ' + dcTs;
+});
+
+test('N-36 nút 3 bảy trường hợp lệ: hỏi đúng thứ tự đề bài, in lại đủ bảy giá trị, chế độ 2 ghi đúng khóa; bỏ ràng buộc "tháng liền sau", bỏ file thang-moi-*.json', async () => {
+  const v = dungVh3();
+  const r = await chay3(v, TL_CHE_DO_2());
+  dung(r.ma === 0, 'bảy trường hợp lệ phải thoát mã 0, nhận được ' + r.ma + ': ' + r.ra.slice(-300));
+  // NGUYÊN VĂN đề bài YC-34 (02_GIAO_VIEC_DEV.md) — gõ cứng ở đây, KHÔNG lấy từ mã đang chấm.
+  const DE_BAI = ['[1/7] Thang truoc (1-12):', '[2/7] Nam truoc (vd 2026):', '[3/7] Link file Google Sheet thang truoc:',
+    '[4/7] Thang moi (1-12):', '[5/7] Nam moi (vd 2026):', '[6/7] Link file Google Sheet thang moi:',
+    '[7/7] Che do: 1 = Tao/chuyen so sang thang moi (copy ton, day cot Loi nhuan, don don hang, ghi link)',
+    '              2 = Chi khai bao link thang moi (khong dong vao du lieu)'];
+  const lechDeBai = (ra) => {
+    let viTri = -1;
+    const ds = [];
+    DE_BAI.forEach((c) => { const k = ra.indexOf(c, viTri + 1); if (k < 0) ds.push(c.trim()); else viTri = k; });
+    return ds;
+  };
+  dung(lechDeBai(r.ra).length === 0, 'câu hỏi thiếu / sai nguyên văn / sai thứ tự so với đề bài: ' + lechDeBai(r.ra).join(' | '));
+  ['[1/7] Tháng trước : 9', '→ kỳ 2026-09', '[3/7] Link trước  : link Google Sheet hợp lệ', '[4/7] Tháng mới   : 10',
+    '→ kỳ 2026-10', '[6/7] Link mới    : link Google Sheet hợp lệ', '[7/7] Chế độ      : 2', 'Dung chua? (c/k)'].forEach((x) =>
+    dung(r.ra.indexOf(x) >= 0, 'bảng in lại thiếu "' + x + '"'));
+  dung(docCfg(v.tep).link_thang['2026-10'] === LK('T10'), 'link_thang["2026-10"] không được ghi');
+  dung(dsThangMoi(v.ch).length === 0, 'vẫn sinh file thang-moi-*.json (đề bài bỏ file này)');
+
+  // Qua năm: 12/2026 → 1/2027. Và nhảy tháng (3 → 11) được nhận — đề bài BỎ ràng buộc tháng mới = tháng cũ + 1.
+  const n = dungVh3();
+  const rn = await chay3(n, ['12', '2026', LK('T12'), '1', '2027', LK('T1'), '2', 'c']);
+  dung(rn.ma === 0 && docCfg(n.tep).link_thang['2027-01'] === LK('T1'), 'qua năm phải ghi khóa 2027-01, thoát ' + rn.ma);
+  const nh = dungVh3();
+  const rh = await chay3(nh, ['3', '2026', LK('T3'), '11', '2026', LK('T11'), '2', 'c']);
+  dung(rh.ma === 0 && docCfg(nh.tep).link_thang['2026-11'] === LK('T11'), 'nhảy tháng 3 → 11 bị chặn — đề bài đã bỏ ràng buộc này');
+
+  const banRangBuoc = nut3Sua([['      gt.kyMoi = gw.kyThangNam(gt.thangMoi, gt.namMoi);\n',
+    "      gt.kyMoi = gw.kyThangNam(gt.thangMoi, gt.namMoi);\n      if (gw.thangSau(gt.kyCu) !== gt.kyMoi) { inRa('LỖI [4/7]: phải liền sau tháng trước', 'do'); continue; }\n"]]);
+  const dc = await doiChungAm('cam lai rang buoc thang lien sau', async () => {
+    const x = dungVh3();
+    const y = await chay3(x, ['3', '2026', LK('T3'), '11', '2026', LK('T11'), '2', 'c'], { mod: banRangBuoc });
+    if (y.ma !== 0) throw new Error('3 → 11 bị chặn, thoát mã ' + y.ma);
+  });
+  const banCauHoi = nut3Sua([["  '              2 = Chi khai bao link thang moi (khong dong vao du lieu)\\n' +", "  '              2 = Chi khai bao link thang moi\\n' +"]]);
+  const dcCau = await doiChungAm('bot chu trong cau hoi [7/7]', async () => {
+    const y = await chay3(dungVh3(), TL_CHE_DO_2(), { mod: banCauHoi });
+    const l = lechDeBai(y.ra);
+    if (l.length) throw new Error('lệch đề bài: ' + l.join(' | '));
+  });
+  return '7 câu đúng nguyên văn đề bài, đúng thứ tự · in lại 7 giá trị · 2026-10 ghi đúng · 12/2026→1/2027 · 3→11 được nhận · ' + dc + ' · ' + dcCau;
+});
+
+test('N-37 nút 3 từng trường sai (7 ca): dòng LỖI nêu đúng trường, kiểm NGAY trường đó, hỏi lại từ [1/7]; ba lượt sai → thoát, cấu hình y nguyên', async () => {
+  const DUNG = ['9', '2026', LK('T9'), '10', '2026', LK('T10'), '2'];
+  const SAI = [
+    [0, '13', 'tháng ngoài 1–12'], [1, '26', 'năm hai chữ số'], [2, 'https://example.com/so-thang-9', 'link không phải Google Sheet'],
+    [3, 'muoi', 'tháng không phải số'], [4, '', 'năm bỏ trống'], [5, TIEN_SHEET + 'abc/edit', 'link bị cắt, thiếu mã file'],
+    [6, '3', 'chế độ ngoài 1/2']
+  ];
+  const chayCa = async (mod, i, sai) => {
+    const v = dungVh3();
+    const r = await chay3(v, DUNG.slice(0, i).concat([sai]).concat(DUNG).concat(['c']), { mod });
+    return { v, r };
+  };
+  for (const [i, sai, ten] of SAI) {
+    const { v, r } = await chayCa(NUT3, i, sai);
+    const nhan = '[' + (i + 1) + '/7]';
+    const kLoi = r.ra.indexOf('LỖI ');
+    dung(kLoi >= 0 && r.ra.startsWith('LỖI ' + nhan, kLoi), 'ca "' + ten + '": dòng LỖI đầu tiên phải nêu ' + nhan + ', được: ' +
+      (kLoi >= 0 ? r.ra.slice(kLoi, kLoi + 60) : '(không có dòng LỖI nào)'));
+    if (i < 6) dung(r.ra.slice(0, kLoi).indexOf('[' + (i + 2) + '/7]') < 0, 'ca "' + ten + '": chưa báo lỗi mà đã hỏi sang trường ' + (i + 2) + ' — không kiểm NGAY');
+    dung(r.ra.indexOf('[1/7] Thang truoc', kLoi) > kLoi, 'ca "' + ten + '": sau dòng LỖI không hỏi lại từ [1/7]');
+    dung(r.ma === 0 && docCfg(v.tep).link_thang['2026-10'] === LK('T10'), 'ca "' + ten + '": lượt hai đúng mà không đi tiếp (thoát ' + r.ma + ')');
+    dung(r.ra.indexOf(idGia('T9')) < 0 && !/example\.com/.test(r.ra.slice(kLoi, kLoi + 300)), 'ca "' + ten + '": câu lỗi in lại link');
+  }
+  // Ba lượt sai rồi mới gõ đúng → vẫn thoát, không ghi
+  const ba = dungVh3();
+  const truoc = tho(ba.tep);
+  const rb = await chay3(ba, ['13', '0', '99'].concat(DUNG).concat(['c']));
+  dung(rb.ma === 1 && /Đã 3 lượt/.test(rb.ra), 'ba lượt sai phải thoát mã 1 với câu "Đã 3 lượt", nhận được ' + rb.ma);
+  dung(cungByte(tho(ba.tep), truoc), 'ba lượt sai mà cấu hình đã bị ghi');
+
+  const banThang13 = nut3Sua([["+t > 12) return { loi: 'phải là số nguyên từ 1 đến 12' }", "+t > 13) return { loi: 'phải là số nguyên từ 1 đến 12' }"]]);
+  const dc1 = await doiChungAm('cua thang nhan 13', async () => {
+    const { r } = await chayCa(banThang13, 0, '13');
+    const k = r.ra.indexOf('LỖI ');
+    if (k < 0 || !r.ra.startsWith('LỖI [1/7]', k)) throw new Error('tháng 13 lọt qua [1/7]; lỗi đầu tiên: ' + r.ra.slice(k, k + 40));
+  });
+  const banLink = nut3Sua([
+    ["  if (t.indexOf(TIEN_TO_LINK) !== 0) return { loi: 'phải là link Google Sheet, bắt đầu bằng ' + TIEN_TO_LINK };", ''],
+    ['  const m = t.match(gw.RE_LINK_SHEET);', '  const m = [t, t];']
+  ]);
+  const dc2 = await doiChungAm('cua link nhan moi thu', async () => {
+    const { r } = await chayCa(banLink, 2, 'https://example.com/so-thang-9');
+    const k = r.ra.indexOf('LỖI ');
+    if (k < 0 || !r.ra.startsWith('LỖI [3/7]', k)) throw new Error('link example.com lọt qua [3/7]; lỗi đầu tiên: ' + r.ra.slice(k, k + 40));
+  });
+  const banVoHan = nut3Sua([['const SO_LUOT_HOI_TOI_DA = 3;', 'const SO_LUOT_HOI_TOI_DA = 99;']]);
+  const dc3 = await doiChungAm('bo gioi han ba luot', async () => {
+    const x = dungVh3();
+    const t0 = tho(x.tep);
+    await chay3(x, ['13', '0', '99'].concat(DUNG).concat(['c']), { mod: banVoHan });
+    if (!cungByte(tho(x.tep), t0)) throw new Error('sai ba lượt rồi lượt bốn vẫn ghi được cấu hình');
+  });
+  const banKhongHoiLai = nut3Sua([["      if (loi) { inLoi(loi); continue; }", "      if (loi) { inLoi(loi); return 1; }"]]);
+  const dc4 = await doiChungAm('sai mot truong la thoat luon, khong hoi lai', async () => {
+    const { r } = await chayCa(banKhongHoiLai, 3, 'muoi');
+    if (r.ra.indexOf('[1/7] Thang truoc', r.ra.indexOf('LỖI [4/7]')) < 0 || r.ma !== 0) throw new Error('không hỏi lại từ [1/7], thoát ' + r.ma);
+  });
+  return SAI.length + ' ca sai, mỗi ca báo đúng trường + hỏi lại từ [1/7] · 3 lượt sai → mã 1, cấu hình y nguyên · ' +
+    [dc1, dc2, dc3, dc4].join(' · ');
+});
+
+test('N-38 nút 3 link có khoảng trắng / tab đầu cuối: cắt rồi mới kiểm, ghi link đã cắt, đối chiếu link_thang không báo nhầm', async () => {
+  const TL = ['9', '2026', '   ' + LK('T9') + '\t', '10', '2026', '  ' + LK('T10') + '   ', '2', 'c'];
+  const v = dungVh3();
+  const r = await chay3(v, TL);
+  dung(r.ma === 0, 'link có khoảng trắng phải được nhận, thoát ' + r.ma + ': ' + r.ra.slice(-300));
+  const giaTri = docCfg(v.tep).link_thang['2026-10'];
+  dung(giaTri === LK('T10'), 'giá trị ghi vào link_thang còn khoảng trắng hoặc sai: ' + JSON.stringify(giaTri.length));
+  dung(r.ra.indexOf('CẢNH BÁO') < 0, 'link tháng trước chỉ khác khoảng trắng mà vẫn bị báo KHÁC link_thang');
+  const banKhongCat = nut3Sua([["function kiemLink(x) {\n  const t = String(x == null ? '' : x).trim();", "function kiemLink(x) {\n  const t = String(x == null ? '' : x);"]]);
+  const dc = await doiChungAm('bo trim() o cua link', async () => {
+    const x = dungVh3();
+    const y = await chay3(x, TL, { mod: banKhongCat });
+    const g = (docCfg(x.tep).link_thang || {})['2026-10'];
+    if (y.ma !== 0 || g !== LK('T10')) throw new Error('link có khoảng trắng bị từ chối hoặc ghi sai (thoát ' + y.ma + ')');
+  });
+  return 'khoảng trắng + tab → cắt, ghi đúng link, không cảnh báo oan · ' + dc;
+});
+
+test('N-39 nút 3 chế độ 2 GHI ĐÈ khóa đã có: JSON sau chỉ MỘT khóa 2026-10, mọi byte khác y nguyên (BOM, CRLF, thứ tự); ghi qua file tạm rồi đổi tên', async () => {
+  const bang = { '2026-08': LK('T8'), '2026-10': LK('T10CU'), '2026-09': LK('T9') };
+  const v = dungVh3({ linkThang: bang, bom: true, crlf: true });
+  const truoc = fs.readFileSync(v.tep, 'utf8');
+  // Mã file (ino) PHẢI đổi: đổi tên bản tạm đè lên là một file MỚI; ghi tại chỗ (kể cả qua fd, cờ số) giữ nguyên mã cũ.
+  const inoTruoc = fs.statSync(v.tep).ino;
+
+  // Canh "không mở file đích bằng chế độ ghi": mọi lối ghi thẳng vào CAU_HINH_VAN_HANH.json đều ném.
+  const LOI_GHI = ['writeFileSync', 'appendFileSync', 'openSync', 'createWriteStream', 'copyFileSync'];
+  const goc = {};
+  const camGhi = (tep) => LOI_GHI.forEach((f) => {
+    const dich = path.resolve(tep).toLowerCase();
+    goc[f] = fs[f];
+    fs[f] = function (p) {
+      const dich2 = f === 'copyFileSync' ? arguments[1] : p;
+      const coGhi = f !== 'openSync' || /[wa+]/.test(String(arguments[1] || 'r'));
+      if (coGhi && typeof dich2 === 'string' && path.resolve(dich2).toLowerCase() === dich) throw new Error('GHI THẲNG VÀO FILE ĐÍCH bằng fs.' + f);
+      return goc[f].apply(fs, arguments);
+    };
+  });
+  const moGhi = () => LOI_GHI.forEach((f) => { fs[f] = goc[f]; });
+
+  let r;
+  camGhi(v.tep);
+  try { r = await chay3(v, ['9', '2026', LK('T9'), '10', '2026', LK('T10MOI'), '2', 'c']); } finally { moGhi(); }
+  const sau = fs.readFileSync(v.tep, 'utf8');
+  dung(fs.statSync(v.tep).ino !== inoTruoc, 'CAU_HINH_VAN_HANH.json vẫn là file cũ bị ghi TẠI CHỖ, không phải bản tạm đổi tên đè lên');
+  dung(r.ma === 0, 'ghi đè khóa đã có phải thoát mã 0, nhận được ' + r.ma + ': ' + r.ra.slice(-300));
+  dung((sau.match(/"2026-10"/g) || []).length === 1, 'JSON sau có ' + (sau.match(/"2026-10"/g) || []).length + ' khóa "2026-10", phải đúng 1');
+  dung(sau === truoc.replace(LK('T10CU'), LK('T10MOI')), 'ngoài giá trị của 2026-10, file cấu hình đã đổi byte khác (BOM / CRLF / thứ tự / khóa khác)');
+  dung(Object.keys(docCfg(v.tep).link_thang).join(',') === '2026-08,2026-10,2026-09', 'thứ tự khóa link_thang bị đảo');
+  dung(/CHÚ Ý: CAU_HINH_VAN_HANH\.json ĐANG có link KHÁC cho 2026-10/.test(r.ra), 'thiếu câu báo sẽ ghi đè link đang có');
+  dung(fs.readdirSync(v.ch).filter((t) => /\.tam-/.test(t)).length === 0, 'còn sót file tạm trong thư mục cấu hình');
+
+  // Máy tự soát bản tạm: mã lỡ làm rơi khóa khác thì KHÔNG đè lên file thật.
+  const banRoiKhoa = nut3Sua([['  obj.link_thang = bang;\n', '  obj.link_thang = { [ky]: link };\n']]);
+  const x0 = dungVh3({ linkThang: bang });
+  const t0 = tho(x0.tep);
+  const y0 = await chay3(x0, ['9', '2026', LK('T9'), '10', '2026', LK('T10MOI'), '2', 'c'], { mod: banRoiKhoa });
+  dung(y0.ma === 1 && cungByte(tho(x0.tep), t0), 'bản tạm rơi mất khóa khác mà vẫn đè lên file thật (thoát ' + y0.ma + ')');
+
+  const banGhiThang = nut3Sua([['      try { fs.renameSync(tam, cfgTep); break; } catch (e) {',
+    '      try { fs.writeFileSync(cfgTep, fs.readFileSync(tam)); fs.unlinkSync(tam); break; } catch (e) {']]);
+  const dc1 = await doiChungAm('ghi thang vao file dich thay vi doi ten', async () => {
+    const x = dungVh3({ linkThang: bang });
+    let y;
+    camGhi(x.tep);
+    try { y = await chay3(x, ['9', '2026', LK('T9'), '10', '2026', LK('T10MOI'), '2', 'c'], { mod: banGhiThang }); } finally { moGhi(); }
+    if (y.ma !== 0 || docCfg(x.tep).link_thang['2026-10'] !== LK('T10MOI')) throw new Error('mở file đích bằng chế độ ghi (thoát ' + y.ma + ')');
+  });
+  const banRoiKhoaKhongSoat = nut3Sua([
+    ['  obj.link_thang = bang;\n', '  obj.link_thang = { [ky]: link };\n'],
+    ["    if (boKhoa(docLai) !== boKhoa(JSON.parse(than))) throw new Error('bản tạm lệch các khóa khác của file cấu hình');", '']
+  ]);
+  const dc2 = await doiChungAm('lam roi khoa khac va bo buoc soat ban tam', async () => {
+    const x = dungVh3({ linkThang: bang, bom: true, crlf: true });
+    const t = fs.readFileSync(x.tep, 'utf8');
+    await chay3(x, ['9', '2026', LK('T9'), '10', '2026', LK('T10MOI'), '2', 'c'], { mod: banRoiKhoaKhongSoat });
+    if (fs.readFileSync(x.tep, 'utf8') !== t.replace(LK('T10CU'), LK('T10MOI'))) throw new Error('file cấu hình mất khóa 2026-08/2026-09');
+  });
+  const banGhiQuaFd = nut3Sua([['      try { fs.renameSync(tam, cfgTep); break; } catch (e) {',
+    '      try { const fd = fs.openSync(cfgTep, fs.constants.O_RDWR); fs.ftruncateSync(fd, 0); fs.writeSync(fd, fs.readFileSync(tam)); fs.closeSync(fd); fs.unlinkSync(tam); break; } catch (e) {']]);
+  const dc3 = await doiChungAm('ghi tai cho qua fd, co so, lot hang rao ham', async () => {
+    const x = dungVh3({ linkThang: bang });
+    const ino = fs.statSync(x.tep).ino;
+    let y;
+    camGhi(x.tep);
+    try { y = await chay3(x, ['9', '2026', LK('T9'), '10', '2026', LK('T10MOI'), '2', 'c'], { mod: banGhiQuaFd }); } finally { moGhi(); }
+    if (y.ma !== 0 || fs.statSync(x.tep).ino === ino) throw new Error('file đích bị ghi tại chỗ (mã file không đổi, thoát ' + y.ma + ')');
+  });
+  return '1 khóa 2026-10, mọi byte khác y nguyên, mã file đổi (đổi tên đè), không ghi thẳng file đích, không sót file tạm · bản tạm rơi khóa → không đè · ' +
+    dc1 + ' · ' + dc2 + ' · ' + dc3;
+});
+
+test('N-40 nút 3 chế độ 1: chỉ khi Web App báo xong ĐỦ 8/8 phép K mới ghi link — tự kiểm lệch, từ chối, 7/8, lỗi mạng đều giữ cấu hình y nguyên', async () => {
+  const TL1 = ['9', '2026', ' ' + LK('T9'), '10', '2026', LK('T10'), '1', 'c'];
+  const CA = [
+    ['TU_KIEM_LECH', 3, () => ({ ok: false, loi: 'TU_KIEM_LECH', thongBao: 'TỰ KIỂM LỆCH 1/8 phép — K-7 (999000).', goiY: ' → giữ cờ', kiem: KIEM8(['K-7']) }), /K-7 LỆCH/],
+    ['FILE_CO_DU_LIEU', 3, () => ({ ok: false, loi: 'FILE_CO_DU_LIEU', thongBao: 'KHÔNG KHỞI TẠO — Phép R-2 …', goiY: ' → tạo bản sao mới',
+      lop2: [{ ma: 'R-2', ten: 'Sheet gian hàng không có đơn mới', dat: false, chiTiet: 'Shopee mall 2 ô' }] }), /R-2 CÓ DỮ LIỆU/],
+    ['ok nhưng 7/8', 3, () => ({ ok: true, thongBao: 'ĐÃ KHỞI TẠO', kiem: KIEM8(['K-3']) }), /không thấy đủ 8\/8/],
+    ['ok nhưng không có kiem', 3, () => ({ ok: true, thongBao: 'ĐÃ KHỞI TẠO' }), /không thấy đủ 8\/8/],
+    ['ok với kiem RỖNG', 3, () => ({ ok: true, thongBao: 'ĐÃ KHỞI TẠO', kiem: [] }), /không thấy đủ 8\/8/],
+    ['ok với 7 phép đều đạt', 3, () => ({ ok: true, thongBao: 'ĐÃ KHỞI TẠO', kiem: KIEM8([]).slice(0, 7) }), /không thấy đủ 8\/8/],
+    ['R-5 danh sách sheet lệch', 3, () => ({ ok: false, loi: 'FILE_CO_DU_LIEU', thongBao: 'KHÔNG KHỞI TẠO — Phép R-5 …', goiY: ' → …',
+      lop2: [{ ma: 'R-5', ten: 'Đủ sheet, đúng tên, đúng thứ tự', dat: false, chiTiet: 'thiếu Offood' }] }), /R-5 SAI DANH SÁCH SHEET/],
+    ['lỗi quyền / mạng', 4, () => { throw new Error('LỖI QUYỀN TRUY CẬP — kiểm tra: …'); }, /KHÔNG TẠO ĐƯỢC THÁNG 2026-10\./]
+  ];
+  const ra = [];
+  for (const [ten, maMong, kichBan, rx] of CA) {
+    const v = dungVh3();
+    const t0 = tho(v.tep);
+    const r = await chay3(v, TL1, { them: { WebApp: webGia(kichBan) } });
+    dung(r.ma === maMong, 'ca "' + ten + '" phải thoát mã ' + maMong + ', nhận được ' + r.ma);
+    dung(rx.test(r.ra), 'ca "' + ten + '" thiếu câu nguyên nhân: ' + r.ra.slice(-300));
+    dung(/link_thang trong CAU_HINH_VAN_HANH\.json KHÔNG đổi/.test(r.ra), 'ca "' + ten + '" không nói rõ link không đổi');
+    dung(cungByte(tho(v.tep), t0), 'ca "' + ten + '": CAU_HINH_VAN_HANH.json ĐÃ BỊ GHI');
+    ra.push(ten + '→' + r.ma);
+  }
+  // Ca đủ 8/8: ghi link, và tham số gửi Web App đúng bảy trường đã cắt khoảng trắng.
+  const goi = [];
+  const v = dungVh3();
+  const r = await chay3(v, TL1, { them: { WebApp: webGia(() => ({ ok: true, thongBao: 'ĐÃ KHỞI TẠO file tháng 2026-10 — đủ 8/8 phép tự kiểm.', kiem: KIEM8([]) }), goi) } });
+  dung(r.ma === 0 && docCfg(v.tep).link_thang['2026-10'] === LK('T10'), 'đủ 8/8 mà không ghi link (thoát ' + r.ma + ')');
+  dung(goi.length === 1 && JSON.stringify(goi[0]) === JSON.stringify({ thangCu: 9, namCu: 2026, linkCu: LK('T9'), thangMoi: 10, namMoi: 2026, linkMoi: LK('T10') }),
+    'tham số gửi Web App sai: ' + JSON.stringify(goi[0] || null).replace(/https:[^"]*/g, '<link>'));
+
+  const banBoQuaK = nut3Sua([['    if (!du8) {', '    if (false) {']]);
+  const dc1 = await doiChungAm('ghi link du tu kiem lech', async () => {
+    const x = dungVh3();
+    const t0 = tho(x.tep);
+    await chay3(x, TL1, { mod: banBoQuaK, them: { WebApp: webGia(CA[0][2]) } });
+    if (!cungByte(tho(x.tep), t0)) throw new Error('K-7 lệch mà link_thang đã được ghi');
+  });
+  const banTinOk = nut3Sua([['    const du8 = kq.ok === true && Array.isArray(kq.kiem) && kq.kiem.length === 8 && kq.kiem.every((p) => p && p.dat === true);',
+    '    const du8 = kq.ok === true;']]);
+  const dc2 = await doiChungAm('chi tin co ok cua Web App', async () => {
+    const x = dungVh3();
+    const t0 = tho(x.tep);
+    await chay3(x, TL1, { mod: banTinOk, them: { WebApp: webGia(CA[2][2]) } });
+    if (!cungByte(tho(x.tep), t0)) throw new Error('Web App báo ok với 7/8 phép mà link_thang đã được ghi');
+  });
+  const banBoDem8 = nut3Sua([['Array.isArray(kq.kiem) && kq.kiem.length === 8 && kq.kiem.every(', 'Array.isArray(kq.kiem) && kq.kiem.every(']]);
+  const dc3 = await doiChungAm('bo phep dem du 8 phep', async () => {
+    const x = dungVh3();
+    const t0 = tho(x.tep);
+    await chay3(x, TL1, { mod: banBoDem8, them: { WebApp: webGia(() => ({ ok: true, thongBao: 'ĐÃ KHỞI TẠO', kiem: [] })) } });
+    if (!cungByte(tho(x.tep), t0)) throw new Error('Web App báo ok với 0 phép kiểm mà link_thang đã được ghi');
+  });
+  return ra.join(' · ') + ' · 8/8 → mã 0, ghi link, tham số đúng · ' + dc1 + ' · ' + dc2 + ' · ' + dc3;
+});
+
+test('N-41 nút 3 đối chiếu link tháng trước với link_thang (khác → CẢNH BÁO, không chặn) và KHÔNG lọt link / ID / chuỗi bí mật ra màn hình hay nhật ký', async () => {
+  // Khác file → cảnh báo nhưng vẫn làm
+  const v = dungVh3();
+  const r = await chay3(v, ['9', '2026', LK('KHAC_T9'), '10', '2026', LK('T10'), '2', 'c']);
+  dung(r.ma === 0, 'link tháng trước khác link_thang mà bị chặn (thoát ' + r.ma + ') — đề bài: chỉ cảnh báo');
+  dung(/CẢNH BÁO: link tháng trước \[3\/7\] KHÁC link đang khai cho 2026-09/.test(r.ra), 'không cảnh báo link tháng trước khác link_thang');
+  // Cùng file, khác đuôi link → KHÔNG cảnh báo
+  const v2 = dungVh3();
+  const r2 = await chay3(v2, ['9', '2026', LK('T9', '/edit?usp=sharing'), '10', '2026', LK('T10'), '2', 'c']);
+  dung(r2.ma === 0 && r2.ra.indexOf('CẢNH BÁO') < 0, 'cùng file chỉ khác đuôi /edit?usp=… mà bị báo KHÁC');
+  // Chế độ 1: Web App ném câu lỗi có dán nguyên link → màn hình và nhật ký vẫn không có mã file
+  const v3 = dungVh3();
+  const r3 = await chay3(v3, ['9', '2026', LK('T9'), '10', '2026', LK('T10'), '1', 'c'],
+    { them: { WebApp: webGia(() => { throw new Error('Không mở được ' + LK('T10') + ' — bí mật ' + BI_MAT_MOI + ' · ' + LINK_MOI); }) } });
+  const toan = [r.ra, r2.ra, r3.ra, nhatKy3(v), nhatKy3(v2), nhatKy3(v3)].join('\n');
+  dung(nhatKy3(v3).length > 0 && /Chế độ: 1/.test(nhatKy3(v3)), 'chế độ 1 không để lại nhật ký LOG_TAO_THANG_*.txt');
+  const lot = ['T8', 'T9', 'KHAC_T9', 'T10'].filter((k) => toan.indexOf(idGia(k)) >= 0)
+    .concat(toan.indexOf(BI_MAT_MOI) >= 0 ? ['chuỗi bí mật'] : [])
+    .concat(toan.indexOf(LINK_MOI) >= 0 ? ['link Web App'] : [])
+    .concat(/docs\.google\.com\/spreadsheets\/d\/\w/.test(toan) ? ['link file tháng'] : []);
+  dung(lot.length === 0, 'INV-7 LỌT: ' + lot.join(', '));
+
+  const banKhongCanh = nut3Sua([['      if (idKhai(gt.kyCu) && idKhai(gt.kyCu) !== gt.idCu) {', '      if (false) {']]);
+  const dc1 = await doiChungAm('bo canh bao link thang truoc khac', async () => {
+    const y = await chay3(dungVh3(), ['9', '2026', LK('KHAC_T9'), '10', '2026', LK('T10'), '2', 'c'], { mod: banKhongCanh });
+    if (!/CẢNH BÁO: link tháng trước/.test(y.ra)) throw new Error('không còn cảnh báo');
+  });
+  const banInLink = nut3Sua([["  if (laLink) return '<link đã dán>';", '  if (laLink) return t;']]);
+  const dc2 = await doiChungAm('in lai nguyen link vua dan', async () => {
+    const y = await chay3(dungVh3(), TL_CHE_DO_2(), { mod: banInLink });
+    if (y.ra.indexOf(idGia('T10')) >= 0) throw new Error('mã file tháng 10 lọt ra màn hình');
+  });
+  // Chuỗi trả lời LỆCH MỘT Ô: mã file trần rơi vào ô năm [5/7], link thiếu https rơi vào câu c/k → vẫn không vang lại.
+  const v4 = dungVh3();
+  const r4 = await chay3(v4, ['9', '2026', LK('T9'), '10', idGia('T8'), '9', '2026', LK('T9'), '10', '2026', LK('T10'), '2',
+    'docs.google.com/spreadsheets/d/' + idGia('T8'), 'c']);
+  dung(r4.ra.indexOf(idGia('T8')) < 0, 'INV-7: mã file trần gõ nhầm vào ô không phải link bị vang lại ra màn hình');
+  const banVangTho = nut3Sua([[" || t.length > 16) return '<đã ẩn>';", ' && false) return \'<đã ẩn>\';']]);
+  const dc3 = await doiChungAm('vang lai tho o khong phai link', async () => {
+    const y = await chay3(dungVh3(), ['9', '2026', LK('T9'), '10', idGia('T8'), '9', '2026', LK('T9'), '10', '2026', LK('T10'), '2', 'c'], { mod: banVangTho });
+    if (y.ra.indexOf(idGia('T8')) >= 0) throw new Error('mã file tháng 8 vang lại ở ô [5/7]');
+  });
+  return 'khác file → cảnh báo, vẫn ghi · khác đuôi → không cảnh báo · 0 link/ID/bí mật trên màn hình + nhật ký · mã file lệch ô không vang lại · ' +
+    dc1 + ' · ' + dc2 + ' · ' + dc3;
+});
+
+test('N-42 nút 3 "Dung chua? (c/k)": k → chưa làm gì, hỏi lại từ [1/7]; gõ bừa → hỏi lại đúng câu đó; chỉ c mới ghi', async () => {
+  const DUNG = ['9', '2026', LK('T9'), '10', '2026', LK('T10'), '2'];
+  const v = dungVh3();
+  const r = await chay3(v, DUNG.concat(['k']).concat(DUNG).concat(['c']));
+  dung(r.ma === 0 && /Bạn trả lời k — chưa làm gì/.test(r.ra) && /lượt 2\/3/.test(r.ra), 'k rồi c: phải hỏi lại lượt 2 rồi ghi (thoát ' + r.ma + ')');
+  const v2 = dungVh3();
+  const t2 = tho(v2.tep);
+  const r2 = await chay3(v2, DUNG.concat(['k']));
+  dung(r2.ma === 1 && cungByte(tho(v2.tep), t2), 'trả lời k (rồi hết câu trả lời) mà cấu hình bị ghi / không thoát mã 1');
+  const v3 = dungVh3();
+  const r3 = await chay3(v3, DUNG.concat(['vang', 'c']));
+  dung(r3.ma === 0 && (r3.ra.match(/\[1\/7\] Thang truoc/g) || []).length === 1 && (r3.ra.match(/Dung chua\? \(c\/k\)/g) || []).length === 2,
+    'gõ bừa ở câu xác nhận phải hỏi lại ĐÚNG câu đó, không hỏi lại bảy trường');
+  const v4 = dungVh3();
+  const t4 = tho(v4.tep);
+  const r4 = await chay3(v4, DUNG.concat(['k']).concat(DUNG).concat(['k']).concat(DUNG).concat(['k']));
+  dung(r4.ma === 1 && cungByte(tho(v4.tep), t4), 'ba lần k phải thoát mã 1, cấu hình y nguyên');
+
+  dung(/lượt cuối bạn trả lời k — thoát, chưa làm gì/.test(r4.ra) && !/lượt nhập sai/.test(r4.ra), 'ba lần k mà câu thoát lại nói "nhập sai"');
+  // Lượt cuối sai trường: không được hứa "Hỏi lại từ [1/7]" rồi thoát ngay dòng sau.
+  const r5 = await chay3(dungVh3(), ['13', '13', '13']);
+  const dongLoiCuoi = r5.ra.split('\n').filter((d) => d.indexOf('LỖI [1/7]') === 0).pop() || '';
+  dung(r5.ma === 1 && dongLoiCuoi && dongLoiCuoi.indexOf('Hỏi lại từ [1/7]') < 0 && /lượt nhập sai/.test(r5.ra), 'lượt cuối vẫn hứa hỏi lại: ' + dongLoiCuoi);
+
+  const banBoK = nut3Sua([["      if (xn === 'k') { lyDoLuot = 'k'; inRa('Bạn trả lời k — chưa làm gì.'); continue; }", '']]);
+  const dc = await doiChungAm('k cung lam nhu c', async () => {
+    const x = dungVh3();
+    const t0 = tho(x.tep);
+    await chay3(x, DUNG.concat(['k']), { mod: banBoK });
+    if (!cungByte(tho(x.tep), t0)) throw new Error('trả lời k mà vẫn ghi link_thang');
+  });
+  return 'k → hỏi lại lượt 2 · k rồi thôi → mã 1 · gõ bừa → hỏi lại câu xác nhận · 3 lần k → mã 1 · ' + dc;
 });
 
 /* ---------------------------------------------------------------- NÚT 4 --- */
