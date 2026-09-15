@@ -154,7 +154,7 @@ Số bài lấy từ dòng tổng kết mỗi bộ tự in ra; chạy lại là 
 | `npm run test-dong-run` | `T-RUN-xx` | YC-38.3 dòng tổng kết RUN: RUN id giờ Việt Nam, Web App ghi nhật ký + trả số dòng CÓ và băm Mapping, thả lại cùng file ra cùng dòng |
 | `npm run test-tao-thang-moi-web` | `TM-W-xx` | YC-35 hành động `taoThangMoi` trên Web App giả, chạy trên file tháng 9 khuôn mới (bản sao → tháng 10) và tháng 8 thật (TM-01…TM-12); TM-W-19…22 phía máy trọn đường: nút 3 → `WebAppGoogleSheet.taoThangMoi` → Web App giả; bộ này GHIM múi giờ dự án (TM-W-25); TM-W-26…29 YC-43: dán vào ô gộp, đóng băng trước khi dọn, câu báo giữa chừng, bản sao kẹt B5; TM-W-30…32 YC-44/2.7.1: cột I chép nguyên văn khuôn + rà mọi công thức tool ghi, dừng ngay khi ô vừa ghi ra #ERROR!, hành động chỉ-đọc `coTaoThang` |
 | `npm run test-chuyen-huong` | `T-CH-xx` | 2.7.1 đường truyền: đi theo chuyển hướng tới 5 nấc, ghi đường đi từng nấc, 3xx hỏng/thân rỗng KHÔNG gọi là lỗi quyền; nút 3 mất đường trả lời thì đọc lại cờ rồi mới kết luận (mã thoát 6 khi Google vẫn chạy); T-CH-12 `DA_CHAY_XONG` mã 5 (YC-45); T-CH-14 tháng trên cờ O2 thay so đồng hồ (YC-46) |
-| `npm run test-tiktok` | `TT-xx` | Đợt 4 TikTok Shop trên file THẬT `00_DAU_VAO/TIKTOK` + sổ tháng 9 thật: bộ đọc (130/129, không ghi 7 + 1 treo, mã chuỗi 18, ngày, công thức ròng 130/130 + dừng khi lệch, đổi thứ tự cột), đối chiếu tổng A/B/C, YC-56 cột A = RTS Time + thiếu file thì dừng, nhận diện + thả nhầm sàn, ghi có gộp ô / cấu phần / Hệ số / thiếu Mapping / công thức / khuôn 17 cột, thả lại cùng file, 166 dòng tay không đổi, báo cáo B không ghi, TT-14 nút 4 trọn đường: Shopee y hệt khi có/không TikTok và TikTok hỏng không chặn Shopee |
+| `npm run test-tiktok` | `TT-xx` | Đợt 4 TikTok Shop trên file THẬT `00_DAU_VAO/TIKTOK` + sổ tháng 9 thật: bộ đọc (130/129, không ghi 7 + 1 treo, mã chuỗi 18, ngày, công thức ròng 130/130 + dừng khi lệch, đổi thứ tự cột), đối chiếu tổng A/B/C, YC-57 cột A = RTS Time + thiếu file thì dừng + đơn Đã hủy + câu 2B.11, nhận diện + thả nhầm sàn, ghi có gộp ô / cấu phần / Hệ số / thiếu Mapping / công thức / khuôn 17 cột, thả lại cùng file, 166 dòng tay không đổi, báo cáo B không ghi, TT-14 nút 4 trọn đường: Shopee y hệt khi có/không TikTok và TikTok hỏng không chặn Shopee |
 
 **Bộ test phải 0 hỏng ở MỌI múi giờ máy**, không riêng giờ Việt Nam. Thử lại trước khi push:
 `TZ=UTC npm run test-tat-ca` (Git Bash) hoặc `$env:TZ='UTC'; npm run test-tat-ca` (PowerShell). Tên múi giờ có dấu `/`
@@ -318,7 +318,7 @@ dòng đó là sinh ra ca mất đơn mà không ai biết — file đã đi kh�
 - **Đầu vào là báo cáo TÀI CHÍNH, không phải file xuất đơn hàng.** File "Tất cả đơn hàng" không có số user nhập (0/70 đơn khớp). Báo cáo
   "Sẽ thanh toán" (`Onhold-unsettled-orders-*.xlsx`, sheet `Đơn hàng chưa quyết toán và kho`, tiêu đề dòng 5) có SKU + tiền. Báo cáo "Đã
   quyết toán" (`income_*.xlsx`) cấp ĐƠN, không SKU → không bao giờ tạo dòng; bản này chỉ nhận diện + đối chiếu (INV-1b hoãn Đợt 5, D-88).
-- **Cột A = RTS Time của file "Tất cả đơn hàng"** (D-87, YC-56; khớp sổ tay 49/49). Mỗi lượt thả CẶP file; thiếu file đó là dừng
+- **Cột A = RTS Time của file "Tất cả đơn hàng"** (D-87, YC-57; khớp sổ tay 49/49; mã test `TT-56a/b` đặt trước khi BA đánh số). Mỗi lượt thả CẶP file; thiếu file đó là dừng
   `THIEU_ORDER_EXPORT`. Đơn không có / RTS trống → vẫn ghi, cột A = ngày tạo, tô vàng + note (`hoSo.thieu_rts` đổi được sang `TREO`).
   Từ file đó CHỈ đọc `Order ID` + `RTS Time` (+ trạng thái): file có 10 cột người mua.
 - **`<dimension>` của cả ba loại file TikTok SAI** (`A1:BX6` cho 135 dòng…). SheetJS tin nó và đọc hụt, im lặng. `chay-tiktok.js`
@@ -327,10 +327,14 @@ dòng đó là sinh ra ca mất đơn mà không ai biết — file đã đi kh�
   giảm giá); K = −(GTGT + TNCN); J = −Tổng phí − K. Tự kiểm từng đơn H − I − J − K = quyết toán: lệch MỘT ĐỒNG là dừng cả phần TikTok
   (`TU_KIEM_LECH`). Thuế TikTok làm tròn CHẴN (half-even) — CẤM tự dựng công thức thuế, luôn lấy từ báo cáo.
 - **Không ghi**: H ròng = 0 (hủy / hoàn toàn bộ — 6 đơn "quyết toán 0" của file 15/9 thật ra đã hoàn tiền); "Đang chờ hoàn tất trả
-  hàng/hoàn tiền" → TREO; hoàn một phần → TREO; quyết toán 0 mà H > 0 → chờ tính phí.
+  hàng/hoàn tiền" → TREO; hoàn một phần → TREO; quyết toán 0 mà H > 0 → chờ tính phí; `Order Status` = Đã hủy trong file "Tất cả đơn
+  hàng" → không ghi (YC-57, lưới thứ hai).
+- **Câu in cho user phải GIỐNG HỆT hướng dẫn một trang** (BA 2B.11): `THIẾU FILE ĐƠN HÀNG TIKTOK`, `THIẾU BÁO CÁO TÀI CHÍNH TIKTOK`,
+  `SỐ DÒNG ĐỌC ĐƯỢC KHÔNG KHỚP Ô "TỔNG SỐ GIAO DỊCH"`, `ĐƠN <mã> CHƯA CÓ TRONG FILE ĐƠN HÀNG`, `BỎ QUA <n> ĐƠN KHÔNG PHẢI ĐƠN BÁN` (TT-57, TT-17).
+  Sửa câu là sửa cả `bat/HUONG_DAN_1_TRANG.md`.
 - **Mã đơn là chuỗi 18 chữ số** — không bao giờ ép số. Ô đã thành số (file bị mở-lưu bằng Excel) là dừng. Cột C của sổ có mã bị Google đổi
   thành `5.86087E+17` cũng dừng (`soatMaDonTrenSo`): khử trùng so chuỗi sẽ trượt và ghi trùng.
-- **Đổi dấu, không trị tuyệt đối**: có khoản phí DƯƠNG (+40.000 hoàn phí SFR).
+- **Đổi dấu, không trị tuyệt đối**: có khoản phí DƯƠNG (hoàn phí SFR).
 - **TikTok đi đường `ghi`, không `xuLy`.** `xuLy` để Google tự tính thuế (K lõi khớp báo cáo 66/130 dòng) và ghi MỘT ngày cho cả gói. Đường
   `ghi` nhận H/I/J/K + ngày từng đơn; lõi Shopee (`dungKeHoachGhi_`) vẫn tra Mapping, nổ cấu phần, khử trùng; Google vẫn gộp ô, chép công thức,
   hợp đồng sổ tháng, hàng rào công thức. Gian `TT_SHOP` khai cho Google qua `cauHinh` của CHÍNH gói TikTok — gói Shopee không mang khóa này, nên
@@ -338,7 +342,7 @@ dòng đó là sinh ra ca mất đơn mà không ai biết — file đã đi kh�
 - **Lỗi TikTok không chặn Shopee**: `chay-thu.js` bọc `chayTikTok`. Riêng thả nhầm SÀN (`soatThaNhamSan`) dừng cả lượt trước mọi việc.
 - **Khuôn sheet `TikTok Shop` có hai bản**: sổ thật 15 cột như Shopee mall; DEMO 13/9 17 cột (Ảnh, Ghi Chú). Đường ghi chỉ nhận khuôn 15 cột
   (DEMO dừng `SAI_HOP_DONG`). Nút 3 tìm TỪNG cột theo nội dung tiêu đề dòng 2, không gõ cứng chữ cái (`TaoThangMoi.boCucTikTokShop`,
-  YC-55 BA 16/9); thiếu tiêu đề cần → `KHUON_TIKTOK_LA`, chưa ghi gì.
+  YC-56 BA 16/9); thiếu tiêu đề cần → `KHUON_TIKTOK_LA`, chưa ghi gì.
 - **Không đổi tiêu đề cột B của Mapping `Tên trên Shopee`** (P-11): mã gõ cứng, đổi là mọi lượt Shopee dừng `SAI_HOP_DONG`. Dòng TikTok nằm
   thẳng trong `Mapping_san_pham` với Gian hàng = `TikTok Shop` (D-89).
 - Nhật ký TikTok riêng: `Cấu hình\nhật ký\LOG_<giờ>_TIKTOK.txt` (dòng RUN riêng, `gian TikTok Shop`).
