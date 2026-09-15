@@ -738,6 +738,12 @@ test('N-33 3_TAO_FILE_THANG_MOI.bat chạy thật: chuyển /tra-loi sang nút 3
  * NODE_OPTIONS): `ping` đúng bản · `taoThangMoi` đứt kết nối · `coTaoThang` trả `dangChay: true`, cờ B4. Không một byte ra mạng thật.
  */
 function shimHttpsNut3DangChay() {
+  return shimHttpsNut3Co({ dangChay: true, coKhoiTao: 'DANG_KHOI_TAO_2026-10-01 09:00', buocDaXong: 'B4' });
+}
+
+/** Như trên, phản hồi `coTaoThang` tùy ca (YC-45: `DA_KHOI_TAO` đúng tháng → máy kết luận DA_CHAY_XONG). */
+function shimHttpsNut3Co(coTaoThang) {
+  const co = Object.assign({ ok: true, hanhDong: 'coTaoThang', tenFileMoi: 'THANG-10-2026-KINH-DOANH' }, coTaoThang);
   const tep = path.join(tamMoi('shim3dc'), 'https-gia.js');
   fs.writeFileSync(tep, [
     "'use strict';",
@@ -755,7 +761,7 @@ function shimHttpsNut3DangChay() {
     '      const g = JSON.parse(than);',
     "      if (g.hanhDong === 'ping') return tra({ ok: true, phienBan: PB }, cb);",
     "      if (g.hanhDong === 'taoThangMoi') { setImmediate(() => req.emit('error', new Error('socket hang up'))); return; }",
-    "      if (g.hanhDong === 'coTaoThang') return tra({ ok: true, hanhDong: 'coTaoThang', thang: g.thang, dangChay: true, coKhoiTao: 'DANG_KHOI_TAO_2026-10-01 09:00', buocDaXong: 'B4', tenFileMoi: 'THANG-10-2026-KINH-DOANH' }, cb);",
+    "      if (g.hanhDong === 'coTaoThang') return tra(Object.assign({ thang: g.thang }, " + JSON.stringify(co) + "), cb);",
     "      return tra({ ok: false, loi: 'HANH_DONG_LA', thongBao: 'giả lập' }, cb);",
     '    };',
     '    return req;',
@@ -800,6 +806,33 @@ test('N-46 3_TAO_FILE_THANG_MOI.bat mã thoát 6 (2.7.1): Google VẪN ĐANG CH�
   fs.writeFileSync(tepHong, boNhanh6, 'latin1');
   const dc = await doiChungAm('nut bam khong co nhanh ma 6', async () => { cham(tepHong); });
   return 'mã 6 · "' + (r.ra.match(/CHUA PHAI THAT BAI[^\r\n]*/) || [''])[0] + '" · cấu hình y nguyên · ' + dc;
+});
+
+test('N-47 3_TAO_FILE_THANG_MOI.bat mã thoát 5 (YC-45): máy mất đường trả lời, đọc lại cờ thấy Google ĐÃ tạo xong đúng tháng → thoát 5, khung "GOOGLE DA TAO XONG … chon CHE DO 2", KHÔNG còn "KHONG TAO DUOC THANG", cấu hình y nguyên', async () => {
+  const NUT3_GOC = path.join(__dirname, '..', 'bat', '3_TAO_FILE_THANG_MOI.bat');
+  const shim = shimHttpsNut3Co({ dangChay: false, coKhoiTao: 'DA_KHOI_TAO_2026-10-01 09:00', buocDaXong: 'B7', thangCo: '2026-10', thangCoTho: '2026-10' });
+  const TL = ['9', '2026', LK('T9'), '10', '2026', LK('T10'), '1', 'c'];
+  const cham = (nut3Script) => {
+    const h = dungMay({ banMa: '9.9.0', nut3That: true, linkThang: { '2026-09': LK('T9') }, thayNut: { '3_TAO_FILE_THANG_MOI.bat': NUT3_GOC } });
+    if (nut3Script) fs.writeFileSync(path.join(h.tool, 'node', 'nut-3-thang-moi.js'), nut3Script, 'utf8');
+    const t0 = tho(h.cfgTep);
+    const r = chayNut3Moi(h.may, TL, { NODE_OPTIONS: '--require "' + shim + '"' });
+    if (r.ma !== 5) throw new Error('phải thoát mã 5, nhận được ' + r.ma + ': ' + r.ra.slice(-300));
+    if (/KHONG TAO DUOC THANG|KHÔNG TẠO ĐƯỢC THÁNG/.test(r.ra)) throw new Error('mã 5 mà màn hình vẫn có "KHONG TAO DUOC THANG"');
+    if (!/GOOGLE DA TAO XONG THANG MOI/.test(r.ra) || !/chon CHE DO 2/.test(r.ra)) throw new Error('nút bấm thiếu khung mã 5: ' + r.ra.slice(-300));
+    if (!/Google ĐÃ chạy xong và tự kiểm đạt/.test(r.ra)) throw new Error('script nút 3 thiếu câu Google đã chạy xong');
+    if (!cungByte(tho(h.cfgTep), t0)) throw new Error('mã 5 mà CAU_HINH_VAN_HANH.json đã bị ghi');
+    if (r.ra.indexOf(idGia('T10')) >= 0 || r.ra.indexOf(idGia('T9')) >= 0 || r.ra.indexOf(BI_MAT_MOI) >= 0 || r.ra.indexOf(LINK_MOI) >= 0) {
+      throw new Error('INV-7: mã file / chuỗi bí mật / link Web App lọt ra màn hình');
+    }
+    return r;
+  };
+  const r = cham(null);
+  const goc = fs.readFileSync(path.join(__dirname, 'nut-3-thang-moi.js'), 'utf8');
+  const moc = "      if (e && e.maKeodon === 'DA_CHAY_XONG') {";
+  if (goc.split(moc).length !== 2) throw new Error('KHÔNG CẮM ĐƯỢC KHUYẾT TẬT vào node/nut-3-thang-moi.js — mã đã đổi, sửa lại bài test, đừng bỏ qua.');
+  const dc = await doiChungAm('giu ma 4 cho DA_CHAY_XONG', async () => { cham(goc.split(moc).join('      if (false) {')); });
+  return 'mã 5 · "' + (r.ra.match(/GOOGLE DA TAO XONG[^\r\n]*/) || [''])[0] + '" · không còn KHONG TAO DUOC · cấu hình y nguyên · ' + dc;
 });
 
 test('N-36 nút 3 bảy trường hợp lệ: hỏi đúng thứ tự đề bài, in lại đủ bảy giá trị, chế độ 2 ghi đúng khóa; bỏ ràng buộc "tháng liền sau", bỏ file thang-moi-*.json', async () => {

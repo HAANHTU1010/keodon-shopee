@@ -1,4 +1,4 @@
-# Kéo đơn Shopee lên Google Sheet — hướng dẫn một trang
+# Kéo đơn Shopee và TikTok Shop lên Google Sheet — hướng dẫn một trang
 
 > **GÓI NÀY CHỨA KHÓA GHI VÀO GOOGLE SHEET: KHÔNG ĐĂNG CÔNG KHAI, KHÔNG GỬI CHO NGƯỜI NGOÀI.**
 > Ai có thư mục này là ghi thẳng được vào sổ tiền của shop. Chỉ chép qua kênh nội bộ, không đính kèm email,
@@ -12,7 +12,7 @@ Bạn không phải hiểu tool. Bạn chỉ cần thả file đúng chỗ rồi
 
 | Bấm vào đâu | Để làm gì |
 |---|---|
-| **`1_THA_FILE_XUAT\`** | Chỗ thả file xuất Shopee. Bên trong có bốn thư mục gian hàng |
+| **`1_THA_FILE_XUAT\`** | Chỗ thả file xuất của sàn. Bên trong có **năm** thư mục gian hàng: bốn gian Shopee và `TikTok Shop` (máy cài từ gói cũ: thư mục `TikTok Shop` tự hiện ra sau lần bấm `4_CHAY_TOOL.bat` đầu tiên của bản mới) |
 | **`Cấu hình\`** | Ruột của tool. **Bình thường không phải mở.** Cài đặt, mã và nhật ký nằm trong đó |
 | **Bốn file `.bat`** | Bốn cái nút. Bấm đúp là chạy |
 
@@ -37,10 +37,10 @@ Lần đầu chạy, nút này **tự tải mã của tool từ trên mạng v�
 
 ---
 
-## Mỗi ngày, ba bước
+## Shopee — mỗi ngày, ba bước
 
 1. Trên Kênh Người Bán Shopee, vào **Đơn hàng → Chờ lấy hàng**, bấm **Xuất**, tải file về.
-2. Thả file vừa tải vào `1_THA_FILE_XUAT\` rồi vào **đúng thư mục gian hàng**. Có bốn thư mục, tên **giống hệt tên sheet trên Google**:
+2. Thả file vừa tải vào `1_THA_FILE_XUAT\` rồi vào **đúng thư mục gian hàng**. Tên thư mục **giống hệt tên sheet trên Google**:
 
    `Shopee mall`   ·   `Offood`   ·   `Importmart`   ·   `Babyiu`
 
@@ -51,6 +51,64 @@ Chạy xong, **tool tự chuyển file vừa đọc vào `1_THA_FILE_XUAT\<gian 
 > **Thả nhầm thư mục là đơn ghi nhầm sổ.** File xuất của Shopee không có cột nào cho biết đơn thuộc gian hàng nào. Tool đối chiếu tên hàng với bảng Mapping, thấy file giống hẳn gian khác thì **dừng và không ghi** — nhưng nhìn kỹ tên thư mục trước khi thả vẫn là cách chắc nhất.
 
 Bấm lại `4_CHAY_TOOL.bat` bao nhiêu lần cũng được. Đơn đã ghi sẽ bị bỏ qua, **không bao giờ ghi trùng**.
+
+---
+
+## TikTok Shop — mỗi ngày, bốn bước (khác Shopee: phải lấy HAI file)
+
+TikTok không có một file nào chứa đủ thứ tool cần, nên **mỗi lượt phải lấy hai file và thả cả hai vào cùng một thư mục**. Thiếu một file là tool dừng, không ghi gì.
+
+| File | Lấy ở đâu | Cho tool biết |
+|---|---|---|
+| **Báo cáo tài chính "Sẽ thanh toán"** | **Tài chính → Giao dịch → tab đơn hàng chưa quyết toán → Xuất** | Tiền của từng đơn: tiền hàng, giảm giá, phí, thuế |
+| **File đơn hàng "Tất cả đơn hàng"** | **Đơn hàng → Quản lý đơn hàng → Tất cả đơn hàng → Xuất đơn hàng** | Ngày sắp xếp vận chuyển (cột `Ngày` của sổ) và đơn nào đã hủy |
+
+**Khoảng thời gian chọn khi xuất: từ ngày 1 của tháng đến hôm nay** — cả hai file. Lấy thừa không sao, đơn đã ghi tool tự bỏ qua; lấy thiếu là sót đơn.
+
+Chọn định dạng **Excel (.xlsx)** khi xuất — file CSV tool không đọc. **Đừng mở file rồi lưu lại bằng Excel**: Excel đổi mã đơn 18 chữ số thành số, tool sẽ dừng, không ghi.
+
+Các bước:
+
+1. Tải **báo cáo tài chính** theo đường dẫn trên. File tải về tên bắt đầu bằng `Onhold-unsettled-orders...`
+2. Tải **file đơn hàng**. File tải về tên bắt đầu bằng `Tất cả đơn hàng...`
+3. Thả **cả hai file** vào `1_THA_FILE_XUAT\TikTok Shop\`
+4. Bấm đúp **`4_CHAY_TOOL.bat`** như mọi ngày. Một lượt chạy làm cả Shopee lẫn TikTok.
+
+> ### 🔴 TikTok phải chạy hằng ngày, không được để cách quá 2 ngày
+> Shop này đang ở chu kỳ quyết toán nhanh (3 ngày). **Đơn nào TikTok trả tiền xong là rời khỏi tab "Sẽ thanh toán" và không xuất lại được nữa** — để lâu là mất đơn khỏi sổ, không có cách nào lấy lại ở bản này.
+> Số đo thật ngày 15/9: file xuất cho khoảng 01/09–15/09 chỉ còn **130 dòng**, đơn cũ nhất là 03/09; các ngày 06, 07, 08 mỗi ngày chỉ còn 2 đơn, trong khi ngày 14 và 15 còn gần đủ. Đơn cứ rụng dần như vậy.
+> Nếu lỡ nghỉ dài ngày, **báo người phụ trách ngay**, đừng tự chạy rồi coi như xong.
+
+### Ba thứ tool tự làm với đơn TikTok, không cần bạn động tay
+
+- **Một đơn nổ thành nhiều dòng.** Một đơn gấu bông = con gấu + áo + túi quà + thiệp. Tool tự tách đúng số dòng và gộp ô tiền cho cả cụm, giống hệt đơn combo bên Shopee.
+- **Bỏ qua đơn không phải đơn bán.** Đơn đã hủy và đơn khách đang đòi trả hàng thì tool **không ghi**, chỉ nhắc ở dòng tổng kết. Không trừ kho oan.
+- **Lấy đúng số tiền của TikTok.** Tool không tự tính lại phí và thuế, nó chép nguyên số TikTok đã chốt. Cột `Doanh Thu` của sổ tự ra đúng số tiền TikTok sẽ trả về.
+
+Tool ghi vào sheet **`TikTok Shop`**. **Không nhập tay vào sheet `Tiktok` đang ẩn**: `Lợi nhuận` cộng cả hai sheet, có số ở cả hai là doanh số bị cộng hai lần.
+
+### Lượt chạy TikTok đầu tiên: phải điền Mapping trước
+
+TikTok dùng chung tab **`Mapping_san_pham`** với Shopee, nhưng hiện chưa có dòng TikTok nào. **Người phụ trách sẽ dán sẵn 14 dòng mapping trước khi bàn giao** — nếu mở sổ mà cột `Gian hàng` chưa có dòng nào ghi `TikTok Shop` thì **dừng lại, báo người phụ trách, đừng chạy**.
+
+Lý do: tool **không bao giờ sửa dòng đã ghi**. Chạy lúc Mapping còn trống thì đơn vẫn vào sổ nhưng nằm gộp một dòng vàng và không tách ra gấu/áo/túi/thiệp; điền Mapping sau cũng không cứu được những đơn đã ghi, phải xóa tay rồi chạy lại.
+
+### Lỗi hay gặp riêng của TikTok
+
+| Cửa sổ đen báo | Làm gì |
+|---|---|
+| `THIẾU FILE ĐƠN HÀNG TIKTOK` | Bạn mới thả báo cáo tài chính. Tải thêm file `Tất cả đơn hàng...` thả vào cùng thư mục rồi bấm lại |
+| `THIẾU BÁO CÁO TÀI CHÍNH TIKTOK` | Ngược lại: mới có file đơn hàng, thiếu file `Onhold-unsettled-orders...` |
+| `SỐ DÒNG ĐỌC ĐƯỢC KHÔNG KHỚP Ô "TỔNG SỐ GIAO DỊCH"` | File tải về lỗi hoặc đã bị mở ra sửa. Tải lại file mới từ TikTok, **đừng mở ra chỉnh** |
+| `ĐƠN … CHƯA CÓ TRONG FILE ĐƠN HÀNG` (dòng vàng) | Đơn quá mới, file đơn hàng chưa có ngày sắp xếp vận chuyển. Không sao — đơn vẫn được ghi, dòng tô vàng, cột `Ngày` tạm lấy ngày đặt. **Chạy lại tool không sửa dòng đã ghi**: khi đơn đã sắp xếp vận chuyển, sửa tay ô `Ngày` của dòng vàng |
+| `BỎ QUA … ĐƠN KHÔNG PHẢI ĐƠN BÁN` | Không phải lỗi. Đó là đơn hủy hoặc đơn đang chờ trả hàng |
+| `TU_KIEM_LECH` | Tiền trong báo cáo không khớp công thức — tool **không ghi đơn TikTok nào**. Gửi file cho người phụ trách, trong lúc chờ nhập tay như cũ |
+| `THẢ NHẦM SÀN` | Báo cáo TikTok nằm trong thư mục gian Shopee, hoặc file Shopee nằm trong thư mục `TikTok Shop`. Chuyển file về đúng chỗ rồi bấm lại. Tool chưa ghi gì |
+| `LỖI TIKTOK SHOP: …` | Phần TikTok không xong nhưng **bốn gian Shopee vẫn chạy bình thường**. Đọc câu sau dấu hai chấm; hai file TikTok nằm nguyên trong thư mục để bấm lại |
+| `THIẾU … cột bắt buộc` | TikTok đổi tên cột trong file xuất. Báo người phụ trách, đừng tự sửa |
+| `mã đơn đã bị đổi thành SỐ` | File TikTok đã bị mở rồi lưu bằng Excel. Xuất lại từ TikTok, thả thẳng vào thư mục |
+| `CHƯA dùng báo cáo "Đã quyết toán"` | Bạn thả nhầm file `income_...` (tab Đã quyết toán). Bản này chưa dùng file đó, tool không ghi gì từ nó — rút file ra khỏi thư mục |
+
 
 ---
 
@@ -101,7 +159,7 @@ Bấm đúp **`3_TAO_FILE_THANG_MOI.bat`**. Nó hỏi đúng bảy câu:
 
 ## Lưu ý bảo mật — đọc một lần
 
-- **Thư mục `1_THA_FILE_XUAT`** chứa file xuất Shopee, trong đó có tên, số điện thoại và địa chỉ người mua. Không đồng bộ lên đám mây, không gửi ra ngoài.
+- **Thư mục `1_THA_FILE_XUAT`** chứa file xuất của sàn (Shopee và TikTok), trong đó có tên, số điện thoại và địa chỉ người mua. Không đồng bộ lên đám mây, không gửi ra ngoài.
 - **Thư mục `Cấu hình`** có file `CAU_HINH_VAN_HANH.json` chứa **chuỗi bí mật** và **link sổ của mọi tháng**. Ai có hai thứ đó là ghi được vào sổ.
 - Chụp màn hình gửi đi thì che kín dòng `chuoi_bi_mat`.
 

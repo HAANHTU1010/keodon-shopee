@@ -60,7 +60,7 @@
  * Số bản của vỏ Google — bằng `PHIEN_BAN` trong `node/gsheet-web-app.js` và `version` của package.json khi phát hành.
  * Mọi phản hồi đã qua cửa bí mật kèm bản thật này ở trường `banWebApp`.
  */
-var PHIEN_BAN = '2.7.2';
+var PHIEN_BAN = '2.8.0';
 
 /**
  * YC-42: bản MÁY thấp nhất Web App này còn phục vụ gói ghi (`ghi`, `xuLy`, `taoThangMoi`). Dưới mốc → từ chối
@@ -2032,6 +2032,10 @@ function keoCongThucTM_(sh, c, r1, r2) {
  * CÁCH LÀM. Ghi lại MỌI cụm gộp của sheet → gỡ hết → chèn cột → chép định dạng → gộp lại đúng các cụm cũ, dời theo cột vừa
  * chèn (cụm nằm bên phải dời một cột; cụm vắt qua chỗ chèn giãn thêm một cột — đúng như Google tự làm khi chèn). Gộp lại
  * trong `finally`: lỗi ở giữa cũng không để sheet mất ô gộp.
+ *
+ * YC-47 (Đợt 4): `merge()` trong `finally` có thể ném — nhất là khi B5a đã hỏng giữa chừng. Ném thẳng thì ngoại lệ đó ĐÈ lên lỗi
+ * gốc và người đọc mất đúng câu nói bệnh. Nên gộp lại TỪNG cụm trong try/catch riêng, gom cụm không gộp lại được thành một câu phụ:
+ * có lỗi gốc → ném LẠI CHÍNH lỗi gốc, gắn thêm câu phụ; không có lỗi gốc mà có cụm hỏng → ném câu phụ (sheet mất ô gộp là phải nói).
  */
 function chenCotGiuGop_(sh, truocCot) {
   var mr = sh.getMaxRows();
@@ -2039,17 +2043,34 @@ function chenCotGiuGop_(sh, truocCot) {
     return { r: g.getRow(), c: g.getColumn(), nr: g.getNumRows(), nc: g.getNumColumns() };
   });
   gop.forEach(function (g) { sh.getRange(g.r, g.c, g.nr, g.nc).breakApart(); });
-  var daChen = false;
+  var daChen = false, loiGoc = null;
   try {
     sh.insertColumnBefore(truocCot);
     daChen = true;
     sh.getRange(1, truocCot + 1, mr, 1).copyTo(sh.getRange(1, truocCot, mr, 1), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+  } catch (e) {
+    loiGoc = e;
   } finally {
+    var hong = [];
     gop.forEach(function (g) {
       var c1 = g.c, c2 = g.c + g.nc - 1;
       if (daChen && c1 >= truocCot) { c1++; c2++; } else if (daChen && c2 >= truocCot) { c2++; }
-      sh.getRange(g.r, c1, g.nr, c2 - c1 + 1).merge();
+      try {
+        sh.getRange(g.r, c1, g.nr, c2 - c1 + 1).merge();
+      } catch (eg) {
+        hong.push(chuCotTM_(c1) + g.r + ':' + chuCotTM_(c2) + (g.r + g.nr - 1) + ' (' + String(eg && eg.message ? eg.message : eg) + ')');
+      }
     });
+    var cauGop = hong.length ? 'không gộp lại được ' + hong.length + '/' + gop.length + ' cụm ô gộp của sheet "' + sh.getName() + '": ' +
+      hong.slice(0, 5).join('; ') + (hong.length > 5 ? ' (và ' + (hong.length - 5) + ' cụm nữa)' : '') : '';
+    if (loiGoc) {
+      if (cauGop) {
+        try { loiGoc.message = String(loiGoc.message) + ' — kèm theo: ' + cauGop; } catch (x) { /* message chỉ đọc: vẫn ném lỗi gốc */ }
+        loiGoc.gopKhongLaiDuoc = hong;
+      }
+      throw loiGoc;
+    }
+    if (hong.length) throw new Error('Chèn cột xong nhưng ' + cauGop);
   }
 }
 
@@ -2225,6 +2246,10 @@ function hanhDongTaoThangMoi_(body, batDau) {
  *   · `dangChay`: khóa Web App đang có người giữ (một lượt tạo tháng hoặc kéo đơn chưa xong) → máy nói "đợi", không nói "thất bại";
  *   · `coKhoiTao` (`Mapping_san_pham`!O1: DANG_KHOI_TAO_… / DA_KHOI_TAO_…) và `buocDaXong` (O5).
  * Xét khóa TRƯỚC rồi mới đọc cờ: khóa rảnh nghĩa là lượt chạy kia đã kết thúc, cờ đọc sau đó là cờ cuối.
+ *
+ * YC-46 (Đợt 4): trả thêm `thangCo` = tháng ghi ở ô `THANG` (O2) của khối cờ, chuẩn `yyyy-MM` (Google có thể đã đổi ô thành NGÀY —
+ * `TaoThangMoi.chuanThangCo`); không đọc được / không đúng dạng → '' và `thangCoTho` giữ chữ đang hiện để máy nói cho người bấm. Máy so
+ * tháng của cờ với tháng đang tạo thay cho so đồng hồ 15 phút.
  */
 function hanhDongCoTaoThang_(body) {
   var idMoi = bocIdTuLink_(body.idMoi);
@@ -2233,10 +2258,23 @@ function hanhDongCoTaoThang_(body) {
   var ranh = khoa.tryLock(1);
   if (ranh) khoa.releaseLock();
   var ss = moBangTinh_(idMoi, 'tháng ' + String(body.thang || 'mới'), 'Link đó là trường [6/7] của nút 3.');
+  var thang = docThangCoTM_(ss);
   return {
     ok: true, hanhDong: 'coTaoThang', thang: body.thang || null, dangChay: !ranh,
-    coKhoiTao: docCoTM_(ss, 1), buocDaXong: docCoTM_(ss, 5), tenFileMoi: ss.getName()
+    coKhoiTao: docCoTM_(ss, 1), buocDaXong: docCoTM_(ss, 5), thangCo: thang.chuan, thangCoTho: thang.tho, tenFileMoi: ss.getName()
   };
+}
+
+/** YC-46: ô `THANG` (O2) của khối cờ → `{chuan: 'yyyy-MM' | '', tho: chữ đang hiện}`. Không bao giờ ném. */
+function docThangCoTM_(ss) {
+  try {
+    var sh = ss && ss.getSheetByName(TaoThangMoi.TEN_SHEET_MAPPING);
+    if (!sh) return { chuan: '', tho: '' };
+    var o = sh.getRange(2, 15);
+    var tho = String(o.getDisplayValue() || '').trim();
+    var chuan = String(TaoThangMoi.chuanThangCo(o.getValue()) || '').trim();
+    return { chuan: /^\d{4}-(0[1-9]|1[0-2])$/.test(chuan) ? chuan : '', tho: tho };
+  } catch (e) { return { chuan: '', tho: '' }; }
 }
 
 /**
@@ -2522,6 +2560,6 @@ function chayBoTest() {
   return 'Tổng ' + kq.length + ' · hỏng ' + hong.length;
 }
 
-var VAN_TAY_SHELL = '330f323f';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_SHELL = '5b84c033';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
 
-var BAN_DUNG = 'fa9af92fd133';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay
+var BAN_DUNG = '1c1b3a9c8d19';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay

@@ -505,7 +505,9 @@ const HONG_2301 = { chuyenHuongCho: 'taothangmoi', soNac: 2, cuoi: 'khongLocatio
     dung(lai.kq && lai.kq.ok === true && lai.kq.kiem.every((p) => p.dat), 'bấm lại chế độ 1 phải tạo được: ' + JSON.stringify(lai.kq || String(lai.e)).slice(0, 200));
     X.sim.thaoGo();
     return 'cờ DA_KHOI_TAO_' + nhanCu + ' (tháng 2026-09) → CO_CU_TRUOC_LUOT_NAY · bấm lại → 8/8 · ' + await doiChungAm(async () => {
-      const Sai = napBanSua('gsheet-web-app.js', [['    if (moc != null && t.batDauMs != null && moc < Number(t.batDauMs) - DUNG_SAI_GIO_CO_MS) {', '    if (false) {']]);
+      // Từ YC-46 có HAI phép cùng canh: tháng trên cờ (O2) và, khi O2 không đọc được, tuổi cờ. "Tin mọi cờ" là tắt cả hai.
+      const Sai = napBanSua('gsheet-web-app.js', [['    if (thangCo && kyMoi) {', '    if (false) {'],
+        ['    if (moc != null && t.batDauMs != null && moc < Number(t.batDauMs) - DUNG_SAI_GIO_CO_MS) {', '    if (false) {']]);
       const y = await chay(Sai);
       y.X.sim.thaoGo();
       return /CHẾ ĐỘ 2 với đúng link/.test(y.e && y.e.message) ? ['bảo khai link chế độ 2 cho sổ CHƯA chuyển: ' + y.e.maKeodon] : [];
@@ -515,7 +517,7 @@ const HONG_2301 = { chuyenHuongCho: 'taothangmoi', soNac: 2, cuoi: 'khongLocatio
   // ---------------------------------------------------------------- 4. nút 3 trọn đường
   console.log('\n--- nút 3 chế độ 1 trọn đường: node/nut-3-thang-moi.js → WebAppGoogleSheet → Web App giả ---');
 
-  await test('T-CH-12', 'nút 3 với (a) Google VẪN ĐANG CHẠY → mã thoát 6 "CHƯA PHẢI THẤT BẠI", KHÔNG "KHÔNG TẠO ĐƯỢC", link_thang y nguyên từng byte, nhật ký có dòng "Đường truyền"; Google cũ → mã 6; Google đã xong → mã 4 như cũ; không lọt ID/link/bí mật', async () => {
+  await test('T-CH-12', 'nút 3 với (a) Google VẪN ĐANG CHẠY → mã thoát 6 "CHƯA PHẢI THẤT BẠI", KHÔNG "KHÔNG TẠO ĐƯỢC", link_thang y nguyên từng byte, nhật ký có dòng "Đường truyền"; Google cũ → mã 6; Google đã xong → mã 5 (YC-45), KHÔNG "KHÔNG TẠO ĐƯỢC"; không lọt ID/link/bí mật', async () => {
     const caA = async (mod) => {
       const X = dungMay({ buocMs: 300 });
       const truoc = fs.readFileSync(X.tep);
@@ -541,20 +543,73 @@ const HONG_2301 = { chuyenHuongCho: 'taothangmoi', soNac: 2, cuoi: 'khongLocatio
     dung(d.ma === 6 && /Google đang chạy bản cũ/.test(d.ra) && !/KHÔNG TẠO ĐƯỢC/.test(d.ra), '(d) Google cũ: mã ' + d.ma + ' — ' + d.ra.slice(-300));
     bang(lotMay(Xd, d.ra + '\n' + d.nhatKy), [], '(d) INV-7');
     Xd.sim.thaoGo();
-    // (b1) Google đã chạy xong → mã 4 như cũ, câu bảo chế độ 2
-    const Xb = dungMay({});
-    Xb.sim.datLoi(HONG_2301);
-    const b = await bamNut3(Xb);
-    Xb.sim.xoaLoi();
-    dung(b.ma === 4 && /ĐÃ chạy xong và tự kiểm đạt/.test(b.ra) && /CHẾ ĐỘ 2/.test(b.ra), '(b1) mã ' + b.ma + ' — ' + b.ra.slice(-300));
-    bang(lotMay(Xb, b.ra + '\n' + b.nhatKy), [], '(b1) INV-7');
-    Xb.sim.thaoGo();
-    return '(a) mã 6 · (d) Google cũ mã 6 · (b1) đã xong mã 4 · ' + await doiChungAm(async () => {
+    // (b1) Google đã chạy xong → YC-45: mã 5 (khung .bat "GOOGLE DA TAO XONG … chon CHE DO 2"), KHÔNG in "KHÔNG TẠO ĐƯỢC"
+    const caB1 = async (mod) => {
+      const Xb = dungMay({});
+      const truoc = fs.readFileSync(Xb.tep);
+      Xb.sim.datLoi(HONG_2301);
+      const b = await bamNut3(Xb, { mod: mod });
+      Xb.sim.xoaLoi();
+      return Object.assign(b, { X: Xb, cfgYNguyen: Buffer.compare(fs.readFileSync(Xb.tep), truoc) === 0 });
+    };
+    const b = await caB1();
+    dung(b.ma === 5 && /ĐÃ chạy xong và tự kiểm đạt/.test(b.ra) && /CHẾ ĐỘ 2/.test(b.ra), '(b1) mã ' + b.ma + ' — ' + b.ra.slice(-300));
+    dung(/GOOGLE ĐÃ TẠO XONG THÁNG 2026-10/.test(b.ra) && !/KHÔNG TẠO ĐƯỢC/.test(b.ra), '(b1) còn in "KHÔNG TẠO ĐƯỢC" hoặc thiếu tiêu đề đã tạo xong: ' + b.ra.slice(-300));
+    dung(b.cfgYNguyen && /Mã thoát: 5/.test(b.nhatKy), '(b1) link_thang phải y nguyên, nhật ký ghi mã thoát 5');
+    bang(lotMay(b.X, b.ra + '\n' + b.nhatKy), [], '(b1) INV-7');
+    b.X.sim.thaoGo();
+    const amB1 = await doiChungAm(async () => {
+      const Sai = napBanSua('nut-3-thang-moi.js', [["      if (e && e.maKeodon === 'DA_CHAY_XONG') {", '      if (false) {']]);
+      const y = await caB1(Sai);
+      y.X.sim.thaoGo();
+      return (y.ma !== 5 || /KHÔNG TẠO ĐƯỢC/.test(y.ra)) ? ['DA_CHAY_XONG thoát mã ' + y.ma + ', in "' + ((y.ra.match(/KHÔNG TẠO ĐƯỢC[^\n]*/) || [''])[0]) + '"'] : [];
+    }, 'YC-45 giữ mã 4 cho DA_CHAY_XONG');
+    return '(a) mã 6 · (d) Google cũ mã 6 · (b1) đã xong mã 5 · ' + await doiChungAm(async () => {
       const Sai = napBanSua('nut-3-thang-moi.js', [["      if (e && (e.maKeodon === 'GOOGLE_DANG_CHAY' || e.maKeodon === 'CHUA_RO_TIEN_DO')) {", '      if (false) {']]);
       const y = await caA(Sai);
       y.X.sim.thaoGo();
       return (y.ma !== 6 || /KHÔNG TẠO ĐƯỢC/.test(y.ra)) ? ['nút 3 thoát mã ' + y.ma + ', in "' + ((y.ra.match(/KHÔNG TẠO ĐƯỢC[^\n]*/) || [''])[0]) + '"'] : [];
-    }, 'nút 3 không có nhánh mã 6');
+    }, 'nút 3 không có nhánh mã 6') + '\n        · ' + amB1;
+  });
+
+  await test('T-CH-14', 'YC-46: tháng trên cờ (O2) quyết định, không so đồng hồ — (1) cờ tháng TRƯỚC ghi 10 phút trước → CO_CU_TRUOC_LUOT_NAY · (2) cờ ĐÚNG tháng ghi 20 phút trước → DA_CHAY_XONG (không báo oan) · (3) O2 rỗng → rơi về so giờ, câu nói rõ "ĐANG ĐOÁN THEO GIỜ" · (4) O2 đọc lỗi → rơi về so giờ, nêu chữ đang hiện', async () => {
+    const GOC = 'Google chuyển hướng 2 nấc mà không về JSON (nấc cuối HTTP 302, không có địa chỉ Location).';
+    const DD = ['POST→302 (có Location → ' + MAY_CHU_CH + ')', 'GET→302 (KHÔNG có Location)'];
+    const bayGio = Date.UTC(2026, 9, 1, 2, 0);                   // 09:00 1/10/2026 giờ Việt Nam
+    const nhan = (phutTruoc) => { const d = new Date(bayGio + 7 * 3600000 - phutTruoc * 60000).toISOString(); return 'DA_KHOI_TAO_' + d.slice(0, 10) + ' ' + d.slice(11, 16); };
+    const co = (x) => Object.assign({ ok: true, hanhDong: 'coTaoThang', thang: '2026-10', dangChay: false, buocDaXong: 'B7' }, x);
+    const tc = { batDauMs: bayGio, kyMoi: '2026-10' };
+    const ca = [
+      ['(1) cờ tháng trước, ghi 10 phút trước', co({ coKhoiTao: nhan(10), thangCo: '2026-09', thangCoTho: '2026-09' }), 'CO_CU_TRUOC_LUOT_NAY',
+        [/cờ của THÁNG 2026-09 \(ô THANG O2 của khối cờ\), không phải tháng đang tạo 2026-10/, /bấm lại nút 3 CHẾ ĐỘ 1/], [/ĐOÁN THEO GIỜ/, /CHẾ ĐỘ 2 với đúng link/]],
+      ['(2) cờ đúng tháng, ghi 20 phút trước', co({ coKhoiTao: nhan(20), thangCo: '2026-10', thangCoTho: '2026-10' }), 'DA_CHAY_XONG',
+        [/cờ ghi đúng tháng đang tạo \(ô THANG O2 = 2026-10\)/, /CHẾ ĐỘ 2 với đúng link \[6\/7\]/], [/ĐOÁN THEO GIỜ/]],
+      ['(3a) O2 rỗng, cờ 30 ngày trước', co({ coKhoiTao: nhan(30 * 1440), thangCo: '', thangCoTho: '' }), 'CO_CU_TRUOC_LUOT_NAY',
+        [/ĐANG ĐOÁN THEO GIỜ ghi trên cờ vì ô THANG O2 rỗng hoặc Google chưa trả ô đó/], []],
+      ['(3b) O2 rỗng, cờ vừa ghi', co({ coKhoiTao: nhan(1), thangCo: '', thangCoTho: '' }), 'DA_CHAY_XONG',
+        [/ĐANG ĐOÁN THEO GIỜ ghi trên cờ vì ô THANG O2 rỗng/, /CHẾ ĐỘ 2/], []],
+      ['(3c) Google cũ không trả thangCo', co({ coKhoiTao: nhan(30 * 1440) }), 'CO_CU_TRUOC_LUOT_NAY', [/ĐANG ĐOÁN THEO GIỜ/], []],
+      ['(4) O2 đọc lỗi', co({ coKhoiTao: nhan(1), thangCo: '', thangCoTho: '#REF!' }), 'DA_CHAY_XONG',
+        [/ĐANG ĐOÁN THEO GIỜ ghi trên cờ vì ô THANG O2 đang là "#REF!", không đọc ra tháng/], []],
+      ['(4b) O2 trả chuỗi không phải tháng', co({ coKhoiTao: nhan(30 * 1440), thangCo: '2026-13', thangCoTho: '2026-13' }), 'CO_CU_TRUOC_LUOT_NAY', [/ĐANG ĐOÁN THEO GIỜ/], []]
+    ];
+    const cham = (G) => {
+      const loi = [];
+      ca.forEach(([ten, c, ma, co_, khong]) => {
+        const k = G.ketLuanSauLoiDuongTruyen(GOC, c, null, DD, tc);
+        if (k.ma !== ma) loi.push(ten + ': mã ' + k.ma + ' ≠ ' + ma);
+        co_.forEach((rx) => { if (!rx.test(k.cau)) loi.push(ten + ': thiếu ' + rx); });
+        khong.forEach((rx) => { if (rx.test(k.cau)) loi.push(ten + ': không được có ' + rx); });
+        if (!/link_thang CHƯA được khai/.test(k.cau)) loi.push(ten + ': không nói link_thang CHƯA được khai');
+      });
+      return loi;
+    };
+    bang(cham(gw), [], 'bảng ' + ca.length + ' ca');
+    const am = await doiChungAm(async () => {
+      const Sai = napBanSua('gsheet-web-app.js', [["    const thangCo = /^\\d{4}-(0[1-9]|1[0-2])$/.test(String(co.thangCo || '').trim()) ? String(co.thangCo).trim() : '';", "    const thangCo = '';"]]);
+      return cham(Sai).filter((x) => /^\((1|2)\)/.test(x));
+    }, 'bỏ đọc O2 (quay về so đồng hồ 15 phút)');
+    return ca.length + ' ca đúng mã + đúng câu · ' + am;
   });
 
   await test('T-CH-13', 'bat/3_TAO_FILE_THANG_MOI.bat: nhánh mã 6 in ba dòng "CHUA PHAI THAT BAI…", nằm trước nhánh lỗi không đoán trước; ASCII thuần, CRLF, không dấu `!`', async () => {

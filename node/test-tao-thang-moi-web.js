@@ -1210,6 +1210,93 @@ function lechCongThuc2000(ssMoi) {
     return 'xong: ' + r1.coKhoiTao.slice(0, 12) + '… / B7 · khóa giữ → dangChay:true · 0 ô đổi · bản sao mới: không cờ\n        · ' + am;
   });
 
+  await test('TM-W-33', 'YC-46 phía Google: `coTaoThang` trả `thangCo` = tháng ở ô THANG (O2) chuẩn yyyy-MM — ô chữ "2026-10", ô Google đã đổi thành NGÀY, ô hỏng "#REF!" (→ rỗng + chữ đang hiện); vẫn không ghi ô nào', async () => {
+    const X = await kichBan({});
+    const goi = () => JSON.parse(X.sim.vo.doPost({ postData: { contents: JSON.stringify({
+      token: X.sim.biMat, hanhDong: 'coTaoThang', thang: '2026-10', idMoi: X.sim.idCua('2026-10') }) } }).getContent());
+    const mp = X.ssMoi.getSheetByName('Mapping_san_pham');
+    const ca = [];
+    const r1 = goi();
+    ca.push(['ô chữ', [r1.thangCo, r1.thangCoTho], ['2026-10', '2026-10']]);
+    mp.giaTri['2:15'] = new Date(2026, 8, 1);
+    const r2 = goi();
+    ca.push(['ô ngày 01/09/2026', r2.thangCo, '2026-09']);
+    mp.giaTri['2:15'] = '#REF!';
+    const truoc = chup(X.ssMoi);
+    const r3 = goi();
+    ca.push(['ô hỏng', [r3.thangCo, r3.thangCoTho], ['', '#REF!']]);
+    ca.push(['0 ô đổi', soOKhac(truoc, chup(X.ssMoi)), 0]);
+    const lech = ca.filter((x) => JSON.stringify(x[1]) !== JSON.stringify(x[2])).map((x) => x[0] + ': ' + JSON.stringify(x[1]));
+    bang(lech, [], 'bảng ca');
+    const Z = await kichBan({ suaNguon: sua('thangCo: thang.chuan, thangCoTho: thang.tho,', "thangCo: '', thangCoTho: thang.tho,") });
+    const rz = JSON.parse(Z.sim.vo.doPost({ postData: { contents: JSON.stringify({ token: Z.sim.biMat, hanhDong: 'coTaoThang', thang: '2026-10', idMoi: Z.sim.idCua('2026-10') }) } }).getContent());
+    const am = await doiChungAm(() => (rz.thangCo !== '2026-10' ? ['thangCo = ' + JSON.stringify(rz.thangCo) + ' trên sổ vừa tạo tháng 2026-10'] : []), 'Google không trả tháng của cờ');
+    return 'chữ → 2026-10 · ngày → 2026-09 · #REF! → "" (thô "#REF!") · 0 ô đổi\n        · ' + am;
+  });
+
+  await test('TM-W-34', 'YC-47: B5a hỏng giữa chừng VÀ merge() ném ở cụm thứ 2 → câu lỗi cuối vẫn là lỗi B5a (+ "không gộp lại được 1/N cụm"), các cụm khác vẫn gộp lại; không có lỗi gốc mà merge() hỏng → vẫn báo, không im lặng. Đối chứng âm: bỏ try/catch từng merge() → câu lỗi thành lỗi của merge()', async () => {
+    const DEM = sua('  var daChen = false, loiGoc = null;', '  var daChen = false, loiGoc = null, __demGop = 0;');
+    const MERGE2 = sua('        sh.getRange(g.r, c1, g.nr, c2 - c1 + 1).merge();',
+      "        if (++__demGop === 2) throw new Error('GIẢ LẬP: merge() hỏng ở cụm thứ 2'); sh.getRange(g.r, c1, g.nr, c2 - c1 + 1).merge();");
+    const ghep2 = (...fs2) => (s) => fs2.reduce((x, f) => f(x), s);
+    const CHET_B5A_2 = sua('    daChen = true;', "    daChen = true;\n    throw new Error('GIẢ LẬP: Google cắt ngang ngay sau khi chèn cột');");
+    const x = await kichBan({ suaNguon: ghep2(CHET_B5A_2, DEM, MERGE2) });
+    const tb = String(x.kq.thongBao);
+    const goc = tb.slice(tb.indexOf('): ') + 3);
+    dung(x.kq.ok === false && /ở bước B5a/.test(tb), 'phải chết ở B5a: ' + tb.slice(0, 200));
+    dung(goc.indexOf('GIẢ LẬP: Google cắt ngang ngay sau khi chèn cột') === 0, 'lỗi gốc phải đứng đầu nguyên văn: ' + goc.slice(0, 160));
+    dung(/kèm theo: không gộp lại được 1\/\d+ cụm ô gộp của sheet "Lợi nhuận": [A-Z]+\d+:[A-Z]+\d+ \(GIẢ LẬP: merge\(\) hỏng ở cụm thứ 2\)/.test(tb), 'thiếu câu phụ cụm không gộp lại được: ' + tb);
+    dung(tb.indexOf('Bản sao này đã hỏng giữa chừng') >= 0, 'vẫn phải nói bản sao hỏng (B5_DANG_LAM)');
+    const truocLN = x.ssCu.getSheetByName('Lợi nhuận').gopO.length, sauLN = x.ssMoi.getSheetByName('Lợi nhuận').gopO.length;
+    bang(sauLN, truocLN - 1, 'số cụm gộp `Lợi nhuận` sau khi chết (chỉ thiếu đúng cụm hỏng)');
+    // không có lỗi gốc, merge() hỏng → không im lặng
+    const y = await kichBan({ suaNguon: ghep2(DEM, MERGE2) });
+    dung(y.kq.ok === false && /Chèn cột xong nhưng không gộp lại được 1\//.test(String(y.kq.thongBao)), 'merge hỏng mà không lỗi gốc phải báo: ' + String(y.kq.thongBao).slice(0, 200));
+    const z = await kichBan({ suaNguon: ghep2(CHET_B5A_2, DEM, MERGE2, sua('      } catch (eg) {\n', '      } catch (eg) { throw eg;\n')) });
+    const tbZ = String(z.kq.thongBao);
+    const am = await doiChungAm(() => (tbZ.indexOf('GIẢ LẬP: Google cắt ngang ngay sau khi chèn cột') < 0 ? ['câu lỗi cuối: "' + tbZ.slice(tbZ.indexOf('): ') + 3, tbZ.indexOf('): ') + 80) + '"'] : []), 'merge() trong finally ném thẳng');
+    return 'lỗi gốc giữ nguyên + "…' + tb.slice(tb.indexOf('kèm theo'), tb.indexOf('kèm theo') + 90) + '…" · ' + (truocLN - 1) + '/' + truocLN + ' cụm gộp lại · không lỗi gốc vẫn báo\n        · ' + am;
+  });
+
+  await test('TM-W-35', 'Đợt 4 P-9: khuôn `TikTok Shop` theo TIÊU ĐỀ DÒNG 2 — DEMO 17 cột giữ E/F/L/O/P; SỔ THẬT tháng 9 (15 cột như Shopee mall) kéo E/F/L/M/N, KHÔNG gieo công thức vào O (Còn Nợ)/P; khuôn lạ → KHUON_TIKTOK_LA, 0 lệnh ghi. Đối chứng âm: gán cứng khuôn 17 cột → O/P của sổ thật bị gieo công thức', async () => {
+    const FILE_THAT = path.join(DAU_VAO, 'TIKTOK', 'THÁNG-9-2026-KINH-DOANH-POB (1).xlsx');
+    dung(fs.existsSync(FILE_THAT), 'thiếu file sổ thật tháng 9: ' + FILE_THAT);
+    // (a) DEMO 17 cột: câu khuôn trong nhật ký
+    dung((A.kq.nhatKy || []).some((s) => /Sheet `TikTok Shop`: khuôn .*17 cột/.test(s)), 'DEMO phải báo khuôn 17 cột: ' + JSON.stringify(A.kq.nhatKy).slice(0, 200));
+    // (b) sổ thật 15 cột — lập kế hoạch trên ảnh chụp thật
+    if (!MAU.THAT) {
+      const simN = gl.taoGiaLap({});
+      const ssN = simN.khaiThang('2026-09', 'THÁNG-9-2026-KINH-DOANH-POB');
+      await napXlsxVaoGiaLap(ssN, FILE_THAT);
+      tinhLaiBangTinh(ssN);
+      MAU.THAT = { ss: ssN, ky: '2026-09', ten: 'THÁNG-9-2026-KINH-DOANH-POB' };
+    }
+    const keTS = (suaNguon) => {
+      const sim = gl.taoGiaLap({ ngay: '2026-10-01T02:00:00Z', suaNguon: suaNguon });
+      const ssCu = saoFile(MAU.THAT.ss, sim.khaiThang('2026-09', MAU.THAT.ten));
+      const ssMoi = saoFile(MAU.THAT.ss, sim.khaiThang('2026-10', 'THÁNG-10-2026-KINH-DOANH'));
+      const ke = sim.vo.TaoThangMoi.lapKeHoach(sim.vo.chupFileThangMoi_(ssCu), sim.vo.chupFileThangMoi_(ssMoi), { thangMoi: '2026-10', nguonClone: MAU.THAT.ten, thoiDiem: new Date() });
+      sim.thaoGo();
+      const tt = [].concat(...ke.buoc.map((b) => b.thaoTac)).filter((t) => t.sheet === 'TikTok Shop');
+      return { ke, keo: [...new Set(tt.filter((t) => t.loai === 'KEO_CT').map((t) => t.c))].sort((a, b) => a - b),
+        ctOP: tt.filter((t) => (t.loai === 'GHI_CT' || t.loai === 'KEO_CT') && t.c >= 15 && !(t.r === 3 && t.c === 15)).map((t) => t.loai + '@' + t.c + ':' + (t.r || t.r1)) };
+    };
+    const that = keTS();
+    dung(that.ke.chay === true, 'sổ thật phải lập được kế hoạch: ' + JSON.stringify(that.ke.lyDoDung));
+    bang(that.keo, [5, 6, 12, 13, 14], 'cột kéo công thức `TikTok Shop` sổ thật');
+    bang(that.ctOP, [], 'công thức gieo vào O/P sổ thật (ngoài O3 = L3)');
+    dung(that.ke.thongBao.some((s) => /khuôn .*15 cột/.test(s)), 'sổ thật phải báo khuôn 15 cột');
+    // (c) khuôn lạ → dừng, 0 lệnh ghi
+    const doiM2 = (ssMoi) => { ssMoi.getSheetByName('TikTok Shop').giaTri['2:15'] = 'Mã SP'; };
+    const la = await kichBan({ vo: doiM2 });
+    dung(la.kq.loi === 'KHUON_TIKTOK_LA' && /O2="Mã SP"/.test(String(la.kq.thongBao)), 'khuôn lạ phải dừng KHUON_TIKTOK_LA: ' + JSON.stringify(la.kq).slice(0, 200));
+    bang(la.sim.nhatKyGhi.length, 0, 'số lệnh ghi khi khuôn lạ');
+    // ĐỐI CHỨNG ÂM — gán cứng khuôn 17 cột như 2.7.2
+    const cung = keTS(sua('  function boCucTikTokShop(ss) {\n    if (!ss) return null;', "  function boCucTikTokShop(ss) {\n    if (ss) return { boCuc: BO_CUC.TIKTOK_SHOP, ten: 'gán cứng' };"));
+    const am = await doiChungAm(() => cung.ctOP.length || JSON.stringify(cung.keo) !== '[5,6,12,13,14]' ? ['kéo ' + JSON.stringify(cung.keo) + ' · gieo O/P: ' + cung.ctOP.slice(0, 3).join(' ')] : [], 'gán cứng khuôn 17 cột (2.7.2)');
+    return 'DEMO: khuôn 17 cột · sổ thật: kéo E/F/L/M/N, 0 công thức vào O/P · khuôn lạ: KHUON_TIKTOK_LA, 0 lệnh ghi\n        · ' + am;
+  });
+
   RAC_MAY.forEach((d) => { try { fs.rmSync(d, { recursive: true, force: true }); } catch (e) { /* thư mục tạm */ } });
 
   console.log('\n=== ' + soDat + ' ĐẠT · ' + soHong + ' HỎNG · tổng ' + (soDat + soHong) + ' ===');

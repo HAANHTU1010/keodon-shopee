@@ -22,6 +22,7 @@ const { chayLenGoogleSheet, thangCua } = require('./chay-google-sheet');
 const { WebAppGoogleSheet, idFileThang, canhBaoThangSau, dongHoVN } = require('./gsheet-web-app');
 const { KhoTracking, duongDanOut, docBangXlsx, TEN_SHEET_MAPPING } = require('./kho-tracking');
 const { taoRunId, dongRun, dongRunTuKetQua, tenMay } = require('./dong-run');
+const TT = require('./chay-tiktok');
 
 const ROOT = path.join(__dirname, '..');
 const DAU_VAO_MAC_DINH = path.join(ROOT, '..', '..', '00_DAU_VAO');
@@ -331,7 +332,8 @@ class NguonThuMucTheoShop extends NguonThuMuc {
     }
     // Thư mục con KHÔNG khớp tên gian hàng nào: file thả vào đó sẽ không bao giờ được đọc. Phải
     // nhắc ra màn hình — im lặng bỏ qua nghĩa là mất đơn mà không ai biết (NOTES_DEV mục 4.4).
-    const hopLe = this.tenHopLe(cfg);
+    // Đợt 4: thư mục của sàn khác mà tool CÓ đọc (TikTok Shop — `chay-tiktok.js`) không phải thư mục lạ.
+    const hopLe = this.tenHopLe(cfg).concat(this.thuMucSanKhac || []);
     if (fs.existsSync(this.vao)) {
       for (const ten of fs.readdirSync(this.vao)) {
         const d = path.join(this.vao, ten);
@@ -404,6 +406,7 @@ function taoNguon(cv, cfg) {
   if (cv.__boCucCu) return new NguonThuMuc(cv.__thaFile, cv.__daXuLy);
   const n = new NguonThuMucTheoShop(cv.__thaFile, cv.__tenThuMucGian, cv.__tenDaXuLy);
   n.taoThuMuc(cfg);
+  n.thuMucSanKhac = [path.basename(TT.taoThuMuc(cv))];        // Đợt 4: dựng sẵn thư mục TikTok Shop, không coi là thư mục lạ
   return n;
 }
 
@@ -544,10 +547,29 @@ async function chayVanHanhGoogle(cv, cfg, thoiDiem, ngayGhi) {
 
     // Thả sai chỗ: dừng trước cả lối ra "không có file mới" (xem chú thích ở chayVanHanh).
     nguon.kiemTraThaSaiCho(cfg);
+    // ĐỢT 4 — TikTok Shop. (1) YC-50: thả nhầm SÀN (báo cáo TikTok trong thư mục Shopee, file Shopee/lạ trong thư mục TikTok) → dừng CẢ lượt,
+    // chưa ghi gì, chưa chuyển file nào. (2) TikTok chạy trong vòng bọc riêng: lỗi của nó in ra rồi bốn gian Shopee chạy tiếp y như cũ
+    // (TT-14) — mã mới hỏng không được làm tắc đường ghi hằng ngày.
+    TT.soatThaNhamSan({ lop, cv, cfg, thuMucShopee: (g) => (nguon.thuMucCua ? nguon.thuMucCua(g) : path.join(nguon.vao, g)) });
+    let maTT = null;
+    if (TT.coFile(cv)) {
+      try {
+        maTT = (await TT.chayTikTok({ lop, cv, thoiDiem, thang, runId, cauHinhGoogle, in: (t) => console.log(t) })).ma;
+      } catch (eTT) {
+        maTT = 1;
+        console.log('\nLỖI TIKTOK SHOP: ' + eTT.message);
+        console.log('  Báo cáo TikTok nằm nguyên trong thư mục để bấm lại. Phần đã ghi lên Google Sheet (nếu có) giữ nguyên, chạy lại không ghi trùng.');
+        console.log('  Bốn gian Shopee vẫn chạy tiếp bình thường.');
+      }
+    }
     const boQua = nguon.fileBoQua(cfg);
     if (boQua.length) console.log('Bỏ qua (chỉ nhận .xlsx): ' + boQua.join(', '));
     const files = nguon.layFileMoi(cfg);
     if (!files.length) {
+      if (maTT !== null) {
+        console.log('\nShopee: không có file mới trong thư mục bốn gian hàng.');
+        return maTT;
+      }
       console.log('\nKHÔNG CÓ FILE MỚI — không có gì để làm, tool chưa ghi gì cả.');
       console.log('  Thả file xuất Shopee (.xlsx) vào ' + cv.__thaFile + ' rồi bấm lại.');
       return 2;
@@ -615,7 +637,8 @@ async function chayVanHanhGoogle(cv, cfg, thoiDiem, ngayGhi) {
     const dongRunXong = dongRunTuKetQua(run, kq);
     console.log('\n' + dongRunXong);
     ghiLogGoogle(fileLog, tieuDeLog + ' · file: ' + (kq.tenFile || ''), [dongRunXong, ''].concat(d), canhBao, loi, null);
-    return loi.length ? 1 : 0;
+    if (maTT === 1) console.log('\nCHÚ Ý: phần TikTok Shop ở trên KHÔNG xong — đọc dòng "LỖI TIKTOK SHOP".');
+    return (loi.length || maTT === 1) ? 1 : 0;
   } catch (e) {
     // D-46: câu lỗi (kể cả mã HTTP thật) phải vào nhật ký, không chỉ trôi qua màn hình rồi mất.
     // YC-38.3: lượt hỏng vẫn có dòng RUN — số nào không chắc thì in "?" chứ không in 0 (Google có thể đã
@@ -635,7 +658,9 @@ async function main() {
   await chayDev();
 }
 
-main().catch(e => {
+// Đợt 4: `require` từ bộ test (chạy trọn nút 4 trong một tiến trình với Web App giả) thì chỉ xuất hàm, không tự chạy.
+module.exports = { chayVanHanh, NguonThuMucTheoShop, taoNguon };
+if (require.main === module) main().catch(e => {
   console.error('\nLỖI: ' + e.message);
   if (thamSo('--van-hanh')) {
     // Ở chế độ Google Sheet câu 'không ghi gì' là SAI: Apps Script có thể đã ghi xong rồi mới rớt

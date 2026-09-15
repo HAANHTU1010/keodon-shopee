@@ -184,6 +184,42 @@ var TaoThangMoi = (function () {
     }
   };
 
+  /**
+   * Khuôn `TikTok Shop` đọc theo TIÊU ĐỀ DÒNG 2, không đoán theo tên sheet (Đợt 4, P-9 — đo 15/9): DEMO tháng 9 trên Google còn khuôn
+   * 13/9 (17 cột: M=Ảnh, N=Ghi Chú, O=Mã hàng, P=Check tồn, Q=Còn Nợ), còn sổ thật đã về 15 cột như `Shopee mall` (M=Mã hàng,
+   * N=Check tồn, O=Còn Nợ). Áp khuôn 17 cột lên sổ 15 cột là gieo công thức vào O (Còn Nợ) và P → sổ tháng mới sai sheet đó.
+   * Tiêu đề không khớp khuôn nào → null: người gọi DỪNG trước khi ghi ô nào (`KHUON_TIKTOK_LA`).
+   * @returns {{boCuc: Object, ten: string}|null}
+   */
+  function boCucTikTokShop(ss) {
+    if (!ss) return null;
+    // YC-55 (BA 16/9): KHÔNG gõ cứng chữ cái cột — tìm từng cột theo NỘI DUNG tiêu đề dòng 2 (như mục 8.5 làm cho sheet `Tiktok`).
+    var viTri = {};
+    for (var c = 1; c <= 40; c++) {
+      var t = Utils.chuanHoaChuoi(tinh(ss, 2, c));
+      if (t && viTri[t] == null) viTri[t] = c;
+    }
+    var can = { tenVietTat: 'tên viết tắt', tenSP: 'tên sản phẩm', donVi: 'đơn vị', tienSP: 'tổng tiền sp', mgg: 'mgg shop', chiPhi: 'chi phí',
+      thue: 'thuế', doanhThu: 'doanh thu', maHang: 'mã hàng', checkTon: 'check tồn' };
+    var cot = {};
+    for (var k in can) {
+      if (!Object.prototype.hasOwnProperty.call(can, k)) continue;
+      if (viTri[can[k]] == null) return null;
+      cot[k] = viTri[can[k]];
+    }
+    // Khối đơn kết thúc ở "Còn Nợ" nếu nó đứng ngay sau "Check tồn" (như Shopee mall), không thì ở "Check tồn".
+    var conNo = viTri['còn nợ'];
+    var cuoi = conNo === cot.checkTon + 1 ? conNo : cot.checkTon;
+    var chu = function (n) { return Utils.chuCot(n); };
+    var boCuc = {
+      cotTenVietTat: chu(cot.tenVietTat), cotTenSP: chu(cot.tenSP), cotDonVi: chu(cot.donVi), cotMaHang: chu(cot.maHang), cotCheckTon: chu(cot.checkTon),
+      cotDoanhThu: chu(cot.doanhThu), cotTong: [chu(cot.tienSP), chu(cot.mgg), chu(cot.chiPhi), chu(cot.thue), chu(cot.doanhThu)], cotCuoiDon: chu(cuoi),
+      cotCongThuc: [chu(cot.tenSP), chu(cot.donVi), chu(cot.doanhThu), chu(cot.maHang), chu(cot.checkTon)]
+    };
+    return { boCuc: boCuc, ten: 'Mã hàng=' + boCuc.cotMaHang + ', Check tồn=' + boCuc.cotCheckTon + (conNo ? ', Còn Nợ=' + chu(conNo) : '') + ' (' +
+      (cot.maHang === 13 ? '15 cột như Shopee mall' : '17 cột có Ảnh, Ghi Chú') + ')' };
+  }
+
   var SHEET_GIAN_HANG = ['Shopee mall', 'Offood', 'Importmart', 'Babyiu'];
   var SHEET_DON_NGOAI = 'Đơn ngoài';
   var SHEET_TIKTOK = 'Tiktok';
@@ -435,6 +471,18 @@ var TaoThangMoi = (function () {
       return { chay: false, maDung: 'DA_KHOI_TAO', lop1: lop1, lop2: [], lyDoDung: lyDo, chayTiep: false };
     }
 
+    // Đợt 4 P-9: khuôn `TikTok Shop` lạ → DỪNG khi chưa ghi ô nào, kể cả lượt chạy tiếp (khuôn không đổi giữa hai lượt).
+    var ssTS = sheet(anhMoi, SHEET_TIKTOK_SHOP);
+    var khuonTS = ssTS ? boCucTikTokShop(ssTS) : null;
+    if (ssTS && !khuonTS) {
+      var tdTS = ['L', 'M', 'N', 'O', 'P'].map(function (chu) { return chu + '2="' + String(tinh(ssTS, 2, C(chu)) == null ? '' : tinh(ssTS, 2, C(chu))).trim() + '"'; });
+      lyDo.push('Sheet `' + SHEET_TIKTOK_SHOP + '` có tiêu đề dòng 2 không khớp khuôn nào tool biết (' + tdTS.join(' ') + '). Tool biết hai khuôn: ' +
+        '15 cột (M=Mã hàng, N=Check tồn) và 17 cột (M=Ảnh, N=Ghi Chú, O=Mã hàng, P=Check tồn). Dọn theo khuôn đoán sai là gieo công thức ' +
+        'vào cột của người — KHÔNG khởi tạo, tool chưa ghi ô nào. Báo người phụ trách.');
+      return { chay: false, maDung: 'KHUON_TIKTOK_LA', lop1: lop1, lop2: [], lyDoDung: lyDo, chayTiep: false };
+    }
+    if (khuonTS) ghiChu.push('Sheet `' + SHEET_TIKTOK_SHOP + '`: khuôn ' + khuonTS.ten + ' (đọc theo tiêu đề dòng 2).');
+
     var dangDo = /^DANG_KHOI_TAO_/.test(trangThai);
     var lop2 = [];
     if (!dangDo) {
@@ -449,7 +497,7 @@ var TaoThangMoi = (function () {
 
       var lechGH = [];
       SHEET_GIAN_HANG.concat([SHEET_TIKTOK_SHOP]).forEach(function (t) {
-        var bc = t === SHEET_TIKTOK_SHOP ? BO_CUC.TIKTOK_SHOP : BO_CUC.CHUAN;
+        var bc = t === SHEET_TIKTOK_SHOP && khuonTS ? khuonTS.boCuc : BO_CUC.CHUAN;
         var q = quetDuLieu(sheet(anhMoi, t), 4, C('A'), DAY_VUNG, C(bc.cotCuoiDon), 5, cu(t));
         banSao += q.soOBanSao;
         if (q.soO) lechGH.push(t + ': ' + q.soO + ' ô ' + q.viTri.join(' '));
@@ -1001,7 +1049,9 @@ var TaoThangMoi = (function () {
       var ss = sheet(anhMoi, t);
       var laTS = t === SHEET_TIKTOK_SHOP;
       if (!ss) { if (!laTS) kq.canhBao.push('Vỏ tháng mới không có sheet `' + t + '` → bỏ qua.'); return; }
-      var bc = laTS ? BO_CUC.TIKTOK_SHOP : BO_CUC.CHUAN;
+      var khuon = laTS ? boCucTikTokShop(ss) : null;
+      if (laTS && !khuon) throw new Error('Sheet `' + SHEET_TIKTOK_SHOP + '`: khuôn lạ — lẽ ra `kiemDieuKien` đã dừng (lỗi lập trình).');
+      var bc = laTS ? khuon.boCuc : BO_CUC.CHUAN;
       var b = thaoTacDonGianHang(t, ss, bc, sheet(anhCu, t));
       ttB3 = ttB3.concat(b.thaoTac);
       kq.doc.vungCongThuc[t] = { dongCuoiDon: b.dongCuoiDon, gieoLai: b.gieoLai, cot: b.do };
@@ -1211,6 +1261,8 @@ var TaoThangMoi = (function () {
     laCongThucThamChieu: laCongThucThamChieu,
     SHEET_GIAN_HANG: SHEET_GIAN_HANG,
     BO_CUC: BO_CUC,
+    boCucTikTokShop: boCucTikTokShop,
+    chuanThangCo: chuanThangCo,
     DON_NGOAI: DON_NGOAI,
     doiDauPhanCach: doiDauPhanCach,
     oCoDuLieu: oCoDuLieu,
@@ -1236,4 +1288,4 @@ var TaoThangMoi = (function () {
   };
 })();
 
-var VAN_TAY_TAOTHANGMOI = '6e124ea7';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_TAOTHANGMOI = '6ed3032a';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

@@ -10,7 +10,7 @@ const path = require('path');
 
 const THU_TU = [
   'Utils.gs', 'Schema.gs', 'CaiDat.gs', 'Config.gs',
-  'adapters/AdapterFileXuat.gs',
+  'adapters/AdapterFileXuat.gs', 'adapters/AdapterTikTok.gs',
   'DanhMuc.gs', 'MapListing.gs', 'Normalize.gs',
   'KeyIn.gs', 'Main.gs',
   'tests/KhoGiaLap.gs', 'tests/NguonGiaLap.gs', 'tests/TestData.gs', 'tests/TestSuite.gs'

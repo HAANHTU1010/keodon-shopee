@@ -46,7 +46,7 @@ const { URL } = require('url');
  * Bản của VỎ MÁY — bằng `version` trong package.json và `var PHIEN_BAN` trong `src/ShellAppsScript.gs` khi phát hành
  * (T-DT-23 canh). Gửi lên Google trong trường `banMay` của mọi gói.
  */
-const PHIEN_BAN = '2.7.2';
+const PHIEN_BAN = '2.8.0';
 
 /**
  * YC-42: bản Web App THẤP NHẤT máy này còn dùng được. Web App dưới mốc → CHẶN trước lô đầu tiên, câu nói rõ bên nào cũ và
@@ -158,7 +158,7 @@ function moTaDuongDi(ds) {
  * hành động lạ, ngoại lệ) vẫn là LỖI ném ra như mọi hành động khác.
  */
 const MA_TU_CHOI_TAO_THANG = ['DA_KHOI_TAO', 'FILE_CO_DU_LIEU', 'B5_DANG_LAM', 'TU_KIEM_LECH', 'TRUNG_FILE',
-  'THAM_SO_SAI', 'SAI_THANG_FILE', 'DANG_BAN', 'THIEU_SHEET'];
+  'THAM_SO_SAI', 'SAI_THANG_FILE', 'DANG_BAN', 'THIEU_SHEET', 'KHUON_TIKTOK_LA'];
 
 /**
  * Việc phải làm cho từng mã của `taoThangMoi`. Viết cho người bấm nút 3, không cho người đọc mã: câu nào cũng
@@ -185,6 +185,9 @@ const GOI_Y_TAO_THANG = {
   DANG_BAN: ' → Một máy khác đang kéo đơn hoặc tạo tháng trên Web App. Đợi vài phút rồi bấm lại nút 3 — tool chưa ghi ô nào.',
   THIEU_SHEET: ' → File tháng mới thiếu một sheet của sổ tháng trước. Đừng đổi tên hay xóa sheet của bản sao; tạo bản sao ' +
     'mới rồi chạy lại.',
+  // Đợt 4 P-9: dọn `TikTok Shop` theo khuôn đoán sai là gieo công thức vào cột của người — tool dừng khi chưa ghi gì.
+  KHUON_TIKTOK_LA: ' → Tiêu đề dòng 2 của sheet `TikTok Shop` không khớp khuôn nào tool biết, nên tool KHÔNG dọn sổ này — chưa ghi ô ' +
+    'nào, link_thang CHƯA được khai. Đừng tự sửa tiêu đề: chụp màn hình dòng 1–3 của sheet đó gửi người phụ trách.',
   VI_PHAM_INV2: ' → Lỗi lập trình (lõi xin tạo sheet lạ) — tool đã dừng. Gửi nhật ký cho người phụ trách.',
   THAO_TAC_LA: ' → Lỗi lập trình (máy và Web App lệch bản lõi) — tool đã dừng. Gửi nhật ký cho người phụ trách.'
 };
@@ -1135,7 +1138,7 @@ class WebAppGoogleSheet {
       let co = null, loiDoc = null;
       try { co = await this.docCoTaoThang(nc.idMoi, nc.kyMoi); } catch (e2) { loiDoc = e2 || new Error('lượt đọc cờ hỏng không rõ lý do'); }
       this.nhatKyDuongTruyen.push('đọc lại cờ: ' + moTaDuongDi(this.duongDiCuoi));
-      const kl = ketLuanSauLoiDuongTruyen(e.cauGoc || e.message, co, loiDoc, duongDi, { batDauMs: nc.batDauMs });
+      const kl = ketLuanSauLoiDuongTruyen(e.cauGoc || e.message, co, loiDoc, duongDi, { batDauMs: nc.batDauMs, kyMoi: nc.kyMoi });
       const eKl = new Error(this.chePhu(kl.cau));
       eKl.maKeodon = kl.ma;
       eKl.loiGoc = e;
@@ -1177,6 +1180,8 @@ function gioVN(ms) {
  * Máy vừa mất đường trả lời của một lượt `taoThangMoi` và đã hỏi lại cờ (`coTaoThang`). Mỗi ca một mã, một việc phải làm:
  *   · đọc cờ hỏng / Google cũ chưa có lệnh đọc cờ → `CHUA_RO_TIEN_DO`: chưa biết Google tới đâu, có thể VẪN ĐANG CHẠY — đợi 5 phút;
  *   · khóa Web App đang bị giữ → `GOOGLE_DANG_CHAY`: chưa phải thất bại — đợi 5 phút, đừng bấm chồng;
+ *   · cờ `DA_KHOI_TAO_…` mà ô THANG O2 (`co.thangCo`, YC-46) = tháng đang tạo → `DA_CHAY_XONG`; khác tháng → `CO_CU_TRUOC_LUOT_NAY`.
+ *     Chỉ khi O2 rỗng/không đọc được mới ĐOÁN theo giờ trên cờ (và câu nói rõ là đang đoán):
  *   · cờ `DA_KHOI_TAO_…` ghi trong lần bấm này → `DA_CHAY_XONG`: khai link bằng chế độ 2;
  *   · cờ `DA_KHOI_TAO_…` ghi TRƯỚC lần bấm này (quá `DUNG_SAI_GIO_CO_MS`) → `CO_CU_TRUOC_LUOT_NAY`: KHÔNG kết luận "đã xong" — bản sao
  *     tháng mới lấy từ sổ tháng trước mang nguyên cờ `DA_KHOI_TAO` của THÁNG TRƯỚC (TM-W-09); Google chưa chạy mà máy bảo chọn
@@ -1190,7 +1195,8 @@ function gioVN(ms) {
  * @param {Object|null} co       phản hồi `coTaoThang`
  * @param {Error|null} loiDoc    lỗi của lượt đọc cờ
  * @param {string[]} duongDi     đường đi của lượt hỏng
- * @param {Object} [tuyChon]     `batDauMs` — lúc máy bắt đầu lần tạo tháng này (không có thì không xét tuổi cờ)
+ * @param {Object} [tuyChon]     `kyMoi` — tháng đang tạo `yyyy-MM` (YC-46: so với tháng trên cờ) · `batDauMs` — lúc máy bắt đầu lần tạo
+ *                               tháng này (chỉ dùng khi O2 không đọc được; không có thì không xét tuổi cờ)
  * @returns {{ma: string, cau: string}}
  */
 function ketLuanSauLoiDuongTruyen(cauGoc, co, loiDoc, duongDi, tuyChon) {
@@ -1219,15 +1225,31 @@ function ketLuanSauLoiDuongTruyen(cauGoc, co, loiDoc, duongDi, tuyChon) {
       'đúng bảy giá trị — tool chạy tiếp từ bước đã xong. ' + CHUA_KHAI);
   }
   if (/^DA_KHOI_TAO/.test(khoiTao)) {
+    const VIEC_CO_CU = ' Máy KHÔNG kết luận là đã xong. Việc phải làm: bấm lại nút 3 CHẾ ĐỘ 1 với đúng bảy giá trị: sổ đã khởi tạo xong ' +
+      'thật thì Google sẽ báo [DA_KHOI_TAO] và chỉ sang chế độ 2 — ĐỪNG chọn chế độ 2 trước khi thấy câu đó. ' + CHUA_KHAI;
+    const VIEC_XONG = ' Việc phải làm: bấm lại nút 3, chọn CHẾ ĐỘ 2 với đúng link [6/7] để khai link — ĐỪNG chọn lại chế độ 1.';
+    // YC-46: tháng GHI TRÊN CỜ (ô THANG O2) quyết định — không so đồng hồ. Bấm lại sau 20 phút hay máy lệch giờ không còn bị báo oan.
+    const thangCo = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(co.thangCo || '').trim()) ? String(co.thangCo).trim() : '';
+    const kyMoi = String(t.kyMoi || '').trim();
+    if (thangCo && kyMoi) {
+      if (thangCo !== kyMoi) {
+        return kl('CO_CU_TRUOC_LUOT_NAY', 'Google không còn chạy, nhưng cờ ' + khoiTao + ' trên file tháng mới là cờ của THÁNG ' + thangCo +
+          ' (ô THANG O2 của khối cờ), không phải tháng đang tạo ' + kyMoi + ' — cờ của sổ tháng trước đi theo bản sao, KHÔNG phải do lần ' +
+          'này ghi.' + VIEC_CO_CU);
+      }
+      return kl('DA_CHAY_XONG', 'Google ĐÃ chạy xong và tự kiểm đạt (cờ ' + khoiTao + ') — cờ ghi đúng tháng đang tạo (ô THANG O2 = ' + thangCo +
+        ') — máy chỉ mất đường trả lời. ' + CHUA_KHAI + VIEC_XONG);
+    }
+    // O2 rỗng / không đọc được (sổ do bản cũ tạo, hoặc Google chưa Deploy bản trả O2) → chỉ còn cách ĐOÁN theo giờ trên cờ, và nói rõ là đoán.
+    const vi = co.thangCoTho ? 'ô THANG O2 đang là "' + String(co.thangCoTho).slice(0, 40) + '", không đọc ra tháng' : 'ô THANG O2 rỗng hoặc Google chưa trả ô đó';
+    const DOAN = ' (ĐANG ĐOÁN THEO GIỜ ghi trên cờ vì ' + vi + ')';
     const moc = mocCoKhoiTao(khoiTao);
     if (moc != null && t.batDauMs != null && moc < Number(t.batDauMs) - DUNG_SAI_GIO_CO_MS) {
       return kl('CO_CU_TRUOC_LUOT_NAY', 'Google không còn chạy, nhưng cờ ' + khoiTao + ' trên file tháng mới được ghi TRƯỚC lần bấm này (' +
-        gioVN(t.batDauMs) + ') — KHÔNG phải do lần này ghi; thường là cờ của sổ tháng trước đi theo bản sao. Máy KHÔNG kết luận là ' +
-        'đã xong. Việc phải làm: bấm lại nút 3 CHẾ ĐỘ 1 với đúng bảy giá trị: sổ đã khởi tạo xong thật thì Google sẽ báo [DA_KHOI_TAO] và chỉ sang ' +
-        'chế độ 2 — ĐỪNG chọn chế độ 2 trước khi thấy câu đó. ' + CHUA_KHAI);
+        gioVN(t.batDauMs) + ')' + DOAN + ' — KHÔNG phải do lần này ghi; thường là cờ của sổ tháng trước đi theo bản sao.' + VIEC_CO_CU);
     }
-    return kl('DA_CHAY_XONG', 'Google ĐÃ chạy xong và tự kiểm đạt (cờ ' + khoiTao + ') — máy chỉ mất đường trả lời. ' + CHUA_KHAI +
-      ' Việc phải làm: bấm lại nút 3, chọn CHẾ ĐỘ 2 với đúng link [6/7] để khai link — ĐỪNG chọn lại chế độ 1.');
+    return kl('DA_CHAY_XONG', 'Google ĐÃ chạy xong và tự kiểm đạt (cờ ' + khoiTao + ')' + DOAN + ' — máy chỉ mất đường trả lời. ' + CHUA_KHAI +
+      VIEC_XONG);
   }
   if (buoc === 'B5_DANG_LAM') {
     return kl('B5_DANG_LAM', 'Google đã DỪNG (không còn chạy), cờ BUOC_DA_XONG = B5_DANG_LAM.' +

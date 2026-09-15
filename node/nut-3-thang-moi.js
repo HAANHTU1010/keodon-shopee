@@ -504,6 +504,14 @@ async function chay(tc) {
         inRa('link_thang trong CAU_HINH_VAN_HANH.json KHÔNG đổi.');
         return 6;
       }
+      // YC-45 (Đợt 4): Google ĐÃ chạy xong 8/8, chỉ mất đường trả lời. "KHÔNG TẠO ĐƯỢC" rồi ngay dưới "Google ĐÃ chạy xong" là hai câu
+      // ngược nhau — người bấm dễ bấm lại chế độ 1 và tạo bản sao rác. Mã 5: khung `.bat` "GOOGLE DA TAO XONG … chon CHE DO 2".
+      if (e && e.maKeodon === 'DA_CHAY_XONG') {
+        inRa('GOOGLE ĐÃ TẠO XONG THÁNG ' + gt.kyMoi + ' — MÁY CHỈ MẤT ĐƯỜNG TRẢ LỜI, CHƯA KHAI LINK.', 'vang');
+        inRa(cau, 'vang');
+        inRa('link_thang trong CAU_HINH_VAN_HANH.json KHÔNG đổi.');
+        return 5;
+      }
       inRa('KHÔNG TẠO ĐƯỢC THÁNG ' + gt.kyMoi + '.', 'do');
       inRa(cau, 'do');
       inRa('link_thang trong CAU_HINH_VAN_HANH.json KHÔNG đổi.');
