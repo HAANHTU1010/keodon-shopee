@@ -224,6 +224,8 @@ function napVo(sim, suaNguon) {
       createTextOutput(s) { return { _s: String(s), setMimeType() { return this; }, getContent() { return this._s; } }; }
     },
     Utilities: {
+      // 2.7.2: `ngayThat_` dựng ô ngày bằng Utilities.parseDate theo múi giờ của sổ — giả lập API đó như Google (xem mui-gio-du-an.js).
+      parseDate: (chuoi, tz, mau) => new DateGia(require('./mui-gio-du-an').phanTichNgayTheoMuiGio(chuoi, tz, mau)),
       DigestAlgorithm: { SHA_256: 'SHA_256' },
       Charset: { UTF_8: 'UTF_8' },
       // Byte CO DAU nhu Apps Script (-128..127) — tra khong dau thi `bam256_` ra hex khac ban chay that.

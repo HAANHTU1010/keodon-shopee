@@ -270,6 +270,8 @@ function nap(tuyChon) {
     })
   };
   const Utilities = {
+    // 2.7.2: `ngayThat_` dựng ô ngày bằng Utilities.parseDate theo múi giờ của sổ — giả lập API đó như Google (xem mui-gio-du-an.js).
+    parseDate: (chuoi, tz, mau) => new Date(require('./mui-gio-du-an').phanTichNgayTheoMuiGio(chuoi, tz, mau)),
     DigestAlgorithm: { SHA_256: 'SHA_256' },
     Charset: { UTF_8: 'UTF_8' },
     // Byte CÓ DẤU như Apps Script — trả không dấu thì `bam256_` ra chuỗi khác bản chạy thật.

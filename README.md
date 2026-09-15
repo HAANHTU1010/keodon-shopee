@@ -271,6 +271,13 @@ dòng đó là sinh ra ca mất đơn mà không ai biết — file đã đi kh�
   (`CHUYEN_HUONG_HONG`/`KHONG_PHAI_JSON`), chỉ 401/403/trang HTML đăng nhập mới là lỗi quyền. Nút 3 chế độ 1 mất đường trả
   lời thì **đọc lại cờ** bằng hành động chỉ-đọc `coTaoThang` trước khi kết luận: khóa Web App đang giữ → "Google vẫn đang
   chạy, đợi 5 phút" (mã thoát 6), không nói thất bại (T-CH-xx, TM-W-32).
+- **Ô NGÀY hiển thị theo múi giờ của SỔ, không theo múi giờ dự án Apps Script (2.7.2).** Một `Date` là một thời điểm;
+  Google đổi nó sang múi giờ trong Tệp → Cài đặt của từng sổ. Sổ thật của shop đặt giờ Mỹ (UTC−7, đo 15/9): tool dựng
+  `new Date(2026, 8, 15)` = 00:00 giờ Việt Nam → ô lưu 14/09 10:00 → user thấy lùi một ngày. `ngayThat_` nay dựng nửa đêm
+  theo `ss.getSpreadsheetTimeZone()` (T-WA-34: sổ giờ Mỹ · UTC · Việt Nam · London, hai đường ghi). Giả lập có
+  `setSpreadsheetTimeZone` + `Utilities.parseDate` thật theo múi giờ. Nhãn chữ (dấu thời gian dòng 1, cờ tạo tháng, tên nhật
+  ký máy) dựng từ giờ Việt Nam tường minh (`Utilities.formatDate(…, MUI_GIO, …)`, `dongHoVN_`, `dongHoVN`), không dựa múi giờ
+  máy/dự án. Ô tool ghi TRƯỚC 2.7.2 trên sổ giờ Mỹ có giờ ẩn 10:00 — nhận ra được bằng phần lẻ của số ngày.
 - **Chỉ một thư mục mã cho production.** `03_VAN_HANH` chạy thẳng `02_CODE/keodon-apps-script`: sửa dở trong thư mục đó là
   sửa production. Làm việc trên worktree/nhánh riêng, thư mục production chỉ nhận mã đã merge.
 - **Chuỗi trông như ngày bị Google đổi kiểu.** `setValues([['2026-10']])` vào ô chưa ép `@` là thành ngày 01/10/2026.

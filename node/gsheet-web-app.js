@@ -46,7 +46,7 @@ const { URL } = require('url');
  * Bản của VỎ MÁY — bằng `version` trong package.json và `var PHIEN_BAN` trong `src/ShellAppsScript.gs` khi phát hành
  * (T-DT-23 canh). Gửi lên Google trong trường `banMay` của mọi gói.
  */
-const PHIEN_BAN = '2.7.1';
+const PHIEN_BAN = '2.7.2';
 
 /**
  * YC-42: bản Web App THẤP NHẤT máy này còn dùng được. Web App dưới mốc → CHẶN trước lô đầu tiên, câu nói rõ bên nào cũ và
@@ -206,6 +206,16 @@ function phanNgayVN(thoiDiem) {
   return { nam: d.getUTCFullYear(), thang: d.getUTCMonth() + 1, ngay: d.getUTCDate() };
 }
 function haiSo(n) { return ('0' + n).slice(-2); }
+
+/**
+ * 2.7.2 — ĐỒNG HỒ VIỆT NAM để IN/ĐẶT TÊN (nhật ký, tiêu đề, nhãn file đã xử lý): trả một Date mà các hàm giờ ĐỊA PHƯƠNG
+ * (`getHours`, `Utils.dinhDangNgayGio`, `Utils.nhanThoiDiem`) đọc ra đúng giờ Việt Nam dù Windows đặt múi giờ nào.
+ * CHỈ dùng để hiển thị — không gửi thời điểm này đi đâu và không tính tháng từ nó (tháng: `thangHienTaiMay`).
+ */
+function dongHoVN(thoiDiem) {
+  const u = new Date((thoiDiem ? new Date(thoiDiem) : new Date()).getTime() + LECH_GIO_VN_MS);
+  return new Date(u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate(), u.getUTCHours(), u.getUTCMinutes(), u.getUTCSeconds());
+}
 
 function thangHienTaiMay(thoiDiem) {
   const x = phanNgayVN(thoiDiem);
@@ -1363,7 +1373,7 @@ module.exports = {
   TOI_DA_DON_MOT_LO, TOI_DA_DON_MOT_LO_XU_LY, SO_LAN_GOI_TIEP_TOI_DA,
   PHIEN_BAN, WEB_APP_TOI_THIEU, kiemPhienBan, soBan, soSanhBan, thongBaoGoogleQuaCu, thongBaoMayQuaCu, cauNhacLechBan, soDauVanTay,
   kiemPII, TRUONG_DONG_LOP_1, RE_DIEN_THOAI,
-  idFileThang, cauThieuLinkThang, thangSau, canhBaoThangSau, RE_LINK_SHEET, thangHienTaiMay, phanNgayVN,
+  idFileThang, cauThieuLinkThang, thangSau, canhBaoThangSau, RE_LINK_SHEET, thangHienTaiMay, phanNgayVN, dongHoVN,
   cauLoiQuyen, loiQuyen, MA_LOI_QUYEN_WEBAPP, laTrangHtml,
   TIMEOUT_MS, TIMEOUT_TAO_THANG_MS, SO_LUOT_TAO_THANG_TOI_DA, MA_TU_CHOI_TAO_THANG, GOI_Y_TAO_THANG,
   kyThangNam, idTuLinkHoacId,

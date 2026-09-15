@@ -169,7 +169,7 @@ class NguonThuMuc {
 
   _chuyen(f, thuMuc) {
     fs.mkdirSync(thuMuc, { recursive: true });
-    const t = new Date();
+    const t = require('./gsheet-web-app').dongHoVN();   // 2.7.2: nhãn giờ theo giờ Việt Nam, không theo múi giờ Windows
     const nhan = '' + t.getFullYear() + String(t.getMonth() + 1).padStart(2, '0') + String(t.getDate()).padStart(2, '0') +
       '_' + String(t.getHours()).padStart(2, '0') + String(t.getMinutes()).padStart(2, '0');
     let dich = path.join(thuMuc, f.tenFile.replace(/(\.[^.]+)$/, '_' + nhan + '$1'));

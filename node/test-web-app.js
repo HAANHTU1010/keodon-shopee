@@ -859,7 +859,7 @@ async function chay() {
       m._compile(thay(NGUON_GW, doi, 'gsheet-web-app.js'), tepGw);
       return m.exports;
     };
-    const MOC_BAN_MAY = "const PHIEN_BAN = '2.7.1';";
+    const MOC_BAN_MAY = "const PHIEN_BAN = '2.7.2';";
     const MOC_CUA_MAY = '  if (ss === null || ss < 0) throw hong(';
     const MAY_BANG_TUYET_DOI = [MOC_CUA_MAY, '  if (ss === null || soSanhBan(thuc, banMay) !== 0) throw hong('];
     const mayBan = (ban) => napMay([[MOC_BAN_MAY, "const PHIEN_BAN = '" + ban + "';"]]);
@@ -871,7 +871,7 @@ async function chay() {
       ['          if (kq.mayToiThieu != null) this.mayToiThieuWebApp', '          if (false) this.mayToiThieuWebApp'],
       MAY_BANG_TUYET_DOI
     ]);
-    const MOC_BAN_GS = "var PHIEN_BAN = '2.7.1';";
+    const MOC_BAN_GS = "var PHIEN_BAN = '2.7.2';";
     const MOC_CUA_GS = 'banMay && !banDuTu_(banMay, MAY_TOI_THIEU)) {';
     const GS_BANG_TUYET_DOI = [MOC_CUA_GS, 'banMay && banMay !== PHIEN_BAN) {'];
     const MOC_TRA_SO = 'PHIEN_BAN_TRA_LOI_ = (!coBanMay && mongDoi && banDuTu_(mongDoi, MAY_TOI_THIEU)) ? mongDoi : PHIEN_BAN;';
@@ -958,6 +958,45 @@ async function chay() {
         'đối chứng âm "giữ bằng tuyệt đối" -> LỆCH (' + sai.loi.filter((x) => /^\([23]\)/.test(x)).map((x) => x.slice(0, 60)).join(' | ') + ')';
     });
   }
+
+  // 2.7.2 — user báo 15/9: chạy ngày 15 mà cột A ghi 14/09, chạy ngày 14 thì ghi 13. Đo thật trên sổ tháng 9: ô tool ghi lưu 14/09
+  // 10:00 — sổ đặt múi giờ Mỹ (UTC−7), tool dựng nửa đêm GIỜ VIỆT NAM, Google hiển thị thời điểm đó theo múi giờ CỦA SỔ.
+  await test('T-WA-34 2.7.2 NGÀY cột A đúng ngày Việt Nam máy gửi lên DÙ SỔ đặt múi giờ nào — cả hai đường xuLy/ghi, sổ giờ Mỹ · UTC · Việt Nam · London đều hiện 2026-09-08', async () => {
+    const MUI = ['America/Los_Angeles', 'UTC', 'Asia/Ho_Chi_Minh', 'Europe/London'];
+    const hienNgay = (d, tz) => new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(d);
+    const cham = async (tc) => {
+      const lech = [];
+      let soO = 0;
+      for (const duong of ['xuLy', 'ghi']) {
+        for (const tz of MUI) {
+          const b = dungBoi(tc);
+          b.thang9.setSpreadsheetTimeZone(tz);
+          if (duong === 'xuLy') await b.web.xuLy('2026-09', dongLop1(2), tuyChonXuLy);
+          else await b.web.ghi('2026-09', lenhMau(2));
+          const sh = b.thang9.getSheetByName(SHEET);
+          for (let r = cfg.keyin.dong_dau; r <= sh.getLastRow(); r++) {
+            const v = sh.giaTri[r + ':' + cfg.keyin.cot_ngay];
+            if (v === undefined || v === '') continue;
+            soO++;
+            const hien = v instanceof Date ? hienNgay(v, tz) : 'không phải Date: ' + JSON.stringify(v);
+            if (hien !== '2026-09-08') lech.push(duong + ' · sổ ' + tz + ' · dòng ' + r + ' hiện ' + hien);
+          }
+          b.sim.thaoGo();
+        }
+      }
+      return { lech, soO };
+    };
+    const kq = await cham();
+    bang(kq.lech, [], 'ô ngày lệch');
+    dung(kq.soO >= 16, 'phải chấm ít nhất 16 ô ngày (2 đường × 4 múi giờ × 2 dòng), được ' + kq.soO);
+    // ĐỐI CHỨNG ÂM — cách ghi tới 2.7.1: nửa đêm theo múi giờ dự án (ở đây: múi giờ tiến trình test), bỏ qua múi giờ của sổ
+    const moc = "  return Utilities.parseDate(y + '-' + ('0' + mo).slice(-2) + '-' + ('0' + d).slice(-2), muiGioSo || MUI_GIO, 'yyyy-MM-dd');";
+    const suaNguon = (s) => { if (s.indexOf(moc) >= 0 && s.split(moc).length !== 2) throw new Error('mốc đối chứng âm không duy nhất'); return s.split(moc).join('  return new Date(y, mo - 1, d);'); };
+    dung(require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'ShellAppsScript.gs'), 'utf8').split(moc).length === 2, 'mốc đối chứng âm không còn trong ShellAppsScript.gs — mã đã đổi, sửa mốc, ĐỪNG bỏ bài');
+    const sai = await cham({ suaNguon });
+    dung(sai.lech.some((x) => /America\/Los_Angeles/.test(x)), 'ĐỐI CHỨNG ÂM KHÔNG LỆCH: cách ghi cũ mà sổ giờ Mỹ vẫn hiện đúng ngày');
+    return kq.soO + ' ô ngày, 2 đường × 4 múi giờ sổ, 0 lệch · đối chứng âm "nửa đêm theo múi giờ dự án" -> LỆCH (' + sai.lech[0] + ') ← đúng như sổ thật 15/9';
+  });
 
   // ====================================================================================================
   console.log('\n=== ' + soDat + ' ĐẠT · ' + soHong + ' HỎNG · tổng ' + (soDat + soHong) + ' ===');

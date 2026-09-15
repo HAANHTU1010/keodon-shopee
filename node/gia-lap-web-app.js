@@ -44,6 +44,7 @@ const FILE_VO_GOOGLE = ['Utils.gs', 'Schema.gs', 'CaiDat.gs', 'Config.gs',
 
 // Công thức: kho ô giữ R1C1 (Web App đọc/chép R1C1); `getFormulas`/`setFormula`/`setValues('=…')` đi qua A1.
 const { a1SangR1C1, r1c1SangA1 } = require('./nap-xlsx-gia-lap');
+const { phanTichNgayTheoMuiGio } = require('./mui-gio-du-an');   // Utilities.parseDate giả — dùng chung mọi bộ giả lập
 
 // Các file .gs cần cho LÕI phía máy tính (tầng 1 gọi tới).
 const FILE_LOI_MAY = ['Utils.gs', 'Schema.gs', 'CaiDat.gs', 'Config.gs', 'adapters/AdapterFileXuat.gs',
@@ -82,6 +83,7 @@ class SheetGia {
   constructor(ten, ss) {
     this.ten = ten;
     this.ss = ss;
+    this.getParent = () => this.ss;
     this.giaTri = {};      // 'r:c' -> giá trị
     this.congThuc = {};    // 'r:c' -> công thức R1C1
     this.dinhDang = {};    // 'r:c' -> định dạng số
@@ -411,6 +413,9 @@ class BangTinhGia {
   constructor(ten, id, sim) { this.ten = ten; this.id = id; this.sim = sim; this.sheets = []; }
   getName() { return this.ten; }
   getId() { return this.id; }
+  // Múi giờ CỦA SỔ (Tệp → Cài đặt). Sổ thật của shop đang đặt giờ Mỹ (đo 15/9) — bài test đặt `muiGio` để dựng đúng ca đó.
+  getSpreadsheetTimeZone() { return this.muiGio || 'Asia/Ho_Chi_Minh'; }
+  setSpreadsheetTimeZone(tz) { this.muiGio = String(tz); }
   getSheets() { return this.sheets.slice(); }
   getSheetByName(t) { return this.sheets.filter((s) => s.ten === t)[0] || null; }
   themSheet(t) { const s = new SheetGia(t, this); this.sheets.push(s); return s; }
@@ -436,6 +441,7 @@ function taoDateGia(hop) {
 }
 
 const HAI = (n) => (n < 10 ? '0' : '') + n;
+
 
 /** Đủ dùng cho các mẫu ShellAppsScript.gs đang gọi: 'yyyy-MM', 'yyyy-MM-dd', 'HH:mm:ss dd/MM/yyyy'. */
 function dinhDangNgay(d, muiGio, mau) {
@@ -667,6 +673,7 @@ function taoGiaLap(tc) {
     },
     Utilities: {
       formatDate: (d, tz, mau) => dinhDangNgay(d, tz, mau),
+      parseDate: (chuoi, tz, mau) => new DateGia(phanTichNgayTheoMuiGio(chuoi, tz, mau)),
       sleep: () => { },
       DigestAlgorithm: { SHA_256: 'SHA_256' },
       Charset: { UTF_8: 'UTF_8' },

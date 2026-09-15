@@ -41,7 +41,9 @@ function napKemBatBien() {
   for (const m of src.matchAll(/^(?:var|function)\s+([A-Za-z_$][\w$]*)/gm)) ten.push(m[1]);
   const khai = Object.keys(goc).map((k) => 'var ' + k + ' = __loi["' + k + '"];').join('\n');
   const than = khai + '\n' + src + '\nreturn {' + ten.map((n) => n + ': ' + n).join(', ') + '};';
-  const them = new Function('__loi', than)(goc);   // eslint-disable-line no-new-func
+  // 2.7.2: `ngayThat_` dựng ô ngày bằng Utilities.parseDate theo múi giờ của sổ — giả lập đúng API đó (xem mui-gio-du-an.js).
+  const UtilitiesGia = { parseDate: (chuoi, tz, mau) => new Date(require('./mui-gio-du-an').phanTichNgayTheoMuiGio(chuoi, tz, mau)) };
+  const them = new Function('__loi', 'Utilities', than)(goc, UtilitiesGia);   // eslint-disable-line no-new-func
   return Object.assign({}, goc, them);
 }
 

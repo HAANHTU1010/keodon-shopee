@@ -60,7 +60,7 @@
  * Số bản của vỏ Google — bằng `PHIEN_BAN` trong `node/gsheet-web-app.js` và `version` của package.json khi phát hành.
  * Mọi phản hồi đã qua cửa bí mật kèm bản thật này ở trường `banWebApp`.
  */
-var PHIEN_BAN = '2.7.1';
+var PHIEN_BAN = '2.7.2';
 
 /**
  * YC-42: bản MÁY thấp nhất Web App này còn phục vụ gói ghi (`ghi`, `xuLy`, `taoThangMoi`). Dưới mốc → từ chối
@@ -926,13 +926,14 @@ function ghiKhoiDon_(sh, donDS, k, tk, viTri, canhBao, thongBao, cNote, daCo, do
   // A, C, D, G, H, I, J, K — mỗi cột một khối liền mạch. KHÔNG đụng B, E, F, M, N.
   var A = [], C = [], D = [], G = [], H = [], I = [], J = [], K = [];
   var gopO = [], vang = [], ghiChu = [];
+  var muiGio = muiGioSo_(sh);
   var r = r0Khoi;
   moi.forEach(function (d) {
     var ds = (d.dong && d.dong.length) ? d.dong : [{}];
     var r0 = r;
     var t = d.tien || {};
     for (var i = 0; i < ds.length; i++) {
-      A.push([ngayThat_(d.ngay)]);
+      A.push([ngayThat_(d.ngay, muiGio)]);
       C.push([i === 0 ? String(d.maDon) : '']);
       D.push([ds[i].tenVietTat == null ? '' : ds[i].tenVietTat]);
       G.push([ds[i].soLuong == null ? '' : ds[i].soLuong]);
@@ -1031,14 +1032,36 @@ function sheetMapping_(ss) {
  * Google Sheet thì ô thành VĂN BẢN, mọi công thức tính theo ngày ở sheet Lợi nhuận sẽ hỏng.
  * Đổi về Date trước khi ghi; chuỗi lạ thì giữ nguyên để người ta nhìn thấy mà sửa.
  */
-function ngayThat_(x) {
+function ngayThat_(x, muiGioSo) {
   if (x == null || x === '') return '';
   if (x instanceof Date) return x;
-  var m = String(x).trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  m = String(x).trim().match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
-  if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
-  return x;
+  var s = String(x).trim(), y, mo, d;
+  var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+  else {
+    m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+    if (!m) return x;
+    y = +m[3]; mo = +m[2]; d = +m[1];
+  }
+  // 2.7.2 (user báo 15/9: chạy ngày 15 mà cột A ghi 14/09): một Date là MỘT THỜI ĐIỂM, Google hiển thị nó theo MÚI GIỜ CỦA SỔ,
+  // không theo múi giờ dự án Apps Script. `new Date(2026, 8, 15)` là 00:00 giờ Việt Nam = 14/09 10:00 ở sổ đặt giờ Mỹ (UTC−7)
+  // → ô hiện 14/09 (đo thật trên sổ tháng 9: các ô tool ghi lưu 14/09 10:00). Dựng nửa đêm THEO MÚI GIỜ CỦA SỔ: ô hiện đúng
+  // ngày Việt Nam máy gửi lên, như người gõ tay, dù sổ đặt múi giờ nào.
+  return Utilities.parseDate(y + '-' + ('0' + mo).slice(-2) + '-' + ('0' + d).slice(-2), muiGioSo || MUI_GIO, 'yyyy-MM-dd');
+}
+
+/**
+ * Giờ Việt Nam "trên mặt đồng hồ": một Date mà `getHours()`/`getDate()`… (múi giờ dự án Apps Script) đọc ra đúng giờ Việt Nam. CHỈ để
+ * dựng NHÃN chữ (lõi `TaoThangMoi` in bằng `Utils.dinhDangNgayGio`) — không ghi Date này vào ô, không so thời điểm với nó.
+ */
+function dongHoVN_() {
+  var p = String(Utilities.formatDate(new Date(), MUI_GIO, 'yyyy-MM-dd-HH-mm-ss')).split('-').map(Number);
+  return new Date(p[0], p[1] - 1, p[2], p[3], p[4], p[5]);
+}
+
+/** Múi giờ của sổ chứa sheet `sh` (Tệp → Cài đặt) — ô ngày hiển thị theo múi này. Đọc không được → giờ Việt Nam. */
+function muiGioSo_(sh) {
+  try { return String(sh.getParent().getSpreadsheetTimeZone() || '') || MUI_GIO; } catch (e) { return MUI_GIO; }
 }
 
 // ==================================================================== dấu thời gian ở dòng 1
@@ -2127,7 +2150,8 @@ function hanhDongTaoThangMoi_(body, batDau) {
     var anhMoi = chupFileThangMoi_(ssMoi);
     var ke = TaoThangMoi.lapKeHoach(anhCu, anhMoi, {
       // KHÔNG truyền dauPhanCach: lõi dò từ chính công thức Google trả về (sổ Việt Nam dùng `;` — gán cứng `,` là #ERROR!, 14/9).
-      thangMoi: kyMoi, nguonClone: ssCu.getName(), thoiDiem: new Date()
+      // 2.7.2: nhãn DANG_KHOI_TAO_/DA_KHOI_TAO_ theo GIỜ VIỆT NAM dù dự án Apps Script đặt múi giờ nào (máy đọc nhãn này là giờ VN).
+      thangMoi: kyMoi, nguonClone: ssCu.getName(), thoiDiem: dongHoVN_()
     });
     if (!ke.chay) {
       var maDung = ke.maDung || 'FILE_CO_DU_LIEU';      // lõi nói lý do dừng: DA_KHOI_TAO · FILE_CO_DU_LIEU · B5_DANG_LAM
@@ -2498,6 +2522,6 @@ function chayBoTest() {
   return 'Tổng ' + kq.length + ' · hỏng ' + hong.length;
 }
 
-var VAN_TAY_SHELL = 'dbcbbc50';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_SHELL = '330f323f';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
 
-var BAN_DUNG = 'ffd8f86632f5';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay
+var BAN_DUNG = 'fa9af92fd133';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay

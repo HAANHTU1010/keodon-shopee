@@ -19,7 +19,7 @@ const path = require('path');
 const { napLoi } = require('./nap-loi');
 const { NguonThuMuc } = require('./nguon-thu-muc');
 const { chayLenGoogleSheet, thangCua } = require('./chay-google-sheet');
-const { WebAppGoogleSheet, idFileThang, canhBaoThangSau } = require('./gsheet-web-app');
+const { WebAppGoogleSheet, idFileThang, canhBaoThangSau, dongHoVN } = require('./gsheet-web-app');
 const { KhoTracking, duongDanOut, docBangXlsx, TEN_SHEET_MAPPING } = require('./kho-tracking');
 const { taoRunId, dongRun, dongRunTuKetQua, tenMay } = require('./dong-run');
 
@@ -516,8 +516,10 @@ function ghiLogGoogle(fileLog, tieuDe, dong, canhBao, loiFile, loiChung) {
 async function chayVanHanhGoogle(cv, cfg, thoiDiem, ngayGhi) {
   const thangTay = thamSo('--thang') ? chuanThangTay(thamSo('--thang')) : null;
   const thang = thangTay || thangCua(thoiDiem);
-  const fileLog = path.join(cv.__ketQua, 'LOG_' + lop.Utils.nhanThoiDiem(thoiDiem) + '.txt');
-  const tieuDeLog = 'KÉO ĐƠN LÊN GOOGLE SHEET — ' + lop.Utils.dinhDangNgayGio(thoiDiem) + '\nTháng: ' + thang;
+  // 2.7.2: tên nhật ký và dòng tiêu đề theo GIỜ VIỆT NAM, không theo múi giờ Windows của máy (tháng đã theo giờ VN từ YC-40.4).
+  const gioVN = dongHoVN(thoiDiem);
+  const fileLog = path.join(cv.__ketQua, 'LOG_' + lop.Utils.nhanThoiDiem(gioVN) + '.txt');
+  const tieuDeLog = 'KÉO ĐƠN LÊN GOOGLE SHEET — ' + lop.Utils.dinhDangNgayGio(gioVN) + '\nTháng: ' + thang;
   // YC-38.3: một RUN id cho cả lượt bấm — gửi kèm mọi POST, in ở dòng tổng kết, ghi vào LOG.
   const runId = taoRunId(thoiDiem, tenMay());
   const run = { runId: runId, file: [], gian: [], donVao: null, loi: null };
@@ -525,7 +527,7 @@ async function chayVanHanhGoogle(cv, cfg, thoiDiem, ngayGhi) {
   const cauHinhGoogle = Object.assign({}, cv.google_sheet || {},
     { link_thang: cv.link_thang || {}, choPhepThangKhac: !!thangTay });
   const nguon = taoNguon(cv, cfg);
-  console.log('=== KÉO ĐƠN SHOPEE LÊN GOOGLE SHEET — ' + lop.Utils.dinhDangNgayGio(thoiDiem) + ' ===');
+  console.log('=== KÉO ĐƠN SHOPEE LÊN GOOGLE SHEET — ' + lop.Utils.dinhDangNgayGio(gioVN) + ' ===');
   console.log('Đích ghi          : Google Sheet của tháng ' + thang +
     (thangTay ? ' (chạy tay --thang)' : '') + ' (qua Web App Apps Script)');
   console.log('Thư mục thả file  : ' + cv.__thaFile);

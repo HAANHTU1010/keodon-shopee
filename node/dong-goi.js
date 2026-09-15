@@ -416,8 +416,7 @@ function kiemGoi(dich) {
         pham.push('cấu hình trong gói thiếu link_thang (D-42: không có link tháng thì nút 4 tắc ngay)');
       } else {
         // Tháng CỦA NGÀY ĐÓNG GÓI phải có mặt — đó là tháng user sẽ chạy ngay hôm nhận gói.
-        const nay = new Date();
-        const kyNay = nay.getFullYear() + '-' + ('0' + (nay.getMonth() + 1)).slice(-2);
+        const kyNay = require('./gsheet-web-app').thangHienTaiMay();   // 2.7.2: tháng theo giờ Việt Nam, như nút 4
         const v = String(lt[kyNay] || '').trim();
         if (!v) pham.push('link_thang thiếu khóa của tháng hiện tại (' + kyNay + ')');
         // CÙNG luật với nút 4 (`RE_LINK_SHEET`, nhận cả `/spreadsheets/u/<số>/d/`) — luật riêng ở đây từng chặn oan gói

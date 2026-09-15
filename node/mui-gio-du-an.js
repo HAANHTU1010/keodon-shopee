@@ -53,4 +53,24 @@ function ghimMuiGioDuAn() {
   return tz;
 }
 
-module.exports = { muiGioDuAn, ghimMuiGioDuAn, TEP_MANIFEST };
+/**
+ * `Utilities.parseDate(chuoi, muiGio, 'yyyy-MM-dd'[' HH:mm[:ss]'])` → mili-giây của thời điểm đó THEO MÚI GIỜ `muiGio` (IANA, qua
+ * Intl — tính cả giờ mùa hè). Chỉ các mẫu `.gs` đang dùng; mẫu lạ thì ném to để test không xanh trên một phép giả.
+ */
+function phanTichNgayTheoMuiGio(chuoi, muiGio, mau) {
+  if (!/^yyyy-MM-dd( HH:mm(:ss)?)?$/.test(String(mau))) throw new Error('Giả lập parseDate chưa hỗ trợ mẫu ' + mau);
+  const m = String(chuoi).match(/^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (!m) throw new Error('Unparseable date: "' + chuoi + '"');
+  const tuong = Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+  const lech = (ms) => {
+    const p = {};
+    new Intl.DateTimeFormat('en-US', { timeZone: muiGio, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(new Date(ms)).forEach((x) => { p[x.type] = x.value; });
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - ms;
+  };
+  let ms = tuong - lech(tuong);
+  ms = tuong - lech(ms);                 // lần hai: đúng cả khi mốc rơi sát chỗ đổi giờ mùa hè
+  return ms;
+}
+
+module.exports = { muiGioDuAn, ghimMuiGioDuAn, TEP_MANIFEST, phanTichNgayTheoMuiGio };
