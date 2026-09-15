@@ -126,9 +126,10 @@ var AdapterTikTok = (function () {
       moi_o_la_chuoi: true,
       khoa_chong_trung: 'ma_don',
       gop_o_theo_cum_don: true,
-      // D-87 (YC-56): cột A = RTS Time của Order Export ("ngày sắp xếp vận chuyển" — đo 49/49 khớp sổ tay; Ngày tạo đơn 11/49; cột
-      // "Ngày vận chuyển đơn hàng" của báo cáo 2/49). Thiếu hẳn file Order Export → DỪNG. Đơn không có RTS → xem `thieu_rts`.
-      ngay_ghi: 'RTS_ORDER_EXPORT',
+      // D-87 BẢN SỬA (chủ dự án chốt 16/9 ~0h30, YC-57 HỦY): cột A = NGÀY CHẠY TOOL, y hệt bốn gian Shopee (`ngayGhi` sẵn có) — MỘT file
+      // đầu vào. Lượt đầu ~50 đơn từ đầu tháng cùng mang ngày bấm nút (chủ dự án chấp nhận, hướng dẫn đã ghi).
+      // Còn giữ hai giá trị cũ để đổi được không sửa mã: 'RTS_ORDER_EXPORT' (cần thêm file Tất cả đơn hàng) · 'NGAY_TAO_DON'.
+      ngay_ghi: 'NGAY_CHAY',
       // Đơn không có trong Order Export (BA chốt) hoặc có mà RTS Time còn trống (chưa sắp xếp vận chuyển — dev xếp chung ca, chờ BA duyệt):
       // 'GHI_VANG' = vẫn ghi, cột A = Ngày tạo đơn, tô vàng + note · 'TREO' = không ghi, lượt sau ghi khi đã có RTS.
       thieu_rts: 'GHI_VANG',
@@ -391,6 +392,10 @@ var AdapterTikTok = (function () {
       if (khac) return boQua('KHONG_PHAI_DON_HANG', 'Loại giao dịch "' + khac.loai + '"');
       var treo = ds.filter(function (d) { return LY_DO_TREO.indexOf(d.lyDo) >= 0; })[0];
       if (treo) return boQua('TREO_TRA_HANG', '"' + treo.lyDo + '" — treo, không ghi; nếu khách không trả hàng đơn sẽ về báo cáo Đã quyết toán');
+      // D-83 ba vế (BA 16/9): (b) Tổng phụ trước giảm giá = 0 · H ròng = 0 (hoàn toàn bộ) → không phải đơn bán; (a) quyết toán = 0 → chờ; (c) treo ở trên.
+      if (ds.every(function (d) { return d.H - d.hoan === 0; })) {
+        return boQua('KHONG_PHAI_DON_BAN', 'Tổng phụ trước giảm giá = 0' + (Q !== 0 ? ', quyết toán ' + Q : '') + (ds[0].lyDo ? ' · ' + ds[0].lyDo : '') + ' — đơn hủy, không có hàng bán');
+      }
       if (ds.every(function (d) { return d.H === 0; })) {
         return boQua('KHONG_PHAI_DON_BAN', 'H ròng = 0' + (ds.some(function (d) { return d.hoan !== 0; }) ? ' (đã hoàn tiền toàn bộ)' : '') +
           (Q !== 0 ? ', quyết toán ' + Q : '') + (ds[0].lyDo ? ' · ' + ds[0].lyDo : '') + ' — đơn hủy / hoàn, không có hàng bán');
@@ -398,7 +403,7 @@ var AdapterTikTok = (function () {
       if (ds.some(function (d) { return d.H === 0 || d.hoan !== 0; })) {
         return boQua('TREO_HOAN_MOT_PHAN', 'đơn có khoản hoàn một phần — số lượng bán thật không suy được từ báo cáo, treo, không ghi');
       }
-      if (ds.some(function (d) { return d.Q === 0; })) {
+      if (Q === 0 || ds.some(function (d) { return d.Q === 0; })) {
         return boQua('CHO_TINH_PHI', 'Số tiền quyết toán ước tính = 0 — TikTok chưa tính phí, lượt sau ghi');
       }
       if (ds.some(function (d) { return d.thueDuong; }) || t.I < 0 || t.J < 0 || t.K < 0) {

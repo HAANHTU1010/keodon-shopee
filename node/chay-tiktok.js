@@ -4,7 +4,7 @@
  * VÌ SAO ĐI ĐƯỜNG `ghi`, KHÔNG ĐI `xuLy` (đo 15/9, báo cáo phản biện P-4):
  *   · `xuLy` để Google TỰ TÍNH thuế (`Normalize.tinhThue`) — K của lõi khớp báo cáo TikTok chỉ 66/130 dòng, tức L lệch 1 đ ở 64 dòng.
  *     Đề bài chốt "không tự tính thuế, lấy thẳng từ báo cáo".
- *   · `xuLy` ghi MỘT ngày cho cả gói (`ngayGhi`); cột A của TikTok là "Ngày tạo đơn hàng" của TỪNG đơn.
+ *   · `xuLy` ghi MỘT ngày cho cả gói (`ngayGhi`); cột A TikTok từng tính theo mốc ngày TỪNG đơn — D-87 bản sửa (16/9) chốt lại cột A = NGÀY CHẠY như Shopee, lý do còn lại là thuế.
  *   Đường `ghi` có sẵn trên Google từ trước 2.4.0 (đường lùi đã nghiệm thu, `test-xu-ly` so từng ô hai đường): máy gửi lệnh ghi mang
  *   H/I/J/K và ngày của từng đơn; Google vẫn tự làm phần của nó — hợp đồng sổ tháng (YC-38.1), hàng rào công thức (YC-39), khử trùng tầng 2
  *   trong khóa, nối dòng, gộp ô C/H/I/J/K/L, chép công thức E/F/L/M/N, tô vàng + Note, tô lại Mapping. KHÔNG SỬA `.gs`, KHÔNG DEPLOY.
@@ -12,7 +12,7 @@
  *
  * TỪ ĐƠN CHUẨN TRỞ XUỐNG dùng CHÍNH lõi Shopee (`dungKeHoachGhi_` nạp từ `src/ShellAppsScript.gs`): tra Mapping bộ ba (Gian hàng, Tên trên sàn,
  * Phân loại), nổ Cấu phần / Hệ số, nối tên mới vào Mapping (dòng vàng), khử trùng tầng 1. Máy chỉ ĐÈ hai thứ trước khi gửi: `tien` (lấy thẳng
- * từ báo cáo) và `ngay` (ngày tạo đơn). Không một dòng lõi nào đổi.
+ * từ báo cáo); `ngay` chỉ đè khi hồ sơ không để NGAY_CHAY (mặc định D-87 bản sửa: ngày chạy). Không một dòng lõi nào đổi.
  *
  * LỖI Ở ĐÂY KHÔNG ĐƯỢC CHẶN SHOPEE: `chay-thu.js` bọc lời gọi, in lỗi, chạy tiếp bốn gian Shopee như cũ (TT-14).
  * Riêng thả nhầm sàn (`soatThaNhamSan`) thì dừng CẢ lượt khi chưa ghi gì — đó là cửa chắn trước mọi việc (YC-50).
@@ -187,9 +187,6 @@ const TEN_LY_DO = {
   KHONG_PHAI_DON_HANG: 'không phải giao dịch "Đơn hàng"'
 };
 
-// Câu `BỎ QUA <n> ĐƠN KHÔNG PHẢI ĐƠN BÁN` (2B.11) đếm các mã này: đơn hủy / hoàn toàn bộ / đang chờ trả hàng.
-const MA_KHONG_PHAI_DON_BAN = ['KHONG_PHAI_DON_BAN', 'TREO_TRA_HANG', 'DA_HUY'];
-
 /** Order Status của file Tất cả đơn hàng là "Đã hủy" (chịu hai kiểu bỏ dấu hủy/huỷ và bản tiếng Anh). */
 function laDaHuy(s) {
   return /^(đã h(ủy|uỷ)|cancel+ed)$/i.test(String(s || '').normalize('NFC').trim());
@@ -224,8 +221,15 @@ async function chayTikTok(o) {
     const tep = path.join(thuMuc, f);
     const wb = moWorkbook(tep);
     const nd = AT.nhanDien(wb.tenSheet, wb.bang);
-    if (nd.thieuCot.length) throw Object.assign(new Error(AT.cauThieuCot(nd, f)), { maKeodon: 'THIEU_COT' });
-    if (nd.loai === 'TIKTOK_SE_THANH_TOAN') {
+    const dungC = hoSo.ngay_ghi === 'RTS_ORDER_EXPORT';
+    if (nd.thieuCot.length) {
+      // Chỉ file tool DÙNG mới chặn; file nhận ra mà bản này không dùng (B, C khi cột A = ngày chạy) thì nhắc.
+      if (nd.loai === 'TIKTOK_SE_THANH_TOAN' || (nd.loai === 'TIKTOK_ORDER_EXPORT' && dungC)) throw Object.assign(new Error(AT.cauThieuCot(nd, f)), { maKeodon: 'THIEU_COT' });
+      noi('  ! ' + AT.cauThieuCot(nd, f));
+    }
+    if (nd.loai === 'TIKTOK_ORDER_EXPORT' && !dungC) {
+      noi('File ' + f + ': ' + nd.hoSo.ten_bao_cao + ' — bản này KHÔNG dùng file này (cột Ngày là ngày chạy tool, như Shopee). File nằm nguyên chỗ cũ — rút ra khỏi thư mục.');
+    } else if (nd.loai === 'TIKTOK_SE_THANH_TOAN') {
       const dcn = AT.docSeThanhToan(wb.bang(nd.tenSheet), { tenFile: f });
       dsA.push({ f, tep, nd, dcn, tai: msGioVN(dcn.thoiGianTai) });
     } else if (nd.loai === 'TIKTOK_ORDER_EXPORT') {
@@ -249,8 +253,7 @@ async function chayTikTok(o) {
     nd.canhBao.forEach((c) => noi('  ! ' + f + ': ' + c));
   }
   if (!dsA.length) {
-    if (dsC.length) noi('THIẾU BÁO CÁO TÀI CHÍNH TIKTOK — mới có file Tất cả đơn hàng, thiếu báo cáo "Sẽ thanh toán" (Onhold-unsettled-orders…).');
-    noi('Không có báo cáo "Sẽ thanh toán" nào — TikTok chưa ghi gì' + (dsC.length ? ' (file Tất cả đơn hàng một mình không đủ để ghi, nằm nguyên chỗ cũ).' : '.'));
+    noi('Không có báo cáo "Sẽ thanh toán" (Onhold-unsettled-orders…) nào — TikTok chưa ghi gì. Tool chỉ ghi từ báo cáo đó; file khác nằm nguyên chỗ cũ.');
     ghiLog(fileLog, ['KÉO ĐƠN TIKTOK SHOP — ' + lop.Utils.dinhDangNgayGio(gioVN)].concat(dong));
     kq.fileLog = fileLog;
     return kq;
@@ -296,7 +299,7 @@ async function chayTikTok(o) {
   if (trungFile) noi('  · ' + trungFile + ' đơn có ở nhiều báo cáo cùng lượt → lấy số của báo cáo tải sau cùng.');
   // YC-56: gắn ngày sắp xếp vận chuyển. Không có trong file Tất cả đơn hàng / RTS còn trống → theo `hoSo.thieu_rts`.
   let soThieuRts = 0;
-  for (let i = don.length - 1; i >= 0; i--) {
+  for (let i = don.length - 1; hoSo.ngay_ghi === 'RTS_ORDER_EXPORT' && i >= 0; i--) {
     const z = don[i], c = rtsCua[z.maDon];
     z.rts = c && c.rts ? c.rts : '';
     if (z.rts) continue;
@@ -316,8 +319,7 @@ async function chayTikTok(o) {
   const dcn = { hoSo, tenFile: dsA.map((x) => x.f).join(' + '), soDongDoc: soDong, soDonDoc: soDon, don, boQua };
   kq.dcn = dcn;
   kq.tenFile = dcn.tenFile;
-  const soKhongPhaiDonBan = boQua.filter((b) => MA_KHONG_PHAI_DON_BAN.indexOf(b.ma) >= 0).length;
-  if (soKhongPhaiDonBan) noi('BỎ QUA ' + soKhongPhaiDonBan + ' ĐƠN KHÔNG PHẢI ĐƠN BÁN (đơn hủy / hoàn tiền toàn bộ / đang chờ trả hàng) — không phải lỗi.');
+  if (boQua.length) noi('BỎ QUA ' + boQua.length + ' ĐƠN KHÔNG PHẢI ĐƠN BÁN (đơn hủy / chưa chốt tiền / đang chờ trả hàng) — không phải lỗi, lượt sau đơn nào có tiền thật tự vào sổ.');
   if (boQua.length) {
     noi('Không ghi ' + boQua.length + ' đơn:');
     Object.keys(TEN_LY_DO).forEach((ma) => {
@@ -356,7 +358,7 @@ async function chayTikTok(o) {
     const vo = o.vo || napVoGoogle(lop);             // `o.vo`: CHỈ bộ test truyền (đối chứng âm phía máy)
     const goi = vo.dungKeHoachGhi_(cfgTT, [{ maGianHang: hoSo.ma_gian, tenFile: dcn.tenFile, dong: AT.sangDongLop1(dcn) }], tuXa, { ngayGhi: ngayCua(o.thoiDiem) });
 
-    // ĐÈ tiền (lấy thẳng báo cáo) và ngày (ngày tạo đơn) — hai thứ lõi Shopee không biết lấy.
+    // ĐÈ tiền (lấy thẳng báo cáo). Ngày: NGAY_CHAY (mặc định) giữ ngayGhi của lõi; hai giá trị cũ vẫn đè được.
     const theoMa = {};
     don.forEach((d) => { theoMa[d.maDon] = d; });
     let dongThieuRts = 0;
