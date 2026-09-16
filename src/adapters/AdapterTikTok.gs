@@ -6,8 +6,8 @@
  *
  * BA NGUỒN (đo 15/9 trên file thật; BA đo lại và chốt 16/9):
  *   A · "Sẽ thanh toán"  (Onhold-unsettled-orders-*.xlsx) — cấp SKU, có tiền → ĐƯỜNG CHÍNH, đọc ra ĐƠN CHUẨN (`docSeThanhToan`).
- *   C · Order Export     (Tất cả đơn hàng-*.xlsx)          — cấp SKU, KHÔNG có tiền → chỉ lấy "RTS Time" (ngày sắp xếp vận chuyển) làm
- *                                                            cột A (D-87, YC-56) — `docOrderExport`. Thiếu file C là DỪNG.
+ *   C · Order Export     (Tất cả đơn hàng-*.xlsx)          — KHÔNG DÙNG ở Đợt 4 (D-87 bản sửa 16/9, YC-57 hủy): cột Ngày là NGÀY CHẠY
+ *                                                            tool như Shopee. Bộ đọc `docOrderExport` + đường RTS giữ lại nhưng TẮT (hồ sơ `ngay_ghi`).
  *   B · "Đã quyết toán"  (income_*.xlsx)                  — cấp ĐƠN, không ID SKU / Số lượng / Tên sản phẩm → không bao giờ tạo dòng.
  *                                                            Đợt 4 chỉ nhận diện + đọc (`docDaQuyetToan`); INV-1b hoãn Đợt 5 (D-88).
  *
@@ -23,8 +23,8 @@
  * tròn lên nên lệch 1 đ ở 64/130 dòng. CẤM tự dựng công thức thuế cho TikTok: luôn lấy số từ báo cáo.
  *
  * CÓ ĐƠN LÀ GHI — CHỦ DỰ ÁN CHỐT 16/9 sáng (đè luật "bỏ đơn" D-83 của BA):
- *   Tool đẩy lên ĐỦ ĐƠN, ĐỦ SỐ như báo cáo; đơn bất thường thì TÔ VÀNG + ghi lý do vào cột Note để nhân viên soát tay.
- *   Lý do: nhân viên vẫn soát lượt chạy (3 tiếng nhập tay → 20 phút), và tool KHÔNG BAO GIỜ sửa dòng đã ghi nên phần họ chỉnh tay
+ *   Tool đẩy lên ĐỦ ĐƠN, ĐỦ SỐ như báo cáo; đơn bất thường thì TÔ VÀNG + ghi lý do vào cột Note để người dùng soát tay.
+ *   Lý do: người dùng vẫn soát lượt chạy (3 tiếng nhập tay → 20 phút), và tool KHÔNG BAO GIỜ sửa dòng đã ghi nên phần họ chỉnh tay
  *   không bị đè. Bỏ đơn mới là cái hại: sổ thiếu đơn, không ai biết mà tìm.
  *   Dấu hiệu bất thường ghi vào Note (nhiều dấu thì ghi hết): Tổng phụ trước giảm giá = 0 (đơn hủy) · hoàn TOÀN BỘ ·
  *   hoàn MỘT PHẦN · "Đang chờ hoàn tất trả hàng/hoàn tiền" · quyết toán ước tính = 0 (TikTok chưa tính phí) · lý do chưa quyết toán khác.
@@ -397,7 +397,7 @@ var AdapterTikTok = (function () {
       if (khac) return boQua('KHONG_PHAI_DON_HANG', 'Loại giao dịch "' + khac.loai + '"');
 
       // CHỦ DỰ ÁN CHỐT 16/9 sáng (đè D-83 "bỏ đơn"): CÓ ĐƠN LÀ GHI — hủy, hoàn, chưa chốt tiền đều ghi đủ dòng và đủ số như báo cáo,
-      // rồi TÔ VÀNG + ghi lý do vào cột Note để nhân viên soát tay. Tool không bao giờ sửa dòng đã ghi nên phần chỉnh tay không bị đè.
+      // rồi TÔ VÀNG + ghi lý do vào cột Note để người dùng soát tay. Tool không bao giờ sửa dòng đã ghi nên phần chỉnh tay không bị đè.
       // Việc của tool là đẩy lên ĐỦ ĐƠN, ĐỦ THÔNG TIN; không ai yêu cầu tự động 100%.
       var cb = [];
       var treo = ds.filter(function (d) { return LY_DO_TREO.indexOf(d.lyDo) >= 0; })[0];

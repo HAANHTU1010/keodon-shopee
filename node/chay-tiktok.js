@@ -388,7 +388,7 @@ async function chayTikTok(o) {
           dongThieuRts += d.dong.length;
         }
       }
-      // CÓ ĐƠN LÀ GHI (chủ dự án 16/9): đơn hủy / hoàn / chưa chốt tiền vẫn ghi đủ số, chỉ TÔ VÀNG + Note cho nhân viên soát tay.
+      // CÓ ĐƠN LÀ GHI (chủ dự án 16/9): đơn hủy / hoàn / chưa chốt tiền vẫn ghi đủ số, chỉ TÔ VÀNG + Note cho người dùng soát tay.
       if (x.canhBao && x.canhBao.length) {
         const cauCb = 'SOÁT TAY: ' + x.canhBao.join('; ');
         d.dong.forEach((r, i) => { r.vang = true; if (i === 0) r.note = r.note ? r.note + '; ' + cauCb : cauCb; });
@@ -448,7 +448,7 @@ async function chayTikTok(o) {
     }
 
     if (dongSoatTay && kqGhi) {
-      noi('Dòng vàng vì đơn hủy / hoàn / chưa chốt tiền: ' + dongSoatTay + ' (cột Note ghi rõ từng lý do — nhân viên soát và chỉnh tay; ' +
+      noi('Dòng vàng vì đơn hủy / hoàn / chưa chốt tiền: ' + dongSoatTay + ' (cột Note ghi rõ từng lý do — người dùng soát và chỉnh tay; ' +
         'chạy lại tool KHÔNG sửa dòng đã ghi nên phần chỉnh tay không bị đè).');
     }
     noi('GHI THÊM ' + kq.thongKe.donGhi + ' đơn (' + kq.thongKe.dongGhi + ' dòng, ' + kq.thongKe.donGopO + ' đơn nhiều dòng đã gộp ô) · bỏ qua ' +

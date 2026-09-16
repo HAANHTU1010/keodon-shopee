@@ -25,6 +25,8 @@ Thư mục này có đúng sáu thứ: hai thư mục và bốn nút
 
 Lần đầu trên máy mới
 
+> Gói này chỉ chạy trên máy Windows. Bốn nút là file .bat, và bản Node kèm theo là bản Windows. Máy Mac vẫn mở và xem sổ Google bình thường, chỉ không bấm được bốn nút này — việc kéo đơn để một máy Windows làm. Bản bấm nút ngay trong Google Sheet, chạy được mọi máy, đang nằm trong kế hoạch sau đợt TikTok.
+
 1. Giải nén gói ra một thư mục trên máy, ví dụ Desktop.
 2. Bấm đúp 1_CAI_DAT_LAN_DAU.bat. Nó tự kiểm sáu bước và báo bằng tiếng Việt.
 3. Thấy dòng [6/6] SAN SANG. là xong.

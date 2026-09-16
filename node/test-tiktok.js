@@ -871,7 +871,7 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
     };
     bang((await cham(TT)).slice(0, 4), [], 'khối ĐƠN CẦN SOÁT TAY');
     const am = await doiChungAm(async () => cham(napNodeSua('chay-tiktok.js', [['  if (canhBaoDon.length) {', '  if (false) {']])),
-      'không in khối đơn cần soát tay (nhân viên không biết dòng nào phải soát)');
+      'không in khối đơn cần soát tay (người dùng không biết dòng nào phải soát)');
     const XLSX = require('xlsx');
     const bangHut = XLSX.utils.sheet_to_json(XLSX.readFile(FILE.A, { raw: true }).Sheets[A.nd.tenSheet], { header: 1, raw: true, defval: '' });
     let eHut = null;
