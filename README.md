@@ -327,10 +327,13 @@ dòng đó là sinh ra ca mất đơn mà không ai biết — file đã đi kh�
 - **Công thức CHỐT (BA 16/9), chung A và B**: H = Tổng phụ trước giảm + Tổng phụ hoàn tiền trước giảm; I = −(Giảm giá người bán + Khoản hoàn
   giảm giá); K = −(GTGT + TNCN); J = −Tổng phí − K. Tự kiểm từng đơn H − I − J − K = quyết toán: lệch MỘT ĐỒNG là dừng cả phần TikTok
   (`TU_KIEM_LECH`). Thuế TikTok làm tròn CHẴN (half-even) — CẤM tự dựng công thức thuế, luôn lấy từ báo cáo.
-- **Không ghi (D-83 ba vế + an toàn thêm)**: "Đang chờ hoàn tất trả hàng/hoàn tiền" → TREO; Tổng phụ trước giảm giá = 0 hoặc H ròng = 0
-  (hủy / hoàn toàn bộ) → không phải đơn bán; hoàn một phần → TREO; quyết toán 0 → chờ tính phí. File 15/9: 8 đơn.
-- **Câu in cho user phải GIỐNG HỆT hướng dẫn một trang** (BA 2B.11): `SỐ DÒNG ĐỌC ĐƯỢC KHÔNG KHỚP Ô "TỔNG SỐ GIAO DỊCH"`,
-  `BỎ QUA <n> ĐƠN KHÔNG PHẢI ĐƠN BÁN` (n = mọi đơn không ghi) — TT-57. Sửa câu là sửa cả `bat/HUONG_DAN_1_TRANG.md`.
+- **CÓ ĐƠN LÀ GHI (chủ dự án chốt 16/9 sáng, đè luật bỏ đơn D-83)**: đơn hủy / hoàn toàn bộ / hoàn một phần / "Đang chờ hoàn tất trả
+  hàng/hoàn tiền" / quyết toán ước tính = 0 đều ghi đủ dòng đủ số, rồi **tô vàng + Note `SOÁT TAY: <lý do>`** để nhân viên chỉnh tay
+  (tool không bao giờ sửa dòng đã ghi nên phần chỉnh tay không bị đè). Mỗi đơn mang `canhBao: []` từ `docSeThanhToan`.
+  Nhóm DUY NHẤT bị bỏ: `Loại giao dịch` ≠ `Đơn hàng` (quảng cáo, điều chỉnh — không có tên hàng để dựng dòng). File 15/9: 129 đơn ghi hết, 8 đơn vàng.
+- **Tự kiểm tiền vẫn dừng cả lượt** khi đơn BÌNH THƯỜNG lệch (`TU_KIEM_LECH`); đơn đã có cảnh báo thì tiền lệch chỉ ghi thêm vào Note.
+- **Câu in cho user phải GIỐNG HỆT hướng dẫn một trang**: `SỐ DÒNG ĐỌC ĐƯỢC KHÔNG KHỚP Ô "TỔNG SỐ GIAO DỊCH"`,
+  `<n> ĐƠN CẦN SOÁT TAY`, `BỎ QUA <n> ĐƠN KHÔNG PHẢI ĐƠN BÁN` (nay chỉ cho giao dịch không phải đơn hàng). Sửa câu là sửa cả `bat/HUONG_DAN_1_TRANG.md`.
 - **Mã đơn là chuỗi 18 chữ số** — không bao giờ ép số. Ô đã thành số (file bị mở-lưu bằng Excel) là dừng. Cột C của sổ có mã bị Google đổi
   thành `5.86087E+17` cũng dừng (`soatMaDonTrenSo`): khử trùng so chuỗi sẽ trượt và ghi trùng.
 - **Đổi dấu, không trị tuyệt đối**: có khoản phí DƯƠNG (hoàn phí SFR).

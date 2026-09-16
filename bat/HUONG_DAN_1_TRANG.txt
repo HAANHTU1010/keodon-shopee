@@ -71,7 +71,7 @@ Cột Ngày là ngày bạn bấm nút, đúng như bên Shopee — không phả
 Ba thứ tool tự làm với đơn TikTok, không cần bạn động tay
 
 - Một đơn nổ thành nhiều dòng. Một đơn gấu bông = con gấu + áo + túi quà + thiệp. Tool tự tách đúng số dòng và gộp ô tiền cho cả cụm, giống hệt đơn combo bên Shopee.
-- Bỏ qua đơn không phải đơn bán. Đơn đã hủy, đơn chưa chốt tiền và đơn khách đang đòi trả hàng thì tool không ghi, chỉ nhắc ở dòng tổng kết. Không trừ kho oan. Đơn nào sau đó bán thật, có tiền, thì lượt chạy sau tự vào sổ.
+- Đơn hủy / hoàn / chưa chốt tiền vẫn được ghi, nhưng TÔ VÀNG. Tool đẩy lên đủ đơn đủ số như báo cáo rồi tô vàng dòng đó và ghi lý do vào cột Note ("SOÁT TAY: …") — ví dụ đơn hủy, đơn đã hoàn tiền toàn bộ, đơn khách đang đòi trả hàng, đơn TikTok chưa tính phí. Bạn soát mấy dòng vàng đó rồi sửa tay (xóa dòng, sửa số lượng, sửa tiền). Chạy lại tool không bao giờ sửa dòng đã ghi, nên phần bạn chỉnh tay không bị đè.
 - Lấy đúng số tiền của TikTok. Tool không tự tính lại phí và thuế, nó chép nguyên số TikTok đã chốt. Cột Doanh Thu của sổ tự ra đúng số tiền TikTok sẽ trả về.
 
 Tool ghi vào sheet TikTok Shop. Không nhập tay vào sheet Tiktok đang ẩn: Lợi nhuận cộng cả hai sheet, có số ở cả hai là doanh số bị cộng hai lần.
@@ -86,7 +86,8 @@ Lỗi hay gặp riêng của TikTok
 
    Cửa sổ đen báo   ·   Làm gì
    SỐ DÒNG ĐỌC ĐƯỢC KHÔNG KHỚP Ô "TỔNG SỐ GIAO DỊCH"   ·   File tải về lỗi hoặc đã bị mở ra sửa. Tải lại file mới từ TikTok, đừng mở ra chỉnh
-   BỎ QUA … ĐƠN KHÔNG PHẢI ĐƠN BÁN   ·   Không phải lỗi. Đó là đơn hủy, đơn chưa chốt tiền hoặc đơn đang chờ trả hàng
+   … ĐƠN CẦN SOÁT TAY   ·   Không phải lỗi. Đơn hủy / hoàn / chưa chốt tiền đã được ghi và tô vàng; đọc cột Note rồi sửa tay mấy dòng đó
+   BỎ QUA … ĐƠN KHÔNG PHẢI ĐƠN BÁN   ·   Giao dịch không phải đơn hàng (tiền quảng cáo, điều chỉnh…) — không có tên hàng nên không ghi được thành dòng
    KHÔNG CÓ FILE MỚI   ·   Chưa thả file, hoặc file lần trước đã sang đã xử lý
    TU_KIEM_LECH   ·   Tiền trong báo cáo không khớp công thức — tool không ghi đơn TikTok nào. Gửi file cho người phụ trách, trong lúc chờ nhập tay như cũ
    THẢ NHẦM SÀN   ·   Báo cáo TikTok nằm trong thư mục gian Shopee, hoặc file Shopee nằm trong thư mục TikTok Shop. Chuyển file về đúng chỗ rồi bấm lại. Tool chưa ghi gì

@@ -177,14 +177,18 @@ function ghiLog(tep, dong) {
   try { fs.writeFileSync(tep, '﻿' + dong.join('\r\n') + '\r\n', 'utf8'); } catch (e) { /* không ghi được nhật ký thì thôi */ }
 }
 
+/**
+ * Từ 16/9 (chủ dự án chốt "CÓ ĐƠN LÀ GHI") chỉ còn MỘT lý do bỏ thật sự: giao dịch không phải đơn hàng.
+ * Các mã treo/hủy cũ giữ lại vì hồ sơ đổi được (`thieu_rts: 'TREO'`) và để nhật ký cũ đọc vẫn hiểu.
+ */
 const TEN_LY_DO = {
-  KHONG_PHAI_DON_BAN: 'KHÔNG PHẢI ĐƠN BÁN (H ròng = 0: đơn hủy / hoàn tiền toàn bộ / khoản hoàn phí)',
-  TREO_TRA_HANG: 'TREO — "Đang chờ hoàn tất trả hàng/hoàn tiền"',
-  TREO_HOAN_MOT_PHAN: 'TREO — có khoản hoàn một phần, tool KHÔNG BAO GIỜ tự ghi (NHẬP TAY nếu đơn có bán thật)',
-  DA_HUY: 'ĐÃ HỦY trong file Tất cả đơn hàng (Order Status)',
+  KHONG_PHAI_DON_HANG: 'không phải giao dịch "Đơn hàng" (quảng cáo, điều chỉnh… — không có tên hàng)',
   TREO_THIEU_RTS: 'TREO — chưa có ngày sắp xếp vận chuyển',
-  CHO_TINH_PHI: 'TikTok CHƯA TÍNH PHÍ (quyết toán ước tính = 0) — lượt sau ghi',
-  KHONG_PHAI_DON_HANG: 'không phải giao dịch "Đơn hàng"'
+  KHONG_PHAI_DON_BAN: 'KHÔNG PHẢI ĐƠN BÁN (H ròng = 0)',
+  TREO_TRA_HANG: 'TREO — "Đang chờ hoàn tất trả hàng/hoàn tiền"',
+  TREO_HOAN_MOT_PHAN: 'TREO — có khoản hoàn một phần',
+  DA_HUY: 'ĐÃ HỦY trong file Tất cả đơn hàng (Order Status)',
+  CHO_TINH_PHI: 'TikTok CHƯA TÍNH PHÍ (quyết toán ước tính = 0)'
 };
 
 /** Order Status của file Tất cả đơn hàng là "Đã hủy" (chịu hai kiểu bỏ dấu hủy/huỷ và bản tiếng Anh). */
@@ -319,9 +323,15 @@ async function chayTikTok(o) {
   const dcn = { hoSo, tenFile: dsA.map((x) => x.f).join(' + '), soDongDoc: soDong, soDonDoc: soDon, don, boQua };
   kq.dcn = dcn;
   kq.tenFile = dcn.tenFile;
-  if (boQua.length) noi('BỎ QUA ' + boQua.length + ' ĐƠN KHÔNG PHẢI ĐƠN BÁN (đơn hủy / chưa chốt tiền / đang chờ trả hàng) — không phải lỗi, lượt sau đơn nào có tiền thật tự vào sổ.');
+  const canhBaoDon = don.filter((d) => d.canhBao && d.canhBao.length);
+  if (canhBaoDon.length) {
+    noi(canhBaoDon.length + ' ĐƠN CẦN SOÁT TAY — vẫn GHI đủ đơn đủ số, dòng TÔ VÀNG và cột Note ghi rõ lý do:');
+    canhBaoDon.slice(0, 20).forEach((d) => noi('  · ' + d.maDon + ': ' + d.canhBao.join(' · ')));
+    if (canhBaoDon.length > 20) noi('  · … và ' + (canhBaoDon.length - 20) + ' đơn nữa (đọc cột Note các dòng vàng)');
+  }
+  if (boQua.length) noi('BỎ QUA ' + boQua.length + ' ĐƠN KHÔNG PHẢI ĐƠN BÁN (giao dịch không phải "Đơn hàng": quảng cáo, điều chỉnh… — không có tên hàng để dựng dòng).');
   if (boQua.length) {
-    noi('Không ghi ' + boQua.length + ' đơn:');
+    noi('Không ghi ' + boQua.length + ' giao dịch:');
     Object.keys(TEN_LY_DO).forEach((ma) => {
       const ds = boQua.filter((b) => b.ma === ma);
       if (!ds.length) return;
@@ -361,7 +371,7 @@ async function chayTikTok(o) {
     // ĐÈ tiền (lấy thẳng báo cáo). Ngày: NGAY_CHAY (mặc định) giữ ngayGhi của lõi; hai giá trị cũ vẫn đè được.
     const theoMa = {};
     don.forEach((d) => { theoMa[d.maDon] = d; });
-    let dongThieuRts = 0;
+    let dongThieuRts = 0, dongSoatTay = 0;
     const donThieuRts = [];
     goi.lenh.forEach((l) => l.don.forEach((d) => {
       const x = theoMa[String(d.maDon)];
@@ -377,6 +387,12 @@ async function chayTikTok(o) {
           d.dong.forEach((r, i) => { r.vang = true; if (i === 0) r.note = r.note ? r.note + '; ' + cau : cau; });
           dongThieuRts += d.dong.length;
         }
+      }
+      // CÓ ĐƠN LÀ GHI (chủ dự án 16/9): đơn hủy / hoàn / chưa chốt tiền vẫn ghi đủ số, chỉ TÔ VÀNG + Note cho nhân viên soát tay.
+      if (x.canhBao && x.canhBao.length) {
+        const cauCb = 'SOÁT TAY: ' + x.canhBao.join('; ');
+        d.dong.forEach((r, i) => { r.vang = true; if (i === 0) r.note = r.note ? r.note + '; ' + cauCb : cauCb; });
+        dongSoatTay += d.dong.length;
       }
     }));
 
@@ -431,8 +447,12 @@ async function chayTikTok(o) {
       noi('Dòng vàng vì thiếu ngày sắp xếp vận chuyển: ' + dongThieuRts + ' (đọc cột Note; sửa tay cột A khi đơn đã sắp xếp vận chuyển — chạy lại tool không sửa dòng đã ghi).');
     }
 
+    if (dongSoatTay && kqGhi) {
+      noi('Dòng vàng vì đơn hủy / hoàn / chưa chốt tiền: ' + dongSoatTay + ' (cột Note ghi rõ từng lý do — nhân viên soát và chỉnh tay; ' +
+        'chạy lại tool KHÔNG sửa dòng đã ghi nên phần chỉnh tay không bị đè).');
+    }
     noi('GHI THÊM ' + kq.thongKe.donGhi + ' đơn (' + kq.thongKe.dongGhi + ' dòng, ' + kq.thongKe.donGopO + ' đơn nhiều dòng đã gộp ô) · bỏ qua ' +
-      kq.thongKe.donDaCo + ' đơn đã có · không ghi ' + boQua.length + ' đơn chưa đủ điều kiện');
+      kq.thongKe.donDaCo + ' đơn đã có' + (boQua.length ? ' · bỏ ' + boQua.length + ' giao dịch không phải đơn hàng' : ''));
     noi('DÒNG VÀNG cần người xem: ' + kq.thongKe.dongVang);
     if (kq.thieuMapping.length) {
       noi('THIẾU MAPPING — tool KHÔNG ĐOÁN, đơn vẫn ghi với dòng vàng, cột D để trống: ' + kq.thieuMapping.length + ' loại hàng (Tên sản phẩm / Tên SKU):');

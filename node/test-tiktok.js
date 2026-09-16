@@ -296,31 +296,85 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
     return '130 dòng / 129 đơn, ô khai 130\n        · ' + am1 + '\n        · ' + am2;
   });
 
-  await test('TT-02', 'đơn không ghi → 8 = 7 KHÔNG PHẢI ĐƠN BÁN (H ròng 0: 6 đơn đã hoàn tiền toàn bộ + đơn hủy Tổng phụ 0 mà phí DƯƠNG) + 1 TREO ("Đang chờ hoàn tất trả hàng/hoàn tiền")', async () => {
-    const ma = (m) => DCN.boQua.filter((b) => b.ma === m).map((b) => b.maDon).sort();
-    // mã đơn thật không nằm trong kho công khai: dò từ file theo đúng dấu hiệu BA đo
-    const cotLyDo = A.bang[4].indexOf('Lý do chưa quyết toán');
-    const MA_TREO = Array.from(new Set(A.bang.slice(5).filter((h) => h[cotLyDo] === 'Đang chờ hoàn tất trả hàng/hoàn tiền').map((h) => String(h[1])))).sort();
-    const tongTho = {};
-    DCN.dongTho.forEach((x) => { const t = tongTho[x.maDon] || (tongTho[x.maDon] = { H: 0, Q: 0 }); t.H += x.H; t.Q += x.Q; });
-    const MA_HUY = Object.keys(tongTho).filter((m) => tongTho[m].H === 0 && tongTho[m].Q > 0);
-    bang([MA_TREO.length, MA_HUY.length], [1, 1], 'file có đúng 1 đơn đang trả hàng và 1 đơn hủy hoàn phí');
-    bang(ma('KHONG_PHAI_DON_BAN').length, 7, 'không phải đơn bán');
-    dung(ma('KHONG_PHAI_DON_BAN').indexOf(MA_HUY[0]) >= 0, 'đơn hủy hoàn phí phải là không phải đơn bán');
-    bang(ma('TREO_TRA_HANG'), MA_TREO, 'treo trả hàng');
-    bang([ma('CHO_TINH_PHI').length, DCN.boQua.length, DCN.don.length, DCN.loiTuKiem.length], [0, 8, 121, 0], 'chờ phí / không ghi / ghi được / lệch tự kiểm');
-    const amTreo = await doiChungAm(async () => {
-      const L = napLoiSua('adapters/AdapterTikTok.gs', "      if (treo) return boQua('TREO_TRA_HANG',", "      if (false) return boQua('TREO_TRA_HANG',");
-      const k = L.AdapterTikTok.docSeThanhToan(A.bang, { tenFile: 'A' });
-      return k.don.some((d) => d.maDon === MA_TREO[0]) ? ['đơn đang trả hàng lọt vào danh sách ghi'] : [];
-    }, 'bỏ luật (b) treo đơn đang trả hàng');
+  await test('TT-02', 'CÓ ĐƠN LÀ GHI (chủ dự án chốt 16/9, đè luật "bỏ đơn" D-83): 8 đơn bất thường (1 hủy Tổng phụ 0 · 6 hoàn TOÀN BỘ · 1 "Đang chờ hoàn tất trả hàng/hoàn tiền"; 6 đơn quyết toán ước tính 0) VẪN ĐƯỢC GHI đủ dòng đủ số, dòng TÔ VÀNG #FFF2CC, ô Note mở đầu "SOÁT TAY: " và nêu ĐÚNG từng lý do — 0 đơn bị bỏ; nhóm DUY NHẤT còn bị bỏ là giao dịch khác "Đơn hàng" (KHONG_PHAI_DON_HANG)', async () => {
+    // Mã đơn / số tiền thật của shop KHÔNG nằm trong kho công khai: dò cả nhóm bất thường từ CHÍNH file theo đúng dấu hiệu chủ dự án nêu,
+    // KHÔNG hỏi adapter (nếu hỏi adapter thì phép chấm chỉ soi gương).
+    const hd = A.bang[4];
+    const iMa = hd.indexOf('ID đơn hàng/điều chỉnh'), iLy = hd.indexOf('Lý do chưa quyết toán'), iLoai = hd.indexOf('Loại giao dịch');
+    const iTp = hd.indexOf('Tổng phụ trước giảm giá'), iHo = hd.indexOf('Tổng phụ hoàn tiền trước giảm giá của người bán'), iQt = hd.indexOf('Số tiền quyết toán ước tính');
+    dung([iMa, iLy, iLoai, iTp, iHo, iQt].every((i) => i >= 0), 'file thật thiếu cột để dò: ' + [iMa, iLy, iLoai, iTp, iHo, iQt].join(','));
+    const LY_TREO = 'Đang chờ hoàn tất trả hàng/hoàn tiền';
+    const CAU = {
+      treo: '"' + LY_TREO + '" — khách đang đòi trả hàng/hoàn tiền',
+      huy: 'Tổng phụ trước giảm giá = 0 — dấu hiệu ĐƠN HỦY',
+      hoan: 'đã hoàn tiền TOÀN BỘ — doanh thu ròng 0',
+      motPhan: 'có khoản HOÀN MỘT PHẦN — số lượng bán thật phải kiểm tay',
+      chuaPhi: 'TikTok CHƯA TÍNH PHÍ (quyết toán ước tính = 0)'
+    };
+    const tho = {};
+    A.bang.slice(5).forEach((h) => {
+      if (!h[iMa]) return;
+      const t = tho[String(h[iMa])] || (tho[String(h[iMa])] = { tp: [], ho: [], q: [], ly: [] });
+      t.tp.push(Number(h[iTp])); t.ho.push(Number(h[iHo])); t.q.push(Number(h[iQt])); t.ly.push(String(h[iLy] == null ? '' : h[iLy]));
+    });
+    const can = {};                                  // mã → các câu lý do BẮT BUỘC phải có trong ô Note
+    Object.keys(tho).forEach((m) => {
+      const t = tho[m], H = t.tp.map((v, i) => v + t.ho[i]), ds = [];
+      if (t.ly.indexOf(LY_TREO) >= 0) ds.push(CAU.treo);
+      if (t.tp.every((v) => v === 0)) ds.push(CAU.huy);
+      else if (H.every((v) => v === 0)) ds.push(CAU.hoan);
+      else if (H.some((v) => v === 0) || t.ho.some((v) => v !== 0)) ds.push(CAU.motPhan);
+      if (t.q.some((v) => v === 0)) ds.push(CAU.chuaPhi);
+      if (ds.length) can[m] = ds;
+    });
+    const MA_BAT = Object.keys(can);
+    const dem = (c) => MA_BAT.filter((m) => can[m].indexOf(c) >= 0).length;
+    bang([MA_BAT.length, dem(CAU.treo), dem(CAU.huy), dem(CAU.hoan), dem(CAU.motPhan), dem(CAU.chuaPhi)], [8, 1, 1, 6, 0, 6],
+      'dò từ file: bất thường / treo trả hàng / hủy Tổng phụ 0 / hoàn toàn bộ / hoàn một phần / chưa tính phí');
+    bang([DCN.boQua.length, DCN.don.length, DCN.loiTuKiem.length], [0, 129, 0], 'đơn bị bỏ / đơn ghi được / lệch tự kiểm');
+    bang(MA_BAT.filter((m) => !DCN.don.some((d) => d.maDon === m)), [], 'đơn bất thường bị loại khỏi ĐƠN CHUẨN');
+
+    // Chấm TRÊN SỔ GIẢ: cả 8 mã phải có dòng, dòng vàng, Note "SOÁT TAY: " + đúng lý do; và đơn BÌNH THƯỜNG không được mang lý do bất thường nào.
+    const cham = async (L) => {
+      const X = dungSim({});
+      const r = await chayTT(X.sim, dungVh(X.sim, { tiktok: [FILE.A] }), { lop: L });
+      if (r.e) { X.sim.thaoGo(); return ['lỗi ' + String(r.e.message).slice(0, 120)]; }
+      const loi = [];
+      MA_BAT.forEach((m) => {
+        const s = dongCua(X.ss, m);
+        if (!s) { loi.push(m + ': KHÔNG có dòng nào trên sổ (đơn bất thường bị bỏ)'); return; }
+        const note = String(s.note == null ? '' : s.note);
+        if (s.rows.some((x) => x.vang !== '#FFF2CC')) loi.push(m + ': dòng không vàng ' + JSON.stringify(s.rows.map((x) => x.vang)));
+        if (note.indexOf('SOÁT TAY: ') < 0) loi.push(m + ': Note không có "SOÁT TAY: " ("' + note.slice(0, 80) + '")');
+        can[m].forEach((c) => { if (note.indexOf(c) < 0) loi.push(m + ': Note thiếu lý do "' + c.slice(0, 45) + '…" ("' + note.slice(0, 120) + '")'); });
+      });
+      DCN.don.filter((d) => !MA_TREN_SO.has(d.maDon) && !can[d.maDon]).forEach((d) => {
+        const s = dongCua(X.ss, d.maDon);
+        if (!s) { loi.push(d.maDon + ': đơn mới bình thường chưa lên sổ'); return; }
+        const note = String(s.note == null ? '' : s.note);
+        Object.keys(CAU).forEach((k) => { if (note.indexOf(CAU[k]) >= 0) loi.push(d.maDon + ': đơn BÌNH THƯỜNG mà Note có "' + CAU[k].slice(0, 40) + '…"'); });
+      });
+      X.sim.thaoGo();
+      return loi;
+    };
+    bang((await cham(lop)).slice(0, 4), [], '8 đơn bất thường trên sổ');
     const am = await doiChungAm(async () => {
-      const L = napLoiSua('adapters/AdapterTikTok.gs', [['      if (ds.every(function (d) { return d.H === 0; })) {', '      if (false) {'], ['      if (ds.every(function (d) { return d.H - d.hoan === 0; })) {', '      if (false) {']]);
-      const k = L.AdapterTikTok.docSeThanhToan(A.bang, { tenFile: 'A' });
-      const b = k.boQua.filter((x) => x.maDon === MA_HUY[0])[0];
-      return (!b || b.ma !== 'KHONG_PHAI_DON_BAN') ? ['đơn hủy hoàn phí → ' + (b ? b.ma + ' (' + b.chiTiet.slice(0, 70) + ')' : 'GHI') + ' — không còn gọi đúng là không phải đơn bán'] : [];
-    }, 'bỏ luật Tổng phụ = 0 + H ròng = 0');
-    return '7 + 1 = 8 · ' + am + '\n        · ' + amTreo;
+      const L = napLoiSua('adapters/AdapterTikTok.gs', 'quyetToan: Q, lyDo: ds[0].lyDo, canhBao: cb,', 'quyetToan: Q, lyDo: ds[0].lyDo, canhBao: [],');
+      ['DanhMuc', 'MapListing', 'Normalize'].forEach((t) => { global[t] = L[t]; });
+      try { return await cham(L); } finally { ['DanhMuc', 'MapListing', 'Normalize'].forEach((t) => { global[t] = lop[t]; }); }
+    }, 'bỏ phần gắn cảnh báo trong AdapterTikTok (đơn hủy/hoàn vẫn ghi nhưng KHÔNG vàng, KHÔNG Note)');
+
+    // Nhóm DUY NHẤT còn bị bỏ: file thật không có giao dịch nào khác "Đơn hàng" → dựng một giao dịch quảng cáo từ chính một đơn của file.
+    const maQc = String(A.bang[5][iMa]);
+    const bangQc = A.bang.map((h, i) => (i >= 5 && String(h[iMa]) === maQc ? h.map((v, j) => (j === iLoai ? 'GMV thanh toán cho Quảng cáo TikTok' : v)) : h));
+    const kQc = AT.docSeThanhToan(bangQc, { tenFile: 'A' });
+    bang([kQc.boQua.map((b) => [b.ma, b.maDon === maQc]), kQc.don.length], [[['KHONG_PHAI_DON_HANG', true]], 128], 'giao dịch khác "Đơn hàng"');
+    const amQc = await doiChungAm(async () => {
+      const L = napLoiSua('adapters/AdapterTikTok.gs', "      if (khac) return boQua('KHONG_PHAI_DON_HANG',", "      if (false) return boQua('KHONG_PHAI_DON_HANG',");
+      const k = L.AdapterTikTok.docSeThanhToan(bangQc, { tenFile: 'A' });
+      return k.boQua.length ? [] : ['giao dịch quảng cáo lọt vào danh sách ghi (' + k.don.length + ' đơn, 0 bỏ qua)'];
+    }, 'bỏ luật giao dịch khác "Đơn hàng"');
+    return '8 đơn bất thường đều ghi + vàng + Note đúng lý do · 0 đơn bị bỏ · giao dịch quảng cáo → KHONG_PHAI_DON_HANG\n        · ' + am + '\n        · ' + amQc;
   });
 
   await test('TT-03', 'mã đơn trả ra là CHUỖI đủ 18 ký tự và đúng từng ký tự như file → 129/129 (ghi được + không ghi)', async () => {
@@ -357,26 +411,41 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
     return 'dòng 6 → 2026-09-15 · ô A sổ giờ Mỹ hiện 2026-09-16 (ngày chạy) · ' + am;
   });
 
-  await test('TT-05', 'CÔNG THỨC CHỐT (ròng hoàn tiền, đổi dấu): H − I − J − K = "Số tiền quyết toán ước tính" → 130/130 dòng; lệch một đồng → DỪNG cả phần TikTok (TU_KIEM_LECH)', async () => {
+  await test('TT-05', 'CÔNG THỨC CHỐT (ròng hoàn tiền, đổi dấu): H − I − J − K = "Số tiền quyết toán ước tính" → 130/130 dòng; ĐƠN BÌNH THƯỜNG (không dấu bất thường nào) lệch ĐÚNG MỘT ĐỒNG → `kiemTuKiem` ném TU_KIEM_LECH, DỪNG cả phần TikTok, đơn đó không vào ĐƠN CHUẨN', async () => {
     const khop = (dt) => dt.filter((x) => x.H - x.I - x.J - x.K === x.Q).length;
     bang(khop(DCN.dongTho), 130, 'số dòng khớp');
-    const sai = (moc, thay) => { const L = napLoiSua('adapters/AdapterTikTok.gs', moc, thay); return L.AdapterTikTok.docSeThanhToan(A.bang, { tenFile: 'A' }); };
+    // Luật 16/9: đơn ĐÃ có cảnh báo thì tiền lệch chỉ thêm một câu Note; chỉ ĐƠN BÌNH THƯỜNG lệch mới DỪNG. Muốn chấm đúng vế "DỪNG" phải
+    // có đơn bình thường thật: dựng từ CHÍNH file thật bằng cách xoá ô "Lý do chưa quyết toán" (ô thông tin, không đụng một đồng tiền nào).
+    const iMa = A.bang[4].indexOf('ID đơn hàng/điều chỉnh'), iLy = A.bang[4].indexOf('Lý do chưa quyết toán'), iQt = A.bang[4].indexOf('Số tiền quyết toán ước tính');
+    const bangBt = A.bang.map((h, i) => (i >= 5 ? h.map((v, j) => (j === iLy ? '' : v)) : h));
+    const kBt = AT.docSeThanhToan(bangBt, { tenFile: 'A' });
+    const donBt = kBt.don.filter((d) => !d.canhBao.length);
+    bang([donBt.length, kBt.loiTuKiem.length, khop(kBt.dongTho), kBt.don.length], [122, 0, 130, 129], 'đơn bình thường / lệch tự kiểm / dòng khớp / đơn ghi được');
+    AT.kiemTuKiem(kBt);                                                   // không lệch một đồng nào thì KHÔNG được ném
+    const maLech = donBt[0].maDon;
+    const bangLech = bangBt.map((h, i) => (i >= 5 && String(h[iMa]) === maLech ? h.map((v, j) => (j === iQt ? String(Number(v) + 1) : v)) : h));
+    const kLech = AT.docSeThanhToan(bangLech, { tenFile: 'A' });
+    bang([kLech.loiTuKiem.length, kLech.loiTuKiem.length ? kLech.loiTuKiem[0].maDon === maLech : null, kLech.don.some((d) => d.maDon === maLech)],
+      [1, true, false], 'đơn bình thường lệch 1 đồng');
+    let eL = null;
+    try { AT.kiemTuKiem(kLech); } catch (x) { eL = x; }
+    dung(eL && eL.maKeodon === 'TU_KIEM_LECH' && /KHÔNG ghi đơn nào/.test(eL.message) && eL.message.indexOf(maLech) >= 0,
+      'lệch 1 đồng phải ném TU_KIEM_LECH: ' + (eL ? eL.message.slice(0, 140) : 'KHÔNG ném'));
+    const sai = (bangVao, moc, thay) => { const L = napLoiSua('adapters/AdapterTikTok.gs', moc, thay); return { L: L, k: L.AdapterTikTok.docSeThanhToan(bangVao, { tenFile: 'A' }) }; };
     const am1 = await doiChungAm(async () => {
-      const k = sai("      H: n('tien_truoc_giam') + n('hoan_truoc_giam'),", "      H: n('tien_truoc_giam'),");
-      const n = khop(k.dongTho);
+      const n = khop(sai(A.bang, "      H: n('tien_truoc_giam') + n('hoan_truoc_giam'),", "      H: n('tien_truoc_giam'),").k.dongTho);
       return n !== 130 ? ['bỏ khoản hoàn → ' + n + '/130'] : [];
     }, 'công thức 4 cột gốc (không cộng khoản hoàn)');
     const am2 = await doiChungAm(async () => {
-      const k = sai("      J: -n('tong_phi') - K,", "      J: Math.abs(n('tong_phi')) - K,");
-      const n = khop(k.dongTho);
+      const n = khop(sai(A.bang, "      J: -n('tong_phi') - K,", "      J: Math.abs(n('tong_phi')) - K,").k.dongTho);
       return n !== 130 ? ['trị tuyệt đối → ' + n + '/130 (dòng hoàn phí dương thành khoản phí)'] : [];
     }, 'lấy trị tuyệt đối Tổng phí');
     const am3 = await doiChungAm(async () => {
-      const k = sai("      I: -(n('giam_gia_shop') + n('hoan_giam_gia_shop')),", "      I: (n('giam_gia_shop') + n('hoan_giam_gia_shop')),");
-      try { AT.kiemTuKiem(k); } catch (e) { return [e.maKeodon + ': ' + e.message.slice(0, 80) + ' · ' + khop(k.dongTho) + '/130 dòng khớp']; }
+      const x = sai(bangBt, "      I: -(n('giam_gia_shop') + n('hoan_giam_gia_shop')),", "      I: (n('giam_gia_shop') + n('hoan_giam_gia_shop')),");
+      try { x.L.AdapterTikTok.kiemTuKiem(x.k); } catch (e) { return [e.maKeodon + ': bắt ' + x.k.loiTuKiem.length + ' đơn bình thường · ' + e.message.slice(0, 70)]; }
       return [];
-    }, 'quên đổi dấu giảm giá người bán → phải DỪNG');
-    return '130/130 · ' + am1 + '\n        · ' + am2 + '\n        · ' + am3;
+    }, 'quên đổi dấu giảm giá người bán → đơn bình thường phải bị bắt, DỪNG');
+    return '130/130 dòng · ' + donBt.length + ' đơn bình thường, lệch 1 đồng ở một đơn → TU_KIEM_LECH\n        · ' + am1 + '\n        · ' + am2 + '\n        · ' + am3;
   });
 
   await test('TT-16', 'file đổi thứ tự cột (đảo ngược 76 cột từ dòng 5) → ĐƠN CHUẨN y hệt nhờ tra theo tiêu đề', async () => {
@@ -470,24 +539,37 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
   const R1 = await chayTT(L1.sim, vh1);
   const DON_MOI = DCN.don.filter((d) => !MA_TREN_SO.has(d.maDon));
 
-  await test('TT-11', 'file có đơn cũ lẫn đơn mới → CHỈ ghi đơn mới: sheet đang có 71 mã → lần đầu ghi 50, bỏ qua 71, không ghi 8 (7 không phải đơn bán + 1 treo); báo cáo chuyển vào "đã xử lý" sau khi ghi', async () => {
+  await test('TT-11', 'file có đơn cũ lẫn đơn mới → CHỈ ghi đơn mới: sheet đang có 71 mã → lần đầu ghi 58, bỏ qua 71 đã có, 0 ĐƠN BỊ BỎ (CÓ ĐƠN LÀ GHI) và màn hình in khối "… ĐƠN CẦN SOÁT TAY" thay cho câu bỏ đơn; báo cáo chuyển vào "đã xử lý" sau khi ghi', async () => {
     dung(!R1.e, 'lượt chạy lỗi: ' + (R1.e && R1.e.message) + '\n' + R1.ra.slice(-600));
-    bang([MA_TREN_SO.size, R1.kq.thongKe.donGhi, R1.kq.thongKe.donDaCo, R1.kq.thongKe.donBoQua], [71, 50, 71, 8], 'trên sổ / ghi / bỏ qua / không ghi');
-    bang(DON_MOI.length, 50, 'đơn mới theo ĐƠN CHUẨN');
+    bang([MA_TREN_SO.size, R1.kq.thongKe.donGhi, R1.kq.thongKe.donDaCo, R1.kq.thongKe.donBoQua], [71, 58, 71, 0], 'trên sổ / ghi / bỏ qua đã có / bị bỏ');
+    bang(DON_MOI.length, 58, 'đơn mới theo ĐƠN CHUẨN');
     bang(DON_MOI.filter((d) => !dongCua(L1.ss, d.maDon)).length, 0, 'đơn mới chưa thấy trên sổ');
-    bang(DCN.boQua.filter((b) => dongCua(L1.ss, b.maDon)).length, 0, 'đơn không ghi mà lại có trên sổ');
+    bang([DCN.boQua.length, DCN.don.filter((d) => !dongCua(L1.ss, d.maDon)).length], [0, 0], 'đơn bị bỏ / đơn đọc được mà không có dòng nào trên sổ');
     bang([fs.readdirSync(path.join(vh1.tha, 'TikTok Shop')).filter((f) => /\.xlsx$/.test(f)).length, fs.readdirSync(path.join(vh1.tha, 'TikTok Shop', 'đã xử lý')).length], [0, 1], 'file sau khi ghi');
-    dung(/GHI THÊM 50 đơn/.test(R1.ra) && /bỏ qua 71 đơn đã có/.test(R1.ra) && /7 đơn KHÔNG PHẢI ĐƠN BÁN/.test(R1.ra) && /1 đơn TREO/.test(R1.ra), 'màn hình thiếu số: ' + R1.ra.slice(-800));
+    dung(/GHI THÊM 58 đơn/.test(R1.ra) && /bỏ qua 71 đơn đã có/.test(R1.ra) &&
+      /\d+ ĐƠN CẦN SOÁT TAY — vẫn GHI đủ đơn đủ số, dòng TÔ VÀNG và cột Note ghi rõ lý do:/.test(R1.ra) &&
+      /Dòng vàng vì đơn hủy \/ hoàn \/ chưa chốt tiền: \d+/.test(R1.ra) &&
+      !/BỎ QUA \d+ ĐƠN/.test(R1.ra) && !/Không ghi \d+ giao dịch/.test(R1.ra), 'màn hình thiếu số / còn câu bỏ đơn: ' + R1.ra.slice(-900));
     const goi = L1.sim.nhatKyGoi.map((g) => g.hanhDong);
     bang(goi, ['doc', 'ghi'], 'các gói gửi đi (đường ghi, KHÔNG xuLy)');
     // YC-53 nhật ký riêng của TikTok + INV-7: màn hình và nhật ký không lọt link Web App, link/ID file tháng, chuỗi bí mật.
     dung(R1.kq.fileLog && /_TIKTOK\.txt$/.test(R1.kq.fileLog) && fs.existsSync(R1.kq.fileLog), 'thiếu nhật ký LOG_*_TIKTOK.txt');
     const nk = fs.readFileSync(R1.kq.fileLog, 'utf8');
-    dung(/GHI THÊM 50 đơn/.test(nk) &&/^RUN \d{8}_\d{6}_TEST-TT \| bản dựng [0-9a-f]+ \| file .+ \| gian TikTok Shop \| đơn vào 129 \| ghi 50 \| bỏ qua 71 /m.test(nk), 'nhật ký thiếu số / dòng RUN: ' + nk.slice(-400));
+    dung(/GHI THÊM 58 đơn/.test(nk) &&/^RUN \d{8}_\d{6}_TEST-TT \| bản dựng [0-9a-f]+ \| file .+ \| gian TikTok Shop \| đơn vào 129 \| ghi 58 \| bỏ qua 71 /m.test(nk), 'nhật ký thiếu số / dòng RUN: ' + nk.slice(-400));
     const lot = [L1.sim.url, L1.sim.biMat, L1.sim.idCua('2026-09')].filter((x) => (R1.ra + nk).indexOf(x) >= 0)
       .concat(/docs\.google\.com\/spreadsheets/.test(R1.ra + nk) ? ['link file tháng'] : []);
     bang(lot, [], 'INV-7 màn hình + nhật ký');
-    return 'ghi 50 · bỏ qua 71 · không ghi 8 · gói ' + goi.join('→') + ' · nhật ký LOG_*_TIKTOK.txt có dòng RUN, 0 link/ID/bí mật';
+    const am = await doiChungAm(async () => {
+      // Khuyết tật: nhật ký TikTok trộn chung tên với nhật ký Shopee (YC-53 đòi nhật ký RIÊNG) và mất dòng RUN của lượt TikTok.
+      const Sai = napNodeSua('chay-tiktok.js', [["  const fileLog = path.join(cv.__ketQua, 'LOG_' + lop.Utils.nhanThoiDiem(gioVN) + '_TIKTOK.txt');",
+        "  const fileLog = path.join(cv.__ketQua, 'LOG_' + lop.Utils.nhanThoiDiem(gioVN) + '.txt');"]]);
+      const X = dungSim({});
+      const r = await chayTT(X.sim, dungVh(X.sim, { tiktok: [FILE.A] }), { mod: Sai });
+      X.sim.thaoGo();
+      if (r.e) return ['lỗi ' + String(r.e.message).slice(0, 80)];
+      return /_TIKTOK\.txt$/.test(r.kq.fileLog || '') ? [] : ['nhật ký ra "' + path.basename(r.kq.fileLog || '?') + '" — không còn là LOG_*_TIKTOK.txt riêng của TikTok'];
+    }, 'nhật ký TikTok không còn tên riêng _TIKTOK.txt');
+    return 'ghi 58 · bỏ qua 71 đã có · 0 đơn bị bỏ · gói ' + goi.join('→') + ' · nhật ký LOG_*_TIKTOK.txt có dòng RUN, 0 link/ID/bí mật\n        · ' + am;
   });
 
   await test('TT-06', 'đơn 1 SKU, Mapping 1 tên viết tắt, không cấu phần → 1 dòng, D = tên viết tắt, G = SL, H/I/J/K = báo cáo, không gộp ô', async () => {
@@ -558,7 +640,7 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
   // Từ đây mỗi ca dựng Web App giả riêng (giả lập chỉ giữ MỘT Web App đăng ký một lúc).
   L1.sim.thaoGo();
 
-  await test('TT-12', 'thiếu Mapping một biến thể có đơn mới → KHÔNG ĐOÁN: dòng vàng, D trống, báo đúng Tên sản phẩm + Tên SKU (đã cắt khoảng trắng cuối); Mapping nối dòng vàng Gian hàng = TikTok Shop kèm ID SKU ở Ghi chú; các đơn khác vẫn ghi đủ 50', async () => {
+  await test('TT-12', 'thiếu Mapping một biến thể có đơn mới → KHÔNG ĐOÁN: dòng vàng, D trống, báo đúng Tên sản phẩm + Tên SKU (đã cắt khoảng trắng cuối); Mapping nối dòng vàng Gian hàng = TikTok Shop kèm ID SKU ở Ghi chú; các đơn khác vẫn ghi đủ 58', async () => {
     const ungVien = DON_MOI.filter((x) => x.dong.length === 1 && x.dong[0].tenListing === TEN_GAU && cauPhanGau(x.dong[0].tenPhanLoai).length === 2);
     dung(ungVien.length, 'file thật không còn đơn mới dạng Teddy + Áo');
     const PL = ungVien[0].dong[0].tenPhanLoai;
@@ -576,7 +658,7 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
         const s = dongCua(X.ss, d.maDon);
         if (!s || s.rows.length !== 1 || (s.rows[0].D || '') !== '' || s.rows[0].vang !== '#FFF2CC' || s.H !== d.tien.H || !/tên hàng mới/.test(String(s.note || ''))) loi.push('đơn ' + d.maDon + ': ' + JSON.stringify(s && Object.assign({}, s.rows[0], { note: s.note })));
       });
-      if (r.kq.thongKe.donGhi !== 50) loi.push('ghi ' + r.kq.thongKe.donGhi + ' đơn');
+      if (r.kq.thongKe.donGhi !== 58) loi.push('ghi ' + r.kq.thongKe.donGhi + ' đơn');
       // Lõi nối MỌI tên hàng chưa có khóa trong file — kể cả tên của đơn đã nằm trên sổ (Baby Tee, đơn nhập tay) — y như gian Shopee.
       const mp = X.ss.getSheetByName('Mapping_san_pham');
       const sau = mp.getLastRow();
@@ -601,18 +683,18 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
       ['DanhMuc', 'MapListing', 'Normalize'].forEach((t) => { global[t] = L[t]; });
       try { const y = await cham(L); return Array.isArray(y) ? y : y.loi; } finally { ['DanhMuc', 'MapListing', 'Normalize'].forEach((t) => { global[t] = lop[t]; }); }
     }, 'đoán tên viết tắt bằng gợi ý khi thiếu Mapping');
-    return '"' + PL + '" thiếu → ' + ungVien.filter((x) => x.dong[0].tenPhanLoai === PL).length + ' đơn vàng, D trống · Mapping +2 dòng (biến thể thiếu + Baby Tee của đơn đã có; Ghi chú có ngày + ID SKU) · 50 đơn vẫn ghi\n        · ' + am;
+    return '"' + PL + '" thiếu → ' + ungVien.filter((x) => x.dong[0].tenPhanLoai === PL).length + ' đơn vàng, D trống · Mapping +2 dòng (biến thể thiếu + Baby Tee của đơn đã có; Ghi chú có ngày + ID SKU) · 58 đơn vẫn ghi\n        · ' + am;
   });
 
-  await test('TT-10', 'thả LẠI CÙNG FILE → ghi 0, bỏ qua 121 = 71 + 50 của lần một, không gửi lệnh ghi, không thêm dòng', async () => {
+  await test('TT-10', 'thả LẠI CÙNG FILE → ghi 0, bỏ qua 129 = 71 + 58 của lần một, không gửi lệnh ghi, không thêm dòng', async () => {
     const X = dungSim({});
     const lan1 = await chayTT(X.sim, dungVh(X.sim, { tiktok: [FILE.A] }));
-    dung(!lan1.e && lan1.kq.thongKe.donGhi === 50, 'lần một: ' + (lan1.e ? lan1.e.message : lan1.kq.thongKe.donGhi));
+    dung(!lan1.e && lan1.kq.thongKe.donGhi === 58, 'lần một: ' + (lan1.e ? lan1.e.message : lan1.kq.thongKe.donGhi));
     const het = X.ss.getSheetByName(SHEET).getLastRow();
     X.sim.demLai();
     const r = await chayTT(X.sim, dungVh(X.sim, { tiktok: [FILE.A] }));
     dung(!r.e, 'lỗi: ' + (r.e && r.e.message));
-    bang([r.kq.thongKe.donGhi, r.kq.thongKe.donDaCo, X.ss.getSheetByName(SHEET).getLastRow(), X.sim.nhatKyGoi.map((g) => g.hanhDong)], [0, 121, het, ['doc']]);
+    bang([r.kq.thongKe.donGhi, r.kq.thongKe.donDaCo, X.ss.getSheetByName(SHEET).getLastRow(), X.sim.nhatKyGoi.map((g) => g.hanhDong)], [0, 129, het, ['doc']]);
     X.sim.thaoGo();
     const am = await doiChungAm(async () => {
       const BO_T1 = suaGs('    if (ss.maDon && ss.maDon[String(don.maDon)] != null) { thongKe.donDaCo++; return; }', '');
@@ -625,7 +707,7 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
       Y.sim.thaoGo();
       return (y.e || y.kq.thongKe.donGhi !== 0 || Y.ss.getSheetByName(SHEET).getLastRow() !== het2) ? ['lượt hai: ' + (y.e ? y.e.message.slice(0, 60) : 'ghi ' + y.kq.thongKe.donGhi)] : [];
     }, 'bỏ khử trùng hai tầng (máy + Google)');
-    return 'ghi 0 · bỏ qua 121 · chỉ một gói doc · ' + am;
+    return 'ghi 0 · bỏ qua 129 · chỉ một gói doc · ' + am;
   });
 
   await test('TT-13', 'thiếu công thức ở cột đích (xóa hết công thức cột M "Mã hàng" của TikTok Shop) → DỪNG TRƯỚC KHI GHI (YC-39): THIEU_CONG_THUC, 0 lệnh ghi, báo cáo nằm nguyên', async () => {
@@ -718,7 +800,7 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
     return k.dung + ' đơn mới cột A = 2026-09-16 (ngày chạy) · ' + am;
   });
 
-  await test('TT-56b', 'MỘT file "Sẽ thanh toán" là đủ: ghi 50 đơn; file "Tất cả đơn hàng" thả kèm → nhắc "không dùng", không đọc, không chuyển', async () => {
+  await test('TT-56b', 'MỘT file "Sẽ thanh toán" là đủ: ghi 58 đơn; file "Tất cả đơn hàng" thả kèm → nhắc "không dùng", không đọc, không chuyển', async () => {
     const cham = async (L, tc) => {
       const X = dungSim({});
       const vh = dungVh(X.sim, Object.assign({ tiktok: [FILE.A] }, tc || {}));
@@ -726,7 +808,7 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
       X.sim.thaoGo();
       const loi = [];
       if (r.e) return ['lỗi ' + r.e.message.slice(0, 100)];
-      if (!/GHI THÊM 50 đơn/.test(r.ra)) loi.push('không ghi 50: ' + (r.ra.match(/GHI THÊM \d+ đơn/) || ['?'])[0]);
+      if (!/GHI THÊM 58 đơn/.test(r.ra)) loi.push('không ghi 58: ' + (r.ra.match(/GHI THÊM \d+ đơn/) || ['?'])[0]);
       const conLai = fs.readdirSync(path.join(vh.tha, 'TikTok Shop')).filter((f) => /\.xlsx$/.test(f));
       if (tc && tc.coC && (conLai.length !== 1 || !/^Tất cả đơn hàng/.test(conLai[0]) || !/bản này KHÔNG dùng file này/.test(r.ra))) loi.push('file C: còn ' + conLai.join(', '));
       return loi;
@@ -738,7 +820,7 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
       ['DanhMuc', 'MapListing', 'Normalize'].forEach((t) => { global[t] = L[t]; });
       try { return await cham(L); } finally { ['DanhMuc', 'MapListing', 'Normalize'].forEach((t) => { global[t] = lop[t]; }); }
     }, 'đòi thêm file Tất cả đơn hàng (YC-57 cũ)');
-    return 'một file → ghi 50 · C thả kèm nằm nguyên, nhắc không dùng · ' + am;
+    return 'một file → ghi 58 · C thả kèm nằm nguyên, nhắc không dùng · ' + am;
   });
 
   await test('TT-01b', 'P-1 mở rộng cho CẢ BA loại file: B đối chiếu sheet "Báo cáo" (ô Tổng số tiền quyết toán, ô Tổng phụ trước giảm giá) — lệch là DOC_HUT; C số dòng đọc được không ít hơn vùng khai — ít hơn là DOC_HUT', async () => {
@@ -763,36 +845,76 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
     return 'B khớp 2 ô "Báo cáo", lệch 1 đ → DOC_HUT, đọc hụt → DOC_HUT · C 300 đơn / 301 dòng, đọc 50/303 → DOC_HUT';
   });
 
-  await test('TT-57', 'D-83 BA VẾ + câu 2B.11: "BỎ QUA 8 ĐƠN KHÔNG PHẢI ĐƠN BÁN" (7 đơn hủy + 1 chưa chốt tiền của bộ 15/9); đọc hụt in "SỐ DÒNG ĐỌC ĐƯỢC KHÔNG KHỚP Ô \"TỔNG SỐ GIAO DỊCH\""; vế (b) Tổng phụ trước giảm giá = 0 bắt cả đơn có khoản hoàn', async () => {
+  await test('TT-57', 'CÓ ĐƠN LÀ GHI + câu 2B.11: màn hình in KHỐI "… ĐƠN CẦN SOÁT TAY — vẫn GHI đủ đơn đủ số…" đúng số đơn và đúng lý do từng đơn, KHÔNG còn câu bỏ đơn nào; đọc hụt vẫn in "SỐ DÒNG ĐỌC ĐƯỢC KHÔNG KHỚP Ô \"TỔNG SỐ GIAO DỊCH\""; vế "Tổng phụ trước giảm giá = 0" (đơn có khoản hoàn) → ĐƠN VẪN ĐƯỢC GHI, dòng vàng, Note "SOÁT TAY: … dấu hiệu ĐƠN HỦY"', async () => {
+    const CB = {};
+    DCN.don.forEach((d) => { if (d.canhBao && d.canhBao.length) CB[d.maDon] = d.canhBao.join(' · '); });
+    const soCb = Object.keys(CB).length;
+    dung(soCb > 0 && DCN.boQua.length === 0, 'file thật phải có đơn cần soát tay và 0 đơn bị bỏ: ' + soCb + ' / ' + DCN.boQua.length);
     const cham = async (Mod) => {
       const X = dungSim({});
       const r = await chayTT(X.sim, dungVh(X.sim, { tiktok: [FILE.A] }), { mod: Mod });
       X.sim.thaoGo();
       if (r.e) return ['lỗi ' + r.e.message.slice(0, 120)];
-      return /BỎ QUA 8 ĐƠN KHÔNG PHẢI ĐƠN BÁN/.test(r.ra) ? [] : ['thiếu "BỎ QUA 8 ĐƠN KHÔNG PHẢI ĐƠN BÁN"'];
+      const m = /(\d+) ĐƠN CẦN SOÁT TAY — vẫn GHI đủ đơn đủ số, dòng TÔ VÀNG và cột Note ghi rõ lý do:/.exec(r.ra);
+      if (!m) return ['màn hình KHÔNG có khối "… ĐƠN CẦN SOÁT TAY"'];
+      const loi = [];
+      if (Number(m[1]) !== soCb) loi.push('khối báo ' + m[1] + ' đơn, ĐƠN CHUẨN có ' + soCb + ' đơn mang cảnh báo');
+      const dsIn = r.ra.split('\n').filter((l) => /^ {2}· \d{15,20}: /.test(l));
+      if (!dsIn.length) loi.push('khối không liệt kê đơn nào');
+      dsIn.forEach((l) => {
+        const q = /^ {2}· (\d{15,20}): (.*)$/.exec(l);
+        if (CB[q[1]] !== q[2]) loi.push('lý do in ra không đúng cảnh báo của ' + q[1] + ': "' + String(q[2]).slice(0, 70) + '"');
+      });
+      // 0 đơn bị bỏ → màn hình không được còn câu bỏ đơn nào (câu "BỎ QUA …" nay chỉ dành cho giao dịch không phải đơn hàng)
+      if (/BỎ QUA \d+ ĐƠN/.test(r.ra) || /Không ghi \d+ giao dịch/.test(r.ra)) loi.push('màn hình vẫn nói bỏ đơn: ' + (r.ra.match(/BỎ QUA \d+ ĐƠN.*|Không ghi \d+ giao dịch.*/) || [''])[0].slice(0, 90));
+      return loi;
     };
-    bang(await cham(TT), [], 'câu bỏ qua');
-    const am = await doiChungAm(async () => cham(napNodeSua('chay-tiktok.js', [["  if (boQua.length) noi('BỎ QUA '", "  if (false) noi('BỎ QUA '"]])), 'không in câu bỏ qua');
+    bang((await cham(TT)).slice(0, 4), [], 'khối ĐƠN CẦN SOÁT TAY');
+    const am = await doiChungAm(async () => cham(napNodeSua('chay-tiktok.js', [['  if (canhBaoDon.length) {', '  if (false) {']])),
+      'không in khối đơn cần soát tay (nhân viên không biết dòng nào phải soát)');
     const XLSX = require('xlsx');
     const bangHut = XLSX.utils.sheet_to_json(XLSX.readFile(FILE.A, { raw: true }).Sheets[A.nd.tenSheet], { header: 1, raw: true, defval: '' });
     let eHut = null;
     try { AT.docSeThanhToan(bangHut, { tenFile: 'A' }); } catch (x) { eHut = x; }
     dung(eHut && /^SỐ DÒNG ĐỌC ĐƯỢC KHÔNG KHỚP Ô "TỔNG SỐ GIAO DỊCH"/.test(eHut.message), 'câu đọc hụt');
-    // vế (b): đơn ghi được, ép Tổng phụ trước giảm giá = 0 và cho một khoản hoàn âm (H ròng ≠ 0) → vẫn KHÔNG PHẢI ĐƠN BÁN, không làm dừng cả lượt
+    // Vế "Tổng phụ trước giảm giá = 0": ép MỘT ĐƠN MỚI bình thường về Tổng phụ 0 + một khoản hoàn âm (H ròng ≠ 0) → nay VẪN GHI, vàng + Note.
     const hd = A.bang[4];
+    const cMa = hd.indexOf('ID đơn hàng/điều chỉnh');
     const cTp = hd.indexOf('Tổng phụ trước giảm giá'), cHoan = hd.indexOf('Tổng phụ hoàn tiền trước giảm giá của người bán');
-    const maB = DCN.don.filter((d) => d.dong.length === 1)[0].maDon;
-    const bangB = A.bang.map((h, i) => (i >= 5 && String(h[1]) === maB ? h.map((v, j) => (j === cTp ? '0' : j === cHoan ? '-1000' : v)) : h));
+    const CAU_HUY = 'Tổng phụ trước giảm giá = 0 — dấu hiệu ĐƠN HỦY';
+    const dGoc = DON_MOI.filter((d) => d.dong.length === 1 && !/ĐƠN HỦY|hoàn tiền TOÀN BỘ|HOÀN MỘT PHẦN|khách đang đòi|CHƯA TÍNH PHÍ/.test((d.canhBao || []).join(' ')))[0];
+    dung(dGoc, 'file thật không còn đơn mới 1 dòng, không sẵn dấu hủy/hoàn để dựng vế này');
+    const maB = dGoc.maDon;
+    const bangB = A.bang.map((h, i) => (i >= 5 && String(h[cMa]) === maB ? h.map((v, j) => (j === cTp ? '0' : j === cHoan ? '-1000' : v)) : h));
     const kB = AT.docSeThanhToan(bangB, { tenFile: 'A' });
-    const bB = kB.boQua.filter((b) => b.maDon === maB)[0];
-    dung(bB && bB.ma === 'KHONG_PHAI_DON_BAN' && !kB.loiTuKiem.length, 'vế (b): ' + (bB ? bB.ma : 'không bỏ qua') + ' · lệch tự kiểm ' + kB.loiTuKiem.length);
+    const dB = kB.don.filter((d) => d.maDon === maB)[0];
+    dung(dB && dB.canhBao.indexOf(CAU_HUY) >= 0 && !kB.boQua.length && !kB.loiTuKiem.length,
+      'vế Tổng phụ 0: ' + (dB ? JSON.stringify(dB.canhBao) : 'ĐƠN BỊ BỎ') + ' · bỏ qua ' + kB.boQua.length + ' · lệch tự kiểm ' + kB.loiTuKiem.length);
+    const tepB = path.join(tamMoi('veHuy'), 'Onhold-unsettled-orders-tongphu0.xlsx');
+    const wbB = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wbB, XLSX.utils.aoa_to_sheet(bangB), A.nd.tenSheet);
+    XLSX.writeFile(wbB, tepB);
+    const chamB = async (L) => {
+      const X = dungSim({});
+      const r = await chayTT(X.sim, dungVh(X.sim, { tiktok: [tepB] }), { lop: L });
+      const s = r.e ? null : dongCua(X.ss, maB);
+      X.sim.thaoGo();
+      if (r.e) return ['lỗi ' + String(r.e.message).slice(0, 120)];
+      if (!s) return ['đơn Tổng phụ 0 KHÔNG được ghi lên sổ'];
+      const note = String(s.note == null ? '' : s.note);
+      const loi = [];
+      if (s.rows.some((x) => x.vang !== '#FFF2CC')) loi.push('dòng không vàng ' + JSON.stringify(s.rows.map((x) => x.vang)));
+      if (note.indexOf('SOÁT TAY: ') < 0 || note.indexOf(CAU_HUY) < 0) loi.push('Note: "' + note.slice(0, 150) + '"');
+      if (s.H !== dB.tien.H) loi.push('H trên sổ ' + s.H + ' ≠ số trong báo cáo ' + dB.tien.H);
+      return loi;
+    };
+    bang(await chamB(lop), [], 'vế Tổng phụ 0 → ghi + vàng + Note');
     const amB = await doiChungAm(async () => {
-      const L = napLoiSua('adapters/AdapterTikTok.gs', '      if (ds.every(function (d) { return d.H - d.hoan === 0; })) {', '      if (false) {');
-      const k = L.AdapterTikTok.docSeThanhToan(bangB, { tenFile: 'A' });
-      const b = k.boQua.filter((x) => x.maDon === maB)[0];
-      return (b && b.ma === 'KHONG_PHAI_DON_BAN') ? [] : ['đơn Tổng phụ 0 → ' + (b ? b.ma : (k.loiTuKiem.length ? 'lệch tự kiểm, dừng cả lượt' : 'GHI'))];
-    }, 'bỏ vế (b) Tổng phụ trước giảm giá = 0');
-    return '"BỎ QUA 8 ĐƠN KHÔNG PHẢI ĐƠN BÁN" · câu đọc hụt đúng chuỗi · vế (b) bắt đơn Tổng phụ 0 có hoàn · ' + am + '\n        · ' + amB;
+      const L = napLoiSua('adapters/AdapterTikTok.gs', '      if (ds.every(function (d) { return d.H - d.hoan === 0; })) cb.push(', '      if (false) cb.push(');
+      ['DanhMuc', 'MapListing', 'Normalize'].forEach((t) => { global[t] = L[t]; });
+      try { return await chamB(L); } finally { ['DanhMuc', 'MapListing', 'Normalize'].forEach((t) => { global[t] = lop[t]; }); }
+    }, 'bỏ vế "Tổng phụ trước giảm giá = 0" (đơn hủy vẫn ghi nhưng Note không nói đúng lý do)');
+    return 'khối "' + soCb + ' ĐƠN CẦN SOÁT TAY" đúng số + đúng lý do từng đơn, 0 câu bỏ đơn · câu đọc hụt đúng chuỗi · đơn Tổng phụ 0 vẫn ghi, vàng, Note "SOÁT TAY: … ĐƠN HỦY"\n        · ' + am + '\n        · ' + amB;
   });
 
   console.log('\n--- TT-14: TikTok KHÔNG làm lệch Shopee (nút 4 trọn đường trong một tiến trình) ---');
@@ -824,7 +946,7 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
     const chiShopee = await chayNut4({});
     dung(chiShopee.ma === 0, 'lượt chỉ Shopee phải mã 0: ' + chiShopee.ma + '\n' + chiShopee.ra.slice(-500));
     const caHai = await chayNut4({ tiktok: [FILE.A] });
-    dung(caHai.ma === 0 && /GHI THÊM 50 đơn/.test(caHai.ra), 'lượt TikTok + Shopee: mã ' + caHai.ma + '\n' + caHai.ra.slice(-800));
+    dung(caHai.ma === 0 && /GHI THÊM 58 đơn/.test(caHai.ra), 'lượt TikTok + Shopee: mã ' + caHai.ma + '\n' + caHai.ra.slice(-800));
     const lech = [];
     Object.keys(chiShopee.anh).forEach((t) => soKhac(chiShopee.anh[t], caHai.anh[t]).forEach((k) => lech.push(t + '!' + k)));
     bang(lech.slice(0, 5), [], 'ô Shopee khác nhau giữa hai lượt');

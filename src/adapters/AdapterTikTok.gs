@@ -22,13 +22,14 @@
  * THUẾ TIKTOK LÀM TRÒN CHẴN (half-even) 1% và 0,5% trên Tổng doanh thu (BA đo 122/123 dòng; một đơn tính trên cơ sở khác) — lõi Shopee làm
  * tròn lên nên lệch 1 đ ở 64/130 dòng. CẤM tự dựng công thức thuế cho TikTok: luôn lấy số từ báo cáo.
  *
- * LUẬT KHÔNG GHI (P-2, BA chốt 16/9):
- *   (a) H ròng = 0 → KHÔNG PHẢI ĐƠN BÁN (đơn hủy / hoàn toàn bộ / khoản hoàn phí) → bỏ qua, nhắc.
- *       Đo 15/9: 6 đơn "quyết toán 0" thật ra đã HOÀN TOÀN BỘ (Tổng phụ hoàn tiền = −Tổng phụ), 5 đơn Order Export ghi "Đã hủy";
- *       và một đơn hủy Tổng phụ 0, phí dương (hoàn phí SFR).
- *   (b) Lý do chưa quyết toán = "Đang chờ hoàn tất trả hàng/hoàn tiền" → TREO, không ghi, nhắc (file đo 16/9 có 1 đơn như vậy, khách đã hủy).
- *   (c) Hoàn một phần (còn H > 0 nhưng có khoản hoàn) → TREO: số lượng bán thật không suy được từ báo cáo.
- *   (d) Quyết toán ước tính = 0 mà H > 0 → TikTok chưa tính phí → bỏ qua, lượt sau ghi.
+ * CÓ ĐƠN LÀ GHI — CHỦ DỰ ÁN CHỐT 16/9 sáng (đè luật "bỏ đơn" D-83 của BA):
+ *   Tool đẩy lên ĐỦ ĐƠN, ĐỦ SỐ như báo cáo; đơn bất thường thì TÔ VÀNG + ghi lý do vào cột Note để nhân viên soát tay.
+ *   Lý do: nhân viên vẫn soát lượt chạy (3 tiếng nhập tay → 20 phút), và tool KHÔNG BAO GIỜ sửa dòng đã ghi nên phần họ chỉnh tay
+ *   không bị đè. Bỏ đơn mới là cái hại: sổ thiếu đơn, không ai biết mà tìm.
+ *   Dấu hiệu bất thường ghi vào Note (nhiều dấu thì ghi hết): Tổng phụ trước giảm giá = 0 (đơn hủy) · hoàn TOÀN BỘ ·
+ *   hoàn MỘT PHẦN · "Đang chờ hoàn tất trả hàng/hoàn tiền" · quyết toán ước tính = 0 (TikTok chưa tính phí) · lý do chưa quyết toán khác.
+ *   NHÓM DUY NHẤT BỊ BỎ: giao dịch KHÔNG phải "Đơn hàng" (quảng cáo, điều chỉnh…) — không có tên hàng/số lượng nên không dựng được dòng kho.
+ *   Đo 15/9: 129 đơn → ghi hết, 8 đơn mang Note (7 hủy/hoàn + 1 chưa chốt tiền).
  *
  * BẪY:
  *   1. Mã đơn là CHUỖI 18 chữ số (> Number.MAX_SAFE_INTEGER). Không bao giờ ép sang số; ô đã thành số là DỪNG.
@@ -391,34 +392,38 @@ var AdapterTikTok = (function () {
       var t = { H: 0, I: 0, J: 0, K: 0 }, Q = 0;
       ds.forEach(function (d) { t.H += d.H; t.I += d.I; t.J += d.J; t.K += d.K; Q += d.Q; });
       var boQua = function (maLyDo, chiTiet) { kq.boQua.push({ maDon: ma, ma: maLyDo, chiTiet: chiTiet, dong: ds }); };
+      // Giao dịch KHÔNG phải đơn hàng (quảng cáo, điều chỉnh…) không có tên hàng / số lượng → không dựng được dòng kho. Chỉ nhóm này bị bỏ.
       var khac = ds.filter(function (d) { return d.loai !== LOAI_DON; })[0];
       if (khac) return boQua('KHONG_PHAI_DON_HANG', 'Loại giao dịch "' + khac.loai + '"');
+
+      // CHỦ DỰ ÁN CHỐT 16/9 sáng (đè D-83 "bỏ đơn"): CÓ ĐƠN LÀ GHI — hủy, hoàn, chưa chốt tiền đều ghi đủ dòng và đủ số như báo cáo,
+      // rồi TÔ VÀNG + ghi lý do vào cột Note để nhân viên soát tay. Tool không bao giờ sửa dòng đã ghi nên phần chỉnh tay không bị đè.
+      // Việc của tool là đẩy lên ĐỦ ĐƠN, ĐỦ THÔNG TIN; không ai yêu cầu tự động 100%.
+      var cb = [];
       var treo = ds.filter(function (d) { return LY_DO_TREO.indexOf(d.lyDo) >= 0; })[0];
-      if (treo) return boQua('TREO_TRA_HANG', '"' + treo.lyDo + '" — treo, không ghi; nếu khách không trả hàng đơn sẽ về báo cáo Đã quyết toán');
-      // D-83 ba vế (BA 16/9): (b) Tổng phụ trước giảm giá = 0 · H ròng = 0 (hoàn toàn bộ) → không phải đơn bán; (a) quyết toán = 0 → chờ; (c) treo ở trên.
-      if (ds.every(function (d) { return d.H - d.hoan === 0; })) {
-        return boQua('KHONG_PHAI_DON_BAN', 'Tổng phụ trước giảm giá = 0' + (Q !== 0 ? ', quyết toán ' + Q : '') + (ds[0].lyDo ? ' · ' + ds[0].lyDo : '') + ' — đơn hủy, không có hàng bán');
+      if (treo) cb.push('"' + treo.lyDo + '" — khách đang đòi trả hàng/hoàn tiền');
+      if (ds.every(function (d) { return d.H - d.hoan === 0; })) cb.push('Tổng phụ trước giảm giá = 0 — dấu hiệu ĐƠN HỦY');
+      else if (ds.every(function (d) { return d.H === 0; })) cb.push('đã hoàn tiền TOÀN BỘ — doanh thu ròng 0');
+      else if (ds.some(function (d) { return d.H === 0 || d.hoan !== 0; })) cb.push('có khoản HOÀN MỘT PHẦN — số lượng bán thật phải kiểm tay');
+      if (Q === 0 || ds.some(function (d) { return d.Q === 0; })) cb.push('TikTok CHƯA TÍNH PHÍ (quyết toán ước tính = 0)');
+      // KHÔNG gắn cờ theo ô "Lý do chưa quyết toán" nói chung: 129/129 đơn của file thật đều có ô đó ("Đã giao đơn hàng và đang chờ
+      // quyết toán", "Đang chờ giao kiện hàng"…) — gắn hết thì cả sổ vàng khè, mà hàng rào tiền (TU_KIEM_LECH) cũng tắt theo vì
+      // không còn đơn nào "bình thường". Chỉ đúng một lý do là dấu hiệu thật: "Đang chờ hoàn tất trả hàng/hoàn tiền" (xử ở trên).
+
+      var duongLa = ds.some(function (d) { return d.thueDuong; }) || t.I < 0 || t.J < 0 || t.K < 0;
+      var lechTuKiem = t.H - t.I - t.J - t.K !== Q;
+      if (duongLa || lechTuKiem) {
+        var cauTien = duongLa
+          ? 'sau khi đổi dấu MGG Shop ' + t.I + ' · Chi phí ' + t.J + ' · Thuế ' + t.K + ' — có khoản dương bất thường'
+          : 'H − I − J − K = ' + (t.H - t.I - t.J - t.K) + ' ≠ quyết toán ' + Q;
+        // Đơn BÌNH THƯỜNG mà tiền không khớp → DỪNG cả phần TikTok (luật tiền của BA, không ghi số sai).
+        // Đơn đã có dấu bất thường (hủy/hoàn/chưa chốt phí) thì tiền lệch là chuyện của chính nó → vẫn ghi, tô vàng, ghi rõ ở Note.
+        if (!cb.length) { kq.loiTuKiem.push({ maDon: ma, chiTiet: cauTien }); return; }
+        cb.push('tiền trong báo cáo không khớp phép tự kiểm (' + cauTien + ')');
       }
-      if (ds.every(function (d) { return d.H === 0; })) {
-        return boQua('KHONG_PHAI_DON_BAN', 'H ròng = 0' + (ds.some(function (d) { return d.hoan !== 0; }) ? ' (đã hoàn tiền toàn bộ)' : '') +
-          (Q !== 0 ? ', quyết toán ' + Q : '') + (ds[0].lyDo ? ' · ' + ds[0].lyDo : '') + ' — đơn hủy / hoàn, không có hàng bán');
-      }
-      if (ds.some(function (d) { return d.H === 0 || d.hoan !== 0; })) {
-        return boQua('TREO_HOAN_MOT_PHAN', 'đơn có khoản hoàn một phần — số lượng bán thật không suy được từ báo cáo, treo, KHÔNG BAO GIỜ tự ghi: NHẬP TAY đơn này');
-      }
-      if (Q === 0 || ds.some(function (d) { return d.Q === 0; })) {
-        return boQua('CHO_TINH_PHI', 'Số tiền quyết toán ước tính = 0 — TikTok chưa tính phí, lượt sau ghi');
-      }
-      if (ds.some(function (d) { return d.thueDuong; }) || t.I < 0 || t.J < 0 || t.K < 0) {
-        kq.loiTuKiem.push({ maDon: ma, chiTiet: 'sau khi đổi dấu MGG Shop ' + t.I + ' · Chi phí ' + t.J + ' · Thuế ' + t.K + ' — có khoản dương bất thường' });
-        return;
-      }
-      if (t.H - t.I - t.J - t.K !== Q) {
-        kq.loiTuKiem.push({ maDon: ma, chiTiet: 'H − I − J − K = ' + (t.H - t.I - t.J - t.K) + ' ≠ quyết toán ' + Q });
-        return;
-      }
+
       kq.don.push({
-        maDon: ma, ngay: ds[0].ngay, viTriFile: viTri, tien: t, quyetToan: Q, lyDo: ds[0].lyDo,
+        maDon: ma, ngay: ds[0].ngay, viTriFile: viTri, tien: t, quyetToan: Q, lyDo: ds[0].lyDo, canhBao: cb,
         dong: ds.map(function (d) { return { tenListing: d.tenListing, tenPhanLoai: d.tenPhanLoai, soLuong: d.soLuong, idSku: d.idSku, H: d.H, I: d.I, J: d.J, K: d.K, Q: d.Q }; })
       });
     });
