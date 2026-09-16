@@ -299,13 +299,27 @@ test('MAC-09', '`/lui` chép ngược bản sao lưu CŨ HƠN bản đang chạy
   const r2 = chay(base, tool);                              // lùi tiếp: không còn bản nào CŨ HƠN
   bang(r2.ma, 11, 'mã thoát khi hết bản để lùi');
   dung(/KHÔNG CÒN BẢN CŨ ĐỂ LÙI/.test(r2.ra), 'thiếu câu nói rõ: ' + r2.ra.slice(0, 160));
+
+  // Ba bản: 1.0.0 (cũ nhất) · 1.5.0 · 2.0.0. Từ 1.5.0 phải lùi về 1.0.0, KHÔNG được nhảy ngược lên 2.0.0
+  // (bản sao lưu 2.0.0 mang mốc thời gian MỚI hơn nên "gần nhất mà khác bản" sẽ chọn nhầm nó).
+  fs.writeFileSync(path.join(tool, 'src', 'a.gs'), 'BAN 2.0.0');
+  fs.writeFileSync(path.join(tool, 'package.json'), '{"version":"2.0.0","dependencies":{}}');
+  CD.saoLuu(base, tool);
+  fs.writeFileSync(path.join(tool, 'src', 'a.gs'), 'BAN 1.5.0');
+  fs.writeFileSync(path.join(tool, 'package.json'), '{"version":"1.5.0","dependencies":{}}');
+  const r3 = chay(base, tool);
+  bang([r3.ma, CD.banCua(tool)], [0, '1.0.0'], 'từ 1.5.0 phải lùi XUỐNG 1.0.0, không nhảy lên 2.0.0');
+
   const am = doiChungAm(() => {
-    // Khuyết tật: lấy bản sao lưu GẦN NHẤT bất kể bản nào — sau một lần lùi là lấy lại chính bản vừa chép, bấm lại vô ích.
+    // Khuyết tật: chọn bản sao lưu gần nhất mà CHỈ khác số bản đang chạy (không so lớn/nhỏ).
     const ds = CD.danhSachBanCu(base);
-    const chonSai = ds[0];
-    return chonSai && chonSai.ban === CD.banCua(tool) ? ['chọn "gần nhất" tuyệt đối sẽ lùi về đúng bản đang chạy (' + chonSai.ban + ')'] : [];
-  }, 'lùi theo "bản sao lưu gần nhất" thay vì "gần nhất mà CŨ HƠN"');
-  return 'lùi 2.0.0 → 1.0.0, lần hai mã 11 · ' + am;
+    const dangChay = '1.5.0';
+    const chonSai = ds.filter((b) => b.ban !== dangChay)[0];
+    return chonSai && CD.soSanhBan(chonSai.ban, dangChay) > 0
+      ? ['so "khác bản" sẽ lùi NGƯỢC lên ' + chonSai.ban + ' trong khi đang chạy ' + dangChay]
+      : [];
+  }, 'lùi theo "bản sao lưu khác bản đang chạy" thay vì "bản CŨ HƠN"');
+  return 'lùi 2.0.0 → 1.0.0, lần hai mã 11, từ 1.5.0 lùi đúng xuống 1.0.0 · ' + am;
 });
 
 test('MAC-10', 'chưa khai kho mã GitHub → nút 2 DỪNG, nói đúng hai ô phải điền, không tải gì, không đụng mã đang chạy', () => {
@@ -342,6 +356,63 @@ test('MAC-11', 'tên thư mục tiếng Việt dạng NFD (macOS đọc ra) vẫ
   }, 'so tên thư mục bằng chuỗi thô, không chuẩn hóa NFC');
   return 'thư mục NFD nhận đúng · ' + am;
 });
+
+test('MAC-12', 'bấm nút 2 khi ĐANG LÀ BẢN MỚI NHẤT → nói rõ và DỪNG: không sao lưu, không chép đè (bấm nhiều lần không phá kho lùi)', () => {
+    const goc = tamMoi('moinhat');
+    const base = path.join(goc, 'Cấu hình');
+    fs.mkdirSync(base, { recursive: true });
+    fs.writeFileSync(path.join(base, 'CAU_HINH_VAN_HANH.json'), JSON.stringify({ cap_nhat: { chu_tai_khoan: 'x', ten_repo: 'y', nhanh: 'main' } }));
+    const tool = path.join(base, 'keodon-apps-script');
+    fs.mkdirSync(path.join(tool, 'src'), { recursive: true });
+    fs.mkdirSync(path.join(tool, 'node_modules', 'exceljs'), { recursive: true });
+    fs.writeFileSync(path.join(tool, 'src', 'a.gs'), 'DANG CHAY');
+    fs.writeFileSync(path.join(tool, 'package.json'), '{"version":"2.8.0","dependencies":{}}');
+
+    // "Kho GitHub" giả: một thư mục có đúng bản ĐANG chạy. Thay phép tải bằng phép trỏ vào thư mục đó.
+    const kho = tamMoi('kho');
+    fs.mkdirSync(path.join(kho, 'src'), { recursive: true });
+    fs.mkdirSync(path.join(kho, 'node'), { recursive: true });
+    fs.writeFileSync(path.join(kho, 'src', 'a.gs'), 'BAN TREN KHO');
+    fs.writeFileSync(path.join(kho, 'package.json'), '{"version":"2.8.0","dependencies":{}}');
+
+    const chay = (nguon) => {
+      const tep = path.join(MAC, 'cai-dat-mac.js');
+      let src = fs.readFileSync(tep, 'utf8');
+      const moc = 'const { tam, goc } = await keoMaVe(cfg.cap_nhat);';
+      if (src.split(moc).length - 1 !== 1) throw new Error('mốc thay phép tải cần 1 chỗ');
+      src = src.split(moc).join('const { tam, goc } = { tam: fs.mkdtempSync(path.join(os.tmpdir(), "khong-dung-")), goc: ' + JSON.stringify(nguon) + ' };');
+      const tepTam = path.join(tamMoi('bo-cai'), 'cai-dat-mac.js');
+      fs.writeFileSync(tepTam, src);
+      const r = spawnSync(process.execPath, [tepTam, '--viec', 'cap-nhat', '--goc', goc], { encoding: 'utf8' });
+      return { ma: r.status, ra: (r.stdout || '') + (r.stderr || '') };
+    };
+
+    const r = chay(kho);
+    bang(r.ma, 0, 'mã thoát');
+    dung(/ĐANG LÀ BẢN MỚI NHẤT/.test(r.ra), 'thiếu câu "ĐANG LÀ BẢN MỚI NHẤT": ' + r.ra.slice(-200));
+    bang(fs.readFileSync(path.join(tool, 'src', 'a.gs'), 'utf8'), 'DANG CHAY', 'mã trên máy KHÔNG được chép đè');
+    bang(CD.danhSachBanCu(base).length, 0, 'KHÔNG được sao lưu khi chẳng có gì mới');
+
+    // Kho có bản MỚI HƠN thì phải cập nhật thật, không được viện cớ "đang là bản mới nhất".
+    fs.writeFileSync(path.join(kho, 'package.json'), '{"version":"2.9.0","dependencies":{}}');
+    const rMoi = chay(kho);
+    dung(!/ĐANG LÀ BẢN MỚI NHẤT/.test(rMoi.ra) && CD.banCua(tool) === '2.9.0', 'kho có 2.9.0 mà tool không chịu cập nhật: ' + rMoi.ra.slice(-200));
+
+    const am = doiChungAm(() => {
+      // Khuyết tật: bỏ phép so bản — lần bấm nào cũng sao lưu + chép đè, ba lần bấm là kho lùi toàn bản trùng.
+      const nguon = fs.readFileSync(path.join(MAC, 'cai-dat-mac.js'), 'utf8');
+      const moc = 'soSanhBan(banMoi, banCu) <= 0';
+      if (nguon.split(moc).length - 1 !== 1) throw new Error('mốc phép so bản cần 1 chỗ');
+      const tepTam = path.join(tamMoi('bo-cai-am'), 'cai-dat-mac.js');
+      fs.writeFileSync(tepTam, nguon.split(moc).join('false').split('const { tam, goc } = await keoMaVe(cfg.cap_nhat);')
+        .join('const { tam, goc } = { tam: fs.mkdtempSync(path.join(os.tmpdir(), "khong-dung-")), goc: ' + JSON.stringify(kho) + ' };'));
+      const truoc = CD.danhSachBanCu(base).length;
+      spawnSync(process.execPath, [tepTam, '--viec', 'cap-nhat', '--goc', goc], { encoding: 'utf8' });
+      const sau = CD.danhSachBanCu(base).length;
+      return sau > truoc ? ['bỏ phép so bản: bấm nút 2 khi không có gì mới vẫn đẻ thêm bản sao lưu (' + truoc + ' -> ' + sau + ')'] : [];
+    }, 'bỏ phép so bản trước khi sao lưu/chép');
+    return 'mã 0, không chép, không sao lưu · ' + am;
+  });
 
 // ===================================================================== kết
 for (const d of RAC) { try { fs.rmSync(d, { recursive: true, force: true }); } catch (e) { /* kệ */ } }

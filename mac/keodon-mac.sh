@@ -62,9 +62,9 @@ tim_thu_muc_ma() {
   echo ""
 }
 
-# Node của máy. Bản Mac KHÔNG kèm Node xách tay (bản Windows có `node-portable`):
-# gói .pkg của nodejs.org cài vào /usr/local/bin, Homebrew vào /opt/homebrew/bin,
-# mà Finder chạy .command với PATH tối thiểu nên phải dò thêm hai chỗ đó.
+# Tìm Node. Gói Mac KÈM SẴN bản xách tay (`node-portable-mac-<kiến trúc>`) như bản Windows, nên
+# người dùng không phải cài gì. Không có bản xách tay (máy Intel) thì dò Node của máy — Finder chạy
+# .command với PATH tối thiểu nên phải dò thêm /usr/local/bin và /opt/homebrew/bin.
 tim_node() {
   # 1. Node XÁCH TAY kèm trong gói (như bản Windows) — ưu tiên số một: cùng một bản trên mọi máy,
   #    user không phải cài gì. Thư mục theo kiến trúc máy: arm64 (Apple Silicon) hay x64 (Intel).
@@ -164,6 +164,10 @@ nut_4() {
     echo "  CHẠY KHÔNG XONG. Đọc dòng bắt đầu bằng  LỖI:  ở trên,"
     echo "  trong đó luôn có câu chỉ việc phải làm."
     echo "  File xuất vẫn nằm nguyên trong thư mục thả — bấm lại được."
+    echo ""
+    echo "  Nếu dòng lỗi có chữ  EPERM  hay  operation not permitted : macOS đang chặn tool đọc thư mục."
+    echo "  Mở  Cài đặt hệ thống -> Quyền riêng tư & Bảo mật -> Tệp và Thư mục , bật cho  Terminal ,"
+    echo "  rồi bấm lại nút này."
     vach
   fi
   echo ""

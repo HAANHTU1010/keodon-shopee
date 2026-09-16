@@ -107,7 +107,9 @@ function chepMotThu(tu, vao) {
 function taiVe(url, tep) {
   return new Promise((ok, hong) => {
     const di = (u, con) => {
-      https.get(u, { headers: { 'User-Agent': 'keodon-mac' } }, (r) => {
+      // Hạn 90 giây như bản Windows: mạng công ty kiểu "cắm mà không ra" thì cửa sổ đứng im vô hạn,
+      // người bấm không biết là đang chạy hay đã chết.
+      const yc = https.get(u, { headers: { 'User-Agent': 'keodon-mac' }, timeout: 90000 }, (r) => {
         if (r.statusCode >= 300 && r.statusCode < 400 && r.headers.location && con > 0) {
           r.resume(); return di(r.headers.location, con - 1);
         }
@@ -116,7 +118,9 @@ function taiVe(url, tep) {
         r.pipe(f);
         f.on('finish', () => f.close(() => ok()));
         f.on('error', hong);
-      }).on('error', hong);
+      });
+      yc.on('timeout', () => { yc.destroy(new Error('quá 90 giây không tải xong')); });
+      yc.on('error', hong);
     };
     di(url, 5);
   });
@@ -138,8 +142,12 @@ async function keoMaVe(cn) {
     await taiVe(url, tep);
   } catch (e) {
     fs.rmSync(tam, { recursive: true, force: true });
-    chet('không tải được mã từ GitHub (' + String(e.message).slice(0, 60) + ').',
-      'kiểm ba thứ: (1) máy có mạng không; (2) tên kho mã trong cấu hình có đúng không; (3) mạng công ty có chặn github.com không.');
+    const vi = String(e && e.message || '');
+    chet('không tải được mã mới từ GitHub.',
+      /404/.test(vi)
+        ? 'tên kho mã trong cấu hình không đúng, hoặc kho đang để riêng tư. Báo người phụ trách kỹ thuật — KHÔNG phải lỗi máy bạn.'
+        : 'thường là mạng đứt giữa chừng. Bấm lại nút này một lần nữa. Ba lần vẫn hỏng thì báo người phụ trách kỹ thuật ' +
+          '(máy có mạng không · mạng công ty có chặn github.com không). Mã đang chạy trên máy KHÔNG bị đụng tới.');
   }
   try {
     // Truyền TÊN FILE + cwd, không truyền đường dẫn tuyệt đối: `tar` bản GNU coi "C:…" là tên máy ở xa
@@ -159,6 +167,17 @@ async function keoMaVe(cn) {
 }
 
 // ----------------------------------------------------------------- phiên bản + thư viện
+/** So hai số bản kiểu 2.8.0: trả -1 / 0 / 1. Thiếu số thì coi là 0 (luật y bản Windows). */
+function soSanhBan(a, b) {
+  const x = String(a).split('.').map((t) => parseInt(t, 10) || 0);
+  const y = String(b).split('.').map((t) => parseInt(t, 10) || 0);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const d = (x[i] || 0) - (y[i] || 0);
+    if (d) return d > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
 function banCua(d) {
   try { return JSON.parse(fs.readFileSync(path.join(d, 'package.json'), 'utf8')).version || '?'; } catch (e) { return '?'; }
 }
@@ -222,7 +241,9 @@ function saoLuu(base, tool) {
 function lui(base, tool) {
   const dangChay = banCua(tool);
   const ds = danhSachBanCu(base);
-  const cu = ds.filter((b) => b.ban !== dangChay)[0];
+  // Phải là bản CŨ HƠN, không phải "bản khác bản đang chạy": lùi 3.0.0 → 2.9.0 → 2.8.0 rồi bấm nữa
+  // mà chỉ so "khác" thì nhảy NGƯỢC lên 2.9.0 và vẫn in "ĐÃ LÙI". Luật này y như bản Windows.
+  const cu = ds.filter((b) => soSanhBan(b.ban, dangChay) < 0)[0];
   noi('LÙI VỀ BẢN CŨ — lấy lại bản đã sao lưu trước lần cập nhật gần nhất.');
   noi('Bản đang chạy      : ' + dangChay);
   if (!ds.length || !cu) {
@@ -302,16 +323,37 @@ async function main() {
   const { tam, goc } = await keoMaVe(cfg.cap_nhat);
   noi('[2/6] Đã tải bản ' + banCua(goc) + ' từ GitHub');
 
+  // Bản trên kho KHÔNG mới hơn bản đang chạy → dừng tại đây, không sao lưu, không chép.
+  // Bấm nút 2 ba lần trong ngày mà lần nào cũng sao lưu thì ba chỗ lùi đều là CÙNG một bản,
+  // và bản cũ thật bị đẩy ra khỏi kho lùi (chỉ giữ 3) — tự tay phá đường lùi của chính mình.
+  const banCu = banCua(tool);
+  const banMoi = banCua(goc);
+  const daDuThuVien = fs.existsSync(path.join(tool, 'node_modules', 'exceljs'));
+  if (o.viec !== 'cai-dat' && daDuThuVien && banCu !== '?' && soSanhBan(banMoi, banCu) <= 0) {
+    fs.rmSync(tam, { recursive: true, force: true });
+    noi('');
+    vach();
+    noi('  ĐANG LÀ BẢN MỚI NHẤT (' + banCu + ') — không phải làm gì cả.');
+    noi('  Cứ thả file rồi bấm  4_CHAY_TOOL.command  như mọi ngày.');
+    vach();
+    process.exit(0);
+  }
+
   // [3] sao lưu bản đang chạy
   const luu = saoLuu(base, tool);
   noi('[3/6] ' + (luu ? 'Đã sao lưu bản đang chạy (' + banCua(tool) + ') vào ' + path.basename(luu) : 'Lần cài đầu — chưa có bản nào để sao lưu'));
 
   // [4] chép mã + nút, rồi npm install nếu danh sách thư viện đổi
   const thuVienCu = chuoiThuVien(tool);
-  fs.mkdirSync(tool, { recursive: true });
-  for (const t of CHEP) {
-    if (!chepMotThu(path.join(goc, t), path.join(tool, t))) chet('gói mã tải về thiếu "' + t + '".', 'gửi người phụ trách kỹ thuật.');
+  // Kiểm ĐỦ rồi mới động vào: thay xong `src` mới phát hiện thiếu `node` là máy nằm giữa hai bản,
+  // không chạy được mà cũng không biết lùi về đâu (bản Windows kiểm trước y như vậy).
+  const thieu = CHEP.filter((t) => !fs.existsSync(path.join(goc, t)));
+  if (thieu.length) {
+    chet('gói mã tải về không đủ (thiếu ' + thieu.join(', ') + ') nên tool KHÔNG thay gì cả.',
+      'bấm lại nút này một lần nữa; vẫn vậy thì báo người phụ trách kỹ thuật. Bản đang chạy trên máy còn nguyên.');
   }
+  fs.mkdirSync(tool, { recursive: true });
+  for (const t of CHEP) chepMotThu(path.join(goc, t), path.join(tool, t));
   let nut2Moi = false;
   for (const n of NUT_MAC) {
     const tu = path.join(goc, 'mac', n);
@@ -348,7 +390,9 @@ async function main() {
   noi('');
   noi('============================================================');
   if (ma === 0) {
-    noi('  [6/6] SẴN SÀNG. Bản đang chạy: ' + banCua(tool));
+    noi(o.viec === 'cai-dat' || banCu === '?' || banCu === banCua(tool)
+      ? '  [6/6] SẴN SÀNG. Bản đang chạy: ' + banCua(tool)
+      : '  [6/6] ĐÃ CẬP NHẬT XONG.  ' + banCu + '  ->  ' + banCua(tool));
     noi('');
     noi('  Việc hằng ngày: thả file xuất vào  1_THA_FILE_XUAT/<tên gian hàng>/');
     noi('  rồi bấm đúp  4_CHAY_TOOL.command');
@@ -375,4 +419,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { thamSo, thuMucCauHinh, docCauHinh, thayThuMuc, chepMotThu, banCua, chuoiThuVien, mocThoiGian, danhSachBanCu, saoLuu, lui, CHEP, GIU_BAN_CU };
+module.exports = { thamSo, thuMucCauHinh, docCauHinh, thayThuMuc, chepMotThu, banCua, soSanhBan, chuoiThuVien, mocThoiGian, danhSachBanCu, saoLuu, lui, CHEP, GIU_BAN_CU };

@@ -113,6 +113,21 @@ function boDau(x) {
  * Bỏ: dấu `#` tiêu đề, `**`, dấu backtick, rào khối mã, dòng gạch ngang của bảng, cú pháp link. Bảng thành
  * các cột cách nhau bằng khoảng trắng. Thêm BOM và CRLF — thiếu BOM thì Notepad bản cũ mở ra ký tự rác.
  */
+/**
+ * Đổi chữ của bản Windows sang bản macOS: tên bốn nút và dấu phân cách đường dẫn.
+ * KHÔNG đụng hai câu cố tình so sánh hai gói (câu có chữ "gói Windows" / "Tool_nhap_lieu_mac.zip"),
+ * vì chỗ đó phải giữ cả hai tên để người đọc biết mình đang cầm gói nào.
+ */
+function chuNenMac(txt) {
+  return String(txt).split('\n').map((d) => {
+    if (/gói Windows|Tool_nhap_lieu_mac\.zip|\.bat` \(máy Mac/.test(d)) return d;
+    return d
+      .replace(/(1_CAI_DAT_LAN_DAU|2_CAP_NHAT|3_TAO_FILE_THANG_MOI|4_CHAY_TOOL)\.bat/g, '$1.command')
+      .replace(/1_THA_FILE_XUAT\\/g, '1_THA_FILE_XUAT/')
+      .replace(/Cấu hình\\/g, 'Cấu hình/');
+  }).join('\n');
+}
+
 function mdSangTxt(md) {
   const ra = [];
   for (const dong of String(md).replace(/\r\n/g, '\n').split('\n')) {
@@ -306,11 +321,15 @@ function dungGoi(dich, nodePortable, nen) {
   for (const t of TRANG_HUONG_DAN) {
     const tu = path.join(NGUON_NUT, t);
     if (!fs.existsSync(tu)) { canhBao.push('thiếu ' + t + ' trong ' + NGUON_NUT); continue; }
+    if (macOS && t.endsWith('.md')) {
+      fs.writeFileSync(path.join(thuMucCauHinh, t), chuNenMac(fs.readFileSync(tu, 'utf8')), 'utf8');
+      continue;
+    }
     if (macOS && t.endsWith('.txt')) {
       // Bản .txt của Windows là BOM + CRLF cho Notepad. TextEdit của macOS hiện BOM thành ký tự rác
       // và không cần CRLF → sinh lại từ chính bản .md, UTF-8 không BOM, xuống dòng LF.
       const md = fs.readFileSync(path.join(NGUON_NUT, 'HUONG_DAN_1_TRANG.md'), 'utf8');
-      fs.writeFileSync(path.join(thuMucCauHinh, t), mdSangTxt(md).replace(/^\uFEFF/, '').replace(/\r\n/g, '\n'), 'utf8');
+      fs.writeFileSync(path.join(thuMucCauHinh, t), chuNenMac(mdSangTxt(md)).replace(/^\uFEFF/, '').replace(/\r\n/g, '\n'), 'utf8');
       continue;
     }
     fs.copyFileSync(tu, path.join(thuMucCauHinh, t));
@@ -601,7 +620,10 @@ async function nenZip(goc, tepZip, mucNen, nen) {
     if (x.laThuMuc) { trong.folder(ten); continue; }
     // macOS: file .command/.sh PHẢI giữ bit thực thi, không thì bấm đúp trong Finder không chạy
     // và user chỉ thấy cửa sổ Terminal nhấp nháy rồi tắt (JSZip mặc định không ghi quyền Unix).
-    const chay = macOS && /\.(command|sh)$/.test(ten);
+    // Và CẢ `bin/node`, `bin/npm`, `bin/npx` của bản Node xách tay: mất bit x thì 117 MB Node kèm theo
+    // thành vô dụng, tool rơi xuống nhánh "máy chưa có Node" và bắt user đi cài tay — đúng cái việc
+    // mà bản xách tay sinh ra để khỏi phải làm.
+    const chay = macOS && (/\.(command|sh)$/.test(ten) || /node-portable-mac-[^/]+\/bin\/(node|npm|npx)$/.test(ten));
     trong.file(ten, fs.readFileSync(x.that), macOS ? { unixPermissions: chay ? QUYEN_CHAY : QUYEN_THUONG } : undefined);
   }
   const buf = await zip.generateAsync(Object.assign({
@@ -699,7 +721,7 @@ function inKetQua(kq, pham) {
   (kq.canhBao || []).forEach((c) => console.log('\nCHÚ Ý: ' + c));
 }
 
-module.exports = { dungGoi, kiemGoi, dongGoiZip, nenZip, dongBoVanHanh, kiemDongBoBat, mdSangTxt, CAU_CANH_BAO_GOI, BON_NUT_MAC, KEM_MAC, TEN_GOI_MAC, TEN_THU_MUC_TIKTOK, KIEN_TRUC_MAC,
+module.exports = { dungGoi, kiemGoi, dongGoiZip, nenZip, dongBoVanHanh, kiemDongBoBat, mdSangTxt, chuNenMac, CAU_CANH_BAO_GOI, BON_NUT_MAC, KEM_MAC, TEN_GOI_MAC, TEN_THU_MUC_TIKTOK, KIEN_TRUC_MAC,
   THU_MUC_BAT_KHO, THU_MUC_BAN_GIAO, NGUON_NUT, dsFileBat, TRANG_HUONG_DAN, TEN_GIU_CHO,
   TEN_NODE_PORTABLE, LOP_NGOAI_NODE_PORTABLE, trongCayNodePortable, BON_NUT, TEN_GOI, TEN_CAU_HINH,
   TEN_NHAT_KY, TEN_THA, KHOA_CHI_CHO_EXCEL, HAI_DONG_BI_MAT };

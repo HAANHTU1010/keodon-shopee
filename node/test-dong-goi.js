@@ -408,6 +408,11 @@ DS_CHO.push(() => testCho('DG-14', 'GÓI macOS: đúng hình dạng riêng (4 n�
   dung(!/^\uFEFF/.test(txt), 'hướng dẫn bản Mac không được có BOM (TextEdit hiện ra ký tự rác)');
   dung(!/\r/.test(txt), 'hướng dẫn bản Mac phải xuống dòng LF, không CRLF');
   dung(/TikTok Shop/.test(txt) && txt.length > 5000, 'hướng dẫn bản Mac thiếu nội dung: ' + txt.length + ' ký tự');
+  // Chữ phải là chữ của bản Mac: không bảo người dùng bấm file .bat mà thư mục của họ không có.
+  for (const nut of ['4_CHAY_TOOL', '1_CAI_DAT_LAN_DAU', '3_TAO_FILE_THANG_MOI']) {
+    const conBat = txt.split('\n').filter((d) => d.indexOf(nut + '.bat') >= 0 && !/gói Windows/.test(d));
+    bang(conBat.length, 0, 'hướng dẫn bản Mac còn bảo bấm ' + nut + '.bat: ' + conBat.slice(0, 1).join(' | ').slice(0, 120));
+  }
 
   const am = [];
   // ĐỐI CHỨNG ÂM: dựng gói Mac bằng đúng đường của bản Windows → phải bị tự kiểm bắt.
