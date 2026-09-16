@@ -5,6 +5,7 @@
  *   node node/dong-goi.js --ra <thư mục>       → dựng ra THƯ MỤC (không nén) để soi bằng mắt
  *   node node/dong-goi.js --zip <đường dẫn>    → đổi chỗ đặt file zip
  *   node node/dong-goi.js --node-portable <d>  → lấy bản Node xách tay ở đường dẫn khác
+ *   node node/dong-goi.js --mac               → dựng gói cho máy macOS (04_BAN_GIAO/Tool_nhap_lieu_mac.zip)
  *   node node/dong-goi.js --kiem <thư mục>     → CHỈ kiểm một gói đã giải nén, không dựng lại
  *   node node/dong-goi.js --dong-bo-van-hanh   → chép bat/ (bản gốc) đè lên 03_VAN_HANH
  *
@@ -52,6 +53,26 @@ const BON_NUT = [
   '3_TAO_FILE_THANG_MOI.bat',
   '4_CHAY_TOOL.bat'
 ];
+
+/**
+ * BẢN macOS (Đợt 5). Bốn nút `.command` + ruột chung `keodon-mac.sh` + bộ cài `cai-dat-mac.js`
+ * (ruột nút 1 và nút 2 viết bằng Node — xem chú thích đầu file đó). KHÔNG kèm Node xách tay: bản
+ * chính thức của nodejs.org có hai kiến trúc (arm64/x64) và tải về cũng dính Gatekeeper, nên máy Mac
+ * cài Node một lần từ nodejs.org rồi thôi — nút 1 in sẵn ba bước.
+ */
+const THU_MUC_MAC = path.join(__dirname, '..', 'mac');
+const BON_NUT_MAC = [
+  '1_CAI_DAT_LAN_DAU.command',
+  '2_CAP_NHAT.command',
+  '3_TAO_FILE_THANG_MOI.command',
+  '4_CHAY_TOOL.command'
+];
+/** Đi cùng bốn nút Mac ở lớp ngoài cùng của gói. */
+const KEM_MAC = ['keodon-mac.sh', 'cai-dat-mac.js'];
+const TEN_GOI_MAC = 'Tool_nhap_lieu_mac';
+/** File phải giữ bit thực thi khi giải nén trên máy Mac (JSZip mặc định không đặt quyền → bấm đúp không chạy). */
+const QUYEN_CHAY = 0o755;
+const QUYEN_THUONG = 0o644;
 
 /** Khóa chỉ dùng ở chế độ Excel — bỏ khỏi bản đóng gói (07_v2.6 mục 1). */
 const KHOA_CHI_CHO_EXCEL = [
@@ -113,6 +134,12 @@ function mdSangTxt(md) {
 const TEN_GIU_CHO = '.keep';
 const NOI_DUNG_GIU_CHO =
   'File nay chi de giu thu muc. Tha file xuat Shopee cua gian hang nay vao day roi bam 4_CHAY_TOOL.bat.\r\n';
+
+/** Thư mục thả báo cáo TikTok — tên phải khớp `chay-tiktok.js` (mặc định `TikTok Shop`). */
+const TEN_THU_MUC_TIKTOK = 'TikTok Shop';
+const NOI_DUNG_GIU_CHO_TIKTOK =
+  'File nay chi de giu thu muc. Tha bao cao Tai chinh cua TikTok (Onhold-unsettled-orders...xlsx) vao day\r\n' +
+  'roi bam 4_CHAY_TOOL. Xem muc TikTok Shop trong HUONG_DAN_1_TRANG.\r\n';
 
 const DUOI_CAM = ['.xlsx', '.xls', '.csv', '.docx', '.md', '.log'];
 const TEN_CAM = ['moc-nghiem-thu.json', '.clasp.json'];
@@ -180,7 +207,8 @@ function chepCay(tu, vao) {
  * @param {string|boolean} [nodePortable] đường dẫn bản Node xách tay; `false` = CỐ Ý không kèm (bộ test
  *   dùng, để khỏi nén 36 MB ba lần); bỏ trống = lấy bản đang dùng trên máy chủ dự án.
  */
-function dungGoi(dich, nodePortable) {
+function dungGoi(dich, nodePortable, nen) {
+  const macOS = nen === 'mac';
   const canhBao = [];
   xoaCay(dich);
   fs.mkdirSync(dich, { recursive: true });
@@ -239,26 +267,45 @@ function dungGoi(dich, nodePortable) {
     // thấy trống trơn, không biết thả file vào đâu, và nút 4 báo "thiếu thư mục gian hàng".
     fs.writeFileSync(path.join(thuMucGian, TEN_GIU_CHO), NOI_DUNG_GIU_CHO, 'utf8');
   }
+  // Đợt 5: thư mục thứ năm `TikTok Shop`. Hướng dẫn một trang nói "năm thư mục gian hàng", mà gói
+  // trước chỉ có bốn gian Shopee — user giải nén xong không thấy chỗ thả báo cáo TikTok (nút 4 có tự
+  // dựng, nhưng chỉ sau lần bấm đầu). Không khai vào `thu_muc_gian_hang`: khóa đó là luồng Shopee.
+  {
+    const ttk = path.join(dich, TEN_THA, TEN_THU_MUC_TIKTOK);
+    fs.mkdirSync(path.join(ttk, daXuLy), { recursive: true });
+    fs.writeFileSync(path.join(ttk, TEN_GIU_CHO), NOI_DUNG_GIU_CHO_TIKTOK, 'utf8');
+  }
 
   // --- bốn nút: lấy từ KHO MÃ (`bat/`) ---
   // `bat/` là bản đem xuất bản, cũng chính là bản `2_CAP_NHAT.bat` tải về máy user. Lấy nút từ
   // `03_VAN_HANH` thì gói giao đi và bản cập nhật về sau có thể là hai bản khác nhau — đúng cái bệnh
   // "máy này một bản, máy kia một bản" mà cả đợt này sinh ra để diệt.
-  for (const t of BON_NUT) {
-    const tu = path.join(NGUON_NUT, t);
-    if (!fs.existsSync(tu)) throw new Error('thiếu nút ' + t + ' trong ' + NGUON_NUT);
+  for (const t of (macOS ? BON_NUT_MAC.concat(KEM_MAC) : BON_NUT)) {
+    const tu = path.join(macOS ? THU_MUC_MAC : NGUON_NUT, t);
+    if (!fs.existsSync(tu)) throw new Error('thiếu nút ' + t + ' trong ' + (macOS ? THU_MUC_MAC : NGUON_NUT));
     fs.copyFileSync(tu, path.join(dich, t));
+    if (macOS) fs.chmodSync(path.join(dich, t), QUYEN_CHAY);
   }
 
   // --- hai file hướng dẫn, qua DANH SÁCH TRẮNG (C-3), lấy từ bat/ (bản có phiên bản) ---
   for (const t of TRANG_HUONG_DAN) {
     const tu = path.join(NGUON_NUT, t);
     if (!fs.existsSync(tu)) { canhBao.push('thiếu ' + t + ' trong ' + NGUON_NUT); continue; }
+    if (macOS && t.endsWith('.txt')) {
+      // Bản .txt của Windows là BOM + CRLF cho Notepad. TextEdit của macOS hiện BOM thành ký tự rác
+      // và không cần CRLF → sinh lại từ chính bản .md, UTF-8 không BOM, xuống dòng LF.
+      const md = fs.readFileSync(path.join(NGUON_NUT, 'HUONG_DAN_1_TRANG.md'), 'utf8');
+      fs.writeFileSync(path.join(thuMucCauHinh, t), mdSangTxt(md).replace(/^\uFEFF/, '').replace(/\r\n/g, '\n'), 'utf8');
+      continue;
+    }
     fs.copyFileSync(tu, path.join(thuMucCauHinh, t));
   }
 
   // --- Node xách tay: không dựng ra được, chỉ chép nếu có ---
   // Mặc định lấy bản đang dùng trên máy chủ dự án; không có thì gói vẫn dựng được nhưng KÊU LÊN.
+  if (macOS) {
+    return { dich, soGian: dsGian.length, soKyThang: Object.keys(cfg.link_thang).length, canhBao, nen: 'mac' };
+  }
   if (nodePortable == null) {
     const macDinh = path.join(NGUON, TEN_CAU_HINH, TEN_NODE_PORTABLE);
     if (fs.existsSync(path.join(macDinh, 'node.exe'))) nodePortable = macDinh;
@@ -354,7 +401,8 @@ function kiemGoi(dich) {
 
   // 1. đúng bằng này thứ ở lớp ngoài cùng, không hơn
   const ngoaiCung = ds.filter((x) => x.duong.indexOf(path.sep) < 0).map((x) => x.duong).sort();
-  const mong = BON_NUT.concat([TEN_THA, TEN_CAU_HINH]).sort();
+  const macOS = ngoaiCung.indexOf('4_CHAY_TOOL.command') >= 0;
+  const mong = (macOS ? BON_NUT_MAC.concat(KEM_MAC) : BON_NUT).concat([TEN_THA, TEN_CAU_HINH]).sort();
   const thua = ngoaiCung.filter((t) => mong.indexOf(t) < 0);
   const thieu = mong.filter((t) => ngoaiCung.indexOf(t) < 0);
   if (thua.length) pham.push('lớp ngoài cùng có thứ lạ: ' + thua.join(', '));
@@ -431,12 +479,14 @@ function kiemGoi(dich) {
     } catch (e) { pham.push('CAU_HINH_VAN_HANH.json trong gói sai định dạng: ' + e.message); }
   }
 
-  // 4. C-5: đủ bốn file giữ chỗ, mỗi thư mục gian hàng một cái
+  // 4. C-5: đủ file giữ chỗ, mỗi thư mục gian hàng một cái. Từ Đợt 5 là NĂM thư mục:
+  //    bốn gian Shopee (khai ở `thu_muc_gian_hang`) + `TikTok Shop` (luồng riêng, xem `chay-tiktok.js`).
   const thaGoc = path.join(dich, TEN_THA);
   if (!fs.existsSync(thaGoc)) pham.push('thiếu thư mục ' + TEN_THA);
   else {
     const gian = fs.readdirSync(thaGoc).filter((t) => fs.statSync(path.join(thaGoc, t)).isDirectory());
-    if (gian.length !== 4) pham.push('thư mục thả file có ' + gian.length + ' gian hàng, cần đúng 4');
+    if (gian.length !== 5) pham.push('thư mục thả file có ' + gian.length + ' gian hàng, cần đúng 5 (4 gian Shopee + TikTok Shop)');
+    if (gian.map((t) => t.normalize('NFC')).indexOf(TEN_THU_MUC_TIKTOK) < 0) pham.push('thiếu thư mục thả  ' + TEN_THU_MUC_TIKTOK);
     for (const g of gian) {
       if (!fs.existsSync(path.join(thaGoc, g, TEN_GIU_CHO))) {
         pham.push('thư mục gian hàng  ' + g + '  thiếu ' + TEN_GIU_CHO + ' (giải nén xong sẽ mất thư mục)');
@@ -507,17 +557,22 @@ function kiemGoi(dich) {
  * Ghi file tạm rồi đổi tên — cùng luật với mọi kịch bản sửa file của dự án: đứt giữa chừng thì file zip
  * cũ vẫn nguyên vẹn chứ không thành một file hỏng nửa vời mà ai đó đem đi giao.
  */
-async function nenZip(goc, tepZip, mucNen) {
+async function nenZip(goc, tepZip, mucNen, nen) {
   const JSZip = require('jszip');
+  const macOS = nen === 'mac';
   const zip = new JSZip();
-  const trong = zip.folder(TEN_GOI);
+  const trong = zip.folder(macOS ? TEN_GOI_MAC : TEN_GOI);
   for (const x of moiFile(goc)) {
-    if (x.laThuMuc) { trong.folder(x.duong.split(path.sep).join('/')); continue; }
-    trong.file(x.duong.split(path.sep).join('/'), fs.readFileSync(x.that));
+    const ten = x.duong.split(path.sep).join('/');
+    if (x.laThuMuc) { trong.folder(ten); continue; }
+    // macOS: file .command/.sh PHẢI giữ bit thực thi, không thì bấm đúp trong Finder không chạy
+    // và user chỉ thấy cửa sổ Terminal nhấp nháy rồi tắt (JSZip mặc định không ghi quyền Unix).
+    const chay = macOS && /\.(command|sh)$/.test(ten);
+    trong.file(ten, fs.readFileSync(x.that), macOS ? { unixPermissions: chay ? QUYEN_CHAY : QUYEN_THUONG } : undefined);
   }
-  const buf = await zip.generateAsync({
+  const buf = await zip.generateAsync(Object.assign({
     type: 'nodebuffer', compression: 'DEFLATE', compressionOptions: { level: mucNen || 6 }
-  });
+  }, macOS ? { platform: 'UNIX' } : {}));
   fs.mkdirSync(path.dirname(tepZip), { recursive: true });
   const tam = tepZip + '.__moi';
   fs.writeFileSync(tam, buf);
@@ -528,14 +583,15 @@ async function nenZip(goc, tepZip, mucNen) {
 /** Dựng gói vào thư mục tạm, tự kiểm, rồi nén ra zip. Gói bẩn thì KHÔNG nén — phủ quyết trước khi ra file. */
 async function dongGoiZip(tuyChon) {
   const o = tuyChon || {};
-  const tepZip = o.zip || path.join(THU_MUC_BAN_GIAO, TEN_GOI + '.zip');
+  const macOS = o.nen === 'mac';
+  const tepZip = o.zip || path.join(THU_MUC_BAN_GIAO, (macOS ? TEN_GOI_MAC : TEN_GOI) + '.zip');
   const tam = fs.mkdtempSync(path.join(require('os').tmpdir(), 'keodon-goi-'));
-  const dich = path.join(tam, TEN_GOI);
+  const dich = path.join(tam, macOS ? TEN_GOI_MAC : TEN_GOI);
   try {
-    const kq = dungGoi(dich, o.nodePortable === undefined ? null : o.nodePortable);
+    const kq = dungGoi(dich, o.nodePortable === undefined ? null : o.nodePortable, o.nen);
     const pham = kiemGoi(dich);
     if (pham.length) return { pham, canhBao: kq.canhBao };
-    const z = await nenZip(dich, tepZip, o.mucNen);
+    const z = await nenZip(dich, tepZip, o.mucNen, o.nen);
     return { pham: [], canhBao: kq.canhBao, tepZip: z.tepZip, cỡ: z.cỡ, soGian: kq.soGian, soKyThang: kq.soKyThang };
   } finally {
     try { fs.rmSync(tam, { recursive: true, force: true }); } catch (e) { /* còn khóa thì thôi */ }
@@ -573,29 +629,30 @@ async function main() {
   const np = lay('--node-portable');
   const nodePortable = np ? path.resolve(np) : null;
   const raThuMuc = lay('--ra');
+  const nen = tv.indexOf('--mac') >= 0 ? 'mac' : null;   // Đợt 5: gói cho máy macOS
 
   // `--ra`: dựng ra thư mục để soi bằng mắt, KHÔNG nén. Mặc định thì đi thẳng ra zip.
   if (raThuMuc) {
     const dich = path.resolve(raThuMuc);
     console.log('Dựng gói vào thư mục: ' + dich);
-    const kq = dungGoi(dich, nodePortable);
+    const kq = dungGoi(dich, nodePortable, nen);
     const pham = kiemGoi(dich);
     inKetQua(kq, pham);
     process.exit(pham.length ? 1 : 0);
   }
 
-  const tepZip = path.resolve(lay('--zip') || path.join(THU_MUC_BAN_GIAO, TEN_GOI + '.zip'));
-  console.log('Đóng gói ra: ' + tepZip);
-  const kq = await dongGoiZip({ zip: tepZip, nodePortable: nodePortable });
+  const tepZip = path.resolve(lay('--zip') || path.join(THU_MUC_BAN_GIAO, (nen === 'mac' ? TEN_GOI_MAC : TEN_GOI) + '.zip'));
+  console.log('Đóng gói ra: ' + tepZip + (nen === 'mac' ? '   (bản macOS)' : ''));
+  const kq = await dongGoiZip({ zip: tepZip, nodePortable: nodePortable, nen: nen });
   inKetQua(kq, kq.pham);
   if (kq.pham.length) process.exit(1);
-  console.log('  · ' + (kq.cỡ / 1024 / 1024).toFixed(1) + ' MB · thư mục gốc trong zip: ' + TEN_GOI);
+  console.log('  · ' + (kq.cỡ / 1024 / 1024).toFixed(1) + ' MB · thư mục gốc trong zip: ' + (nen === 'mac' ? TEN_GOI_MAC : TEN_GOI));
   process.exit(0);
 }
 
 function inKetQua(kq, pham) {
   if (kq.soGian != null) console.log('  · ' + kq.soGian + ' thư mục gian hàng, mỗi cái một "đã xử lý" và một .keep');
-  console.log('  · ' + BON_NUT.length + ' nút bấm lấy từ bat/');
+  console.log('  · ' + (kq.nen === 'mac' ? BON_NUT_MAC.length + ' nút bấm .command lấy từ mac/ (kèm keodon-mac.sh, cai-dat-mac.js)' : BON_NUT.length + ' nút bấm lấy từ bat/'));
   if (kq.soKyThang != null) console.log('  · cấu hình đầy đủ: web_app_url, chuoi_bi_mat, ' + kq.soKyThang + ' kỳ link_thang');
   console.log('');
   if (pham && pham.length) {
@@ -603,11 +660,11 @@ function inKetQua(kq, pham) {
     pham.forEach((x) => console.log('  · ' + x));
     return;
   }
-  console.log('TỰ KIỂM: SẠCH — không .xlsx, không mã nguồn, nhật ký rỗng, cấu hình đủ, 4 file .keep, 2 file hướng dẫn.');
+  console.log('TỰ KIỂM: SẠCH — không .xlsx, không mã nguồn, nhật ký rỗng, cấu hình đủ, 5 file .keep, 2 file hướng dẫn.');
   (kq.canhBao || []).forEach((c) => console.log('\nCHÚ Ý: ' + c));
 }
 
-module.exports = { dungGoi, kiemGoi, dongGoiZip, nenZip, dongBoVanHanh, kiemDongBoBat, mdSangTxt, CAU_CANH_BAO_GOI,
+module.exports = { dungGoi, kiemGoi, dongGoiZip, nenZip, dongBoVanHanh, kiemDongBoBat, mdSangTxt, CAU_CANH_BAO_GOI, BON_NUT_MAC, KEM_MAC, TEN_GOI_MAC, TEN_THU_MUC_TIKTOK,
   THU_MUC_BAT_KHO, THU_MUC_BAN_GIAO, NGUON_NUT, dsFileBat, TRANG_HUONG_DAN, TEN_GIU_CHO,
   TEN_NODE_PORTABLE, LOP_NGOAI_NODE_PORTABLE, trongCayNodePortable, BON_NUT, TEN_GOI, TEN_CAU_HINH,
   TEN_NHAT_KY, TEN_THA, KHOA_CHI_CHO_EXCEL, HAI_DONG_BI_MAT };

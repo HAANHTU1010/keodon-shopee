@@ -75,11 +75,13 @@ class NguonThuMuc {
     // Thư mục con KHÔNG khớp mã gian hàng nào: file thả vào đó sẽ không bao giờ được đọc.
     // Phải nhắc ra màn hình, vì im lặng bỏ qua nghĩa là mất đơn mà không ai biết (thư mục
     // `SP_IMPORTMART` từng tồn tại song song với mã cấu hình `SP_IMPORT` đúng kiểu này).
-    const hopLe = Object.keys(cfg.gianHang);
+    // NFC cả hai phía: macOS đọc thư mục ra dạng NFD (xem chú thích cùng việc ở ).
+    const nfc = (t) => String(t).normalize("NFC");
+    const hopLe = Object.keys(cfg.gianHang).map(nfc);
     if (fs.existsSync(this.vao)) {
       for (const ten of fs.readdirSync(this.vao)) {
         const d = path.join(this.vao, ten);
-        if (!fs.statSync(d).isDirectory() || hopLe.indexOf(ten) >= 0) continue;
+        if (!fs.statSync(d).isDirectory() || hopLe.indexOf(nfc(ten)) >= 0) continue;
         const xlsx = NguonThuMuc.xlsxTrong(d);
         if (xlsx.length) ds.push(ten + '/ (' + xlsx.length + ' file .xlsx trong thư mục KHÔNG PHẢI tên gian hàng; tên hợp lệ: ' + hopLe.join(', ') + ')');
       }

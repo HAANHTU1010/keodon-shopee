@@ -333,11 +333,15 @@ class NguonThuMucTheoShop extends NguonThuMuc {
     // Thư mục con KHÔNG khớp tên gian hàng nào: file thả vào đó sẽ không bao giờ được đọc. Phải
     // nhắc ra màn hình — im lặng bỏ qua nghĩa là mất đơn mà không ai biết (NOTES_DEV mục 4.4).
     // Đợt 4: thư mục của sàn khác mà tool CÓ đọc (TikTok Shop — `chay-tiktok.js`) không phải thư mục lạ.
-    const hopLe = this.tenHopLe(cfg).concat(this.thuMucSanKhac || []);
+    // macOS trả tên file/thư mục dạng NFD ("đã xử lý" thành "đã xử lý" tách dấu), Windows trả NFC.
+    // So chuỗi thô là thư mục ĐÚNG TÊN trên máy Mac bị chấm "tên lạ" → in nhắc sai và người vận hành
+    // đi đổi tên thư mục cho "khớp". Chuẩn hóa NFC cả hai phía trước khi so.
+    const nfc = (t) => String(t).normalize("NFC");
+    const hopLe = this.tenHopLe(cfg).concat(this.thuMucSanKhac || []).map(nfc);
     if (fs.existsSync(this.vao)) {
       for (const ten of fs.readdirSync(this.vao)) {
         const d = path.join(this.vao, ten);
-        if (!fs.statSync(d).isDirectory() || hopLe.indexOf(ten) >= 0) continue;
+        if (!fs.statSync(d).isDirectory() || hopLe.indexOf(nfc(ten)) >= 0) continue;
         const xlsx = NguonThuMuc.xlsxTrong(d);
         if (xlsx.length) ds.push(ten + '/ (' + xlsx.length + ' file .xlsx trong thư mục KHÔNG PHẢI tên gian hàng; tên hợp lệ: ' + hopLe.join(', ') + ')');
       }
@@ -551,10 +555,11 @@ async function chayVanHanhGoogle(cv, cfg, thoiDiem, ngayGhi) {
     // chưa ghi gì, chưa chuyển file nào. (2) TikTok chạy trong vòng bọc riêng: lỗi của nó in ra rồi bốn gian Shopee chạy tiếp y như cũ
     // (TT-14) — mã mới hỏng không được làm tắc đường ghi hằng ngày.
     TT.soatThaNhamSan({ lop, cv, cfg, thuMucShopee: (g) => (nguon.thuMucCua ? nguon.thuMucCua(g) : path.join(nguon.vao, g)) });
-    let maTT = null;
+    let maTT = null, kqTT = null;   // kqTT giữ thống kê TikTok để cộng dòng TỔNG hai sàn (2B.8)
     if (TT.coFile(cv)) {
       try {
-        maTT = (await TT.chayTikTok({ lop, cv, thoiDiem, thang, runId, cauHinhGoogle, in: (t) => console.log(t) })).ma;
+        kqTT = await TT.chayTikTok({ lop, cv, thoiDiem, thang, runId, cauHinhGoogle, in: (t) => console.log(t) });
+        maTT = kqTT.ma;
       } catch (eTT) {
         maTT = 1;
         console.log('\nLỖI TIKTOK SHOP: ' + eTT.message);
@@ -625,6 +630,15 @@ async function chayVanHanhGoogle(cv, cfg, thoiDiem, ngayGhi) {
     d.push('GHI THÊM ' + kq.thongKe.donGhi + ' đơn (' + kq.thongKe.dongGhi + ' dòng) · bỏ qua ' + kq.thongKe.donDaCo + ' đơn đã có');
     d.push('DÒNG VÀNG cần người xem: ' + kq.thongKe.dongVang);
     if (kq.thongKe.tenMoi) d.push('Mapping sản phẩm: thêm ' + kq.thongKe.tenMoi + ' tên hàng mới chờ điền');
+    // 2B.8: dòng TỔNG của CẢ LƯỢT khi có cả hai sàn — trước đây '=== XONG ===' chỉ là số của Shopee,
+    // người vận hành đọc nhầm thành tổng rồi tưởng TikTok chưa ghi gì.
+    const tkTT = kqTT && kqTT.thongKe;
+    if (tkTT) {
+      d.push('TỔNG CẢ LƯỢT (Shopee + TikTok Shop): ghi ' + (kq.thongKe.donGhi + tkTT.donGhi) + ' đơn · dòng vàng cần xem '
+        + (kq.thongKe.dongVang + tkTT.dongVang) + '   [Shopee ' + kq.thongKe.donGhi + ' · TikTok ' + tkTT.donGhi + ']');
+    } else if (maTT === 1) {
+      d.push('TỔNG CẢ LƯỢT: chỉ có số của Shopee — phần TikTok Shop KHÔNG xong (đọc dòng "LỖI TIKTOK SHOP" ở trên)');
+    }
     console.log('\n=== XONG ===');
     d.forEach((x) => console.log('  ' + x));
     // INV-7: chỉ in TÊN file, không in link, không in ID.

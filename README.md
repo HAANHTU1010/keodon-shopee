@@ -105,10 +105,11 @@ quả khác nhau trên cùng một sổ. Nay máy chỉ gửi bảng dòng đã 
     nghiem-thu.js           bộ nghiệm thu trên dữ liệu thật tháng 8
     mui-gio-du-an.js        ghim múi giờ tiến trình test theo `src/appsscript.json` — cho bộ chấm giờ do mã .gs tự sinh
     chay-tiktok.js          gian TikTok Shop: soát thả nhầm sàn, đọc báo cáo, chạy lõi Shopee trên đường `ghi` (mục 6.5)
-    test-*.js               18 bộ test, xem bảng ở phần 4
+    test-*.js               19 bộ test, xem bảng ở phần 4
     fixtures/               dữ liệu test đã lọc sạch thông tin người mua
 
-  bat/                      BỐN NÚT BẤM — bản gốc. Xem phần 7.
+  bat/                      BỐN NÚT BẤM bản Windows — bản gốc. Xem phần 7.
+  mac/                      BỐN NÚT BẤM bản macOS (.command) + keodon-mac.sh + cai-dat-mac.js (Đợt 5, mục 6.6)
   package.json              version ở đây phải khớp PHIEN_BAN trong hai vỏ
   moc-nghiem-thu.json       số nghiệm thu thật của shop — KHÔNG lên GitHub
   README.md                 file này
@@ -348,6 +349,30 @@ dòng đó là sinh ra ca mất đơn mà không ai biết — file đã đi kh�
 - **Không đổi tiêu đề cột B của Mapping `Tên trên Shopee`** (P-11): mã gõ cứng, đổi là mọi lượt Shopee dừng `SAI_HOP_DONG`. Dòng TikTok nằm
   thẳng trong `Mapping_san_pham` với Gian hàng = `TikTok Shop` (D-89).
 - Nhật ký TikTok riêng: `Cấu hình\nhật ký\LOG_<giờ>_TIKTOK.txt` (dòng RUN riêng, `gian TikTok Shop`).
+
+### 6.6. Chạy trên macOS (Đợt 5)
+
+- **Lõi không phải sửa gì.** `src/*.gs` không gọi API nào của Node; `node/*.js` chạy thật chỉ dính Windows ở lớp vỏ. Cái phải viết mới là **bốn nút**.
+- **`mac/`**: bốn `.command` mỏng + ruột chung `keodon-mac.sh` (POSIX sh) + `cai-dat-mac.js`.
+  Nút 3 và nút 4 chỉ tìm cấu hình / tìm mã / tìm Node rồi gọi đúng script Node của tool và **dịch mã thoát ra câu tiếng Việt y như bản Windows**
+  (nút 4: 0 · 1 · 2; nút 3: 0 · 1 · 3 · 4 · 5 · 6). Lệch một mã là người vận hành đọc sai việc phải làm.
+- **Nút 1 và nút 2 viết bằng Node, không bằng shell** (`mac/cai-dat-mac.js`): tải mã từ GitHub, sao lưu `_ban_cu_*` (giữ 3 bản), chép đè đúng
+  `src`/`node`/`package.json`, `npm install` chỉ khi danh sách thư viện đổi, `/lui` chép ngược bản **cũ hơn** bản đang chạy (hết bản → mã 11).
+  Bản Windows vẫn giữ nguyên PowerShell của nó — **không đụng vào mã đang chạy production**. Gộp hai đường thành một (`node/cap-nhat.js` dùng chung)
+  là việc của đợt sau, khi bản Mac đã chạy thật.
+- **KHÔNG kèm Node xách tay cho Mac**: bản chính thức có hai kiến trúc (arm64/x64) và tải về vẫn dính Gatekeeper → máy Mac cài Node một lần từ nodejs.org;
+  nút 1 in sẵn ba bước khi thiếu.
+- **Ba bẫy riêng của macOS, đã vá và có test:**
+  1. **Quyền thực thi trong zip** — JSZip mặc định không ghi quyền Unix, giải nén ra là `.command` mất bit `x` và bấm đúp không chạy.
+     `nenZip` bản Mac đặt `platform: 'UNIX'` + `unixPermissions` 0755 cho `.command`/`.sh`, 0644 cho phần còn lại (**DG-15**).
+  2. **NFD/NFC** — macOS đọc tên thư mục ra dạng NFD, mã so chuỗi thô sẽ chấm thư mục ĐÚNG TÊN thành "thư mục lạ".
+     `chay-thu.js` và `nguon-thu-muc.js` chuẩn hóa NFC cả hai phía (**MAC-11**).
+  3. **Gatekeeper** — không né được bằng mã (muốn hết thì phải ký + notarize, $99/năm): hướng dẫn một trang chỉ đúng thao tác *chuột phải → Mở*.
+- **Gói giao**: `npm run dong-goi-mac` → `04_BAN_GIAO/Tool_nhap_lieu_mac.zip` (lớp ngoài: 4 `.command` + `keodon-mac.sh` + `cai-dat-mac.js`
+  + `1_THA_FILE_XUAT` + `Cấu hình`; hướng dẫn `.txt` bản Mac là UTF-8 **không BOM + LF**, khác bản Windows BOM+CRLF cho Notepad — **DG-14**).
+- **Cả hai gói nay có NĂM thư mục thả** (4 gian Shopee + `TikTok Shop`) — trước đây user phải bấm nút 4 một lần mới thấy thư mục TikTok (**DG-10**).
+- **Bộ test `test-mac`** chạy được ngay trên máy Windows nhờ `sh` của Git Bash: nó chạy THẬT bốn nút với một `node` giả, đọc màn hình và mã thoát.
+  Máy không có `sh` thì bộ test nói "BỎ QUA", không giả vờ đạt.
 
 ---
 

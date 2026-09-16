@@ -25,7 +25,7 @@ Thư mục này có đúng sáu thứ: hai thư mục và bốn nút
 
 Lần đầu trên máy mới
 
-> Gói này chỉ chạy trên máy Windows. Bốn nút là file .bat, và bản Node kèm theo là bản Windows. Máy Mac vẫn mở và xem sổ Google bình thường, chỉ không bấm được bốn nút này — việc kéo đơn để một máy Windows làm. Bản bấm nút ngay trong Google Sheet, chạy được mọi máy, đang nằm trong kế hoạch sau đợt TikTok.
+> Có hai gói: một cho máy Windows, một cho MacBook. Gói Windows là bốn nút .bat kèm sẵn Node; gói Mac (Tool_nhap_lieu_mac.zip) là bốn nút .command và máy Mac phải cài Node một lần — xem mục *MacBook: ba việc khác Windows* ngay dưới. Việc hằng ngày của hai bản giống hệt nhau. Bản bấm nút ngay trong Google Sheet (không cài gì) vẫn nằm trong kế hoạch.
 
 1. Giải nén gói ra một thư mục trên máy, ví dụ Desktop.
 2. Bấm đúp 1_CAI_DAT_LAN_DAU.bat. Nó tự kiểm sáu bước và báo bằng tiếng Việt.
@@ -34,6 +34,16 @@ Lần đầu trên máy mới
 Bạn không phải điền gì cả. Gói đã có sẵn link Google Sheet, chuỗi bí mật và link sổ của các tháng.
 
 Lần đầu chạy, nút này tự tải mã của tool từ trên mạng về nên hơi lâu một chút. Cứ để nó chạy.
+
+MacBook: ba việc khác Windows
+
+Gói cho Mac tên Tool_nhap_lieu_mac.zip, bốn nút đuôi .command (bấm đúp y như .bat). Khác đúng ba chỗ:
+
+1. Cài Node.js một lần. Vào <https://nodejs.org>, tải bản LTS cho macOS (file .pkg), bấm đúp rồi bấm Tiếp tục tới hết. Không cài thì nút 1 dừng lại và in đúng ba bước này ra màn hình.
+2. Lần đầu bấm nút, macOS sẽ chặn vì file tải từ Internet: hiện câu *"không thể mở vì không rõ nhà phát triển"*. Cách mở: chuột phải vào nút → Mở → Mở. Chỉ phải làm một lần cho mỗi nút. (Không thấy chữ *Mở* thì vào Cài đặt hệ thống → Quyền riêng tư & Bảo mật, kéo xuống cuối, bấm Vẫn mở.)
+3. Lần đầu tool đọc thư mục thả file, macOS hỏi xin quyền vào Desktop/Documents — bấm Cho phép, không thì tool không thấy file bạn vừa thả.
+
+Sau ba việc đó thì mọi thứ y hệt bản Windows: thả file vào đúng thư mục gian hàng rồi bấm đúp 4_CHAY_TOOL.command.
 
 ---
 
@@ -173,7 +183,7 @@ Vẫn không xong thì chụp màn hình cửa sổ đen, kèm file LOG_*.txt m�
 
 Cập nhật tool
 
-Khi người phụ trách báo có bản mới, bấm đúp 2_CAP_NHAT.bat, đợi vài giây, đọc dòng cuối.
+Khi người phụ trách báo có bản mới, bấm đúp 2_CAP_NHAT.bat (máy Mac: 2_CAP_NHAT.command), đợi vài giây, đọc dòng cuối.
 
    Cửa sổ đen báo   ·   Nghĩa là
    DANG LA BAN MOI NHAT   ·   Không có gì mới. Làm tiếp như thường

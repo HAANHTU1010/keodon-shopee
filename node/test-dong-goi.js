@@ -233,7 +233,7 @@ DS_CHO.push(() => testCho('DG-09', 'File .zip giao đi: ĐÚNG MỘT thư mục 
   return (kq.cỡ / 1024 / 1024).toFixed(1) + ' MB · 1 thư mục gốc "' + DG.TEN_GOI + '" · giải nén ra 0 vi phạm';
 }));
 
-DS_CHO.push(() => testCho('DG-10', 'C-5: bốn thư mục gian hàng SỐNG SÓT qua vòng nén–giải nén nhờ file .keep', async () => {
+DS_CHO.push(() => testCho('DG-10', 'C-5: NĂM thư mục gian hàng (4 Shopee + TikTok Shop) SỐNG SÓT qua vòng nén–giải nén nhờ file .keep', async () => {
   // Thư mục RỖNG không tồn tại trong file .zip — đây là chỗ bản trước mất. User giải nén xong thấy
   // 1_THA_FILE_XUAT trống trơn, không biết thả file vào đâu, và nút 4 báo "thiếu thư mục gian hàng".
   const tam = tamMoi('keep'); RAC.push(tam);
@@ -241,7 +241,8 @@ DS_CHO.push(() => testCho('DG-10', 'C-5: bốn thư mục gian hàng SỐNG SÓT
   await DG.dongGoiZip({ zip: tepZip, nodePortable: false, mucNen: 1 });
   const zip = await JSZip.loadAsync(fs.readFileSync(tepZip));
   const keep = Object.keys(zip.files).filter((k) => k.endsWith('/' + DG.TEN_GIU_CHO));
-  bang(keep.length, 4, 'phải có đúng 4 file giữ chỗ trong zip: ' + keep.join(', '));
+  bang(keep.length, 5, 'phải có đúng 5 file giữ chỗ trong zip (4 gian Shopee + TikTok Shop): ' + keep.join(', '));
+  dung(keep.some((k) => k.indexOf('/' + DG.TEN_THU_MUC_TIKTOK + '/') > 0), 'thiếu thư mục thả TikTok Shop trong zip — user không có chỗ thả báo cáo TikTok: ' + keep.join(', '));
   for (const k of keep) {
     dung(k.indexOf('/1_THA_FILE_XUAT/') > 0, 'file giữ chỗ phải nằm trong thư mục thả: ' + k);
   }
@@ -375,6 +376,75 @@ test('DG-06', 'bat/ của kho GitHub khớp TỪNG BYTE với 03_VAN_HANH — kh
  * vốn cấm. Dùng cây giả thay vì chép 102 MB thật: phép kiểm chỉ nhìn tên và bố cục, không nhìn
  * nội dung, nên cây giả chứng minh được đúng thứ cần chứng minh mà chạy trong tích tắc.
  */
+DS_CHO.push(() => testCho('DG-14', 'GÓI macOS: đúng hình dạng riêng (4 nút .command + keodon-mac.sh + cai-dat-mac.js), KHÔNG kèm node-portable, hướng dẫn .txt là UTF-8 không BOM + LF', async () => {
+  // Bản Windows và bản Mac là hai gói khác nhau ở lớp vỏ, chung y hệt phần cấu hình và thư mục thả.
+  // Bài này canh phần KHÁC — nhầm một thứ là user Mac bấm đúp không ra gì.
+  const tam = tamMoi('mac'); RAC.push(tam);
+  const goi = path.join(tam, DG.TEN_GOI_MAC);
+  const kq = DG.dungGoi(goi, false, 'mac');
+  const pham = DG.kiemGoi(goi);
+  bang(pham.length, 0, 'gói Mac phải qua tự kiểm: ' + pham.join(' | '));
+
+  const ngoai = fs.readdirSync(goi).sort();
+  bang(ngoai.join(','), DG.BON_NUT_MAC.concat(DG.KEM_MAC, ['1_THA_FILE_XUAT', 'Cấu hình']).sort().join(','), 'lớp ngoài cùng gói Mac');
+  dung(!fs.existsSync(path.join(goi, 'Cấu hình', 'node-portable')), 'gói Mac KHÔNG được kèm node-portable (bản .exe của Windows)');
+  dung(!ngoai.some((t) => /\.bat$/i.test(t)), 'gói Mac còn sót nút .bat của Windows');
+
+  const txt = fs.readFileSync(path.join(goi, 'Cấu hình', 'HUONG_DAN_1_TRANG.txt'), 'utf8');
+  dung(!/^\uFEFF/.test(txt), 'hướng dẫn bản Mac không được có BOM (TextEdit hiện ra ký tự rác)');
+  dung(!/\r/.test(txt), 'hướng dẫn bản Mac phải xuống dòng LF, không CRLF');
+  dung(/TikTok Shop/.test(txt) && txt.length > 5000, 'hướng dẫn bản Mac thiếu nội dung: ' + txt.length + ' ký tự');
+
+  const am = [];
+  // ĐỐI CHỨNG ÂM: dựng gói Mac bằng đúng đường của bản Windows → phải bị tự kiểm bắt.
+  const goi2 = path.join(tam, 'ban-win-nham');
+  DG.dungGoi(goi2, false);
+  const pham2 = DG.kiemGoi(goi2);
+  const ngoai2 = fs.readdirSync(goi2).sort();
+  if (ngoai2.join(',') === ngoai.join(',')) am.push('hai gói y hệt nhau — phép chấm không phân biệt được nền');
+  if (pham2.length) am.push('gói Windows lại bị chấm bẩn: ' + pham2.join(' | '));
+  bang(am, [], 'đối chứng âm');
+  return ngoai.length + ' thứ ở lớp ngoài, 0 node-portable, .txt UTF-8/LF · đối chứng âm: gói Windows có hình dạng khác hẳn ← đúng như phải thế';
+}));
+
+DS_CHO.push(() => testCho('DG-15', 'GÓI macOS: file .zip GIỮ BIT THỰC THI 0755 cho .command/.sh (JSZip mặc định không ghi quyền → bấm đúp trong Finder không chạy)', async () => {
+  const tam = tamMoi('mac-zip'); RAC.push(tam);
+  const tepZip = path.join(tam, DG.TEN_GOI_MAC + '.zip');
+  const kq = await DG.dongGoiZip({ zip: tepZip, nodePortable: false, mucNen: 1, nen: 'mac' });
+  bang(kq.pham.length, 0, 'gói Mac bẩn thì không được nén: ' + kq.pham.join(' | '));
+  const zip = await JSZip.loadAsync(fs.readFileSync(tepZip));
+
+  const quyenCua = (ten) => {
+    const f = zip.files[ten];
+    if (!f) return null;
+    // JSZip để quyền Unix ở 16 bit cao của externalFileAttributes.
+    const attr = (f.unixPermissions != null) ? f.unixPermissions : ((f.externalFileAttributes || 0) >>> 16) & 0o7777;
+    return typeof attr === 'number' ? attr & 0o777 : attr;
+  };
+  const loi = [];
+  for (const n of DG.BON_NUT_MAC.concat(['keodon-mac.sh'])) {
+    const ten = DG.TEN_GOI_MAC + '/' + n;
+    const q = quyenCua(ten);
+    if (q !== 0o755) loi.push(n + ': quyền ' + (q == null ? 'không thấy file' : '0' + q.toString(8)) + ', cần 0755');
+  }
+  const qJson = quyenCua(DG.TEN_GOI_MAC + '/Cấu hình/CAU_HINH_VAN_HANH.json');
+  if (qJson !== 0o644) loi.push('cấu hình: quyền 0' + String(qJson == null ? '?' : qJson.toString(8)) + ', cần 0644 (không cần chạy)');
+  bang(loi, [], 'quyền trong zip');
+
+  // ĐỐI CHỨNG ÂM: nén đúng cách của bản Windows (không đặt quyền) → nút mất bit x.
+  const tepZip2 = path.join(tam, 'khong-quyen.zip');
+  await DG.nenZip(path.join(tam, '..', 'x-khong-ton-tai') === '' ? '' : (function () {
+    const goi = path.join(tam, 'goi-mac-2');
+    DG.dungGoi(goi, false, 'mac');
+    return goi;
+  })(), tepZip2, 1);                                   // KHÔNG truyền nền → nhánh Windows
+  const zip2 = await JSZip.loadAsync(fs.readFileSync(tepZip2));
+  const f2 = zip2.files[DG.TEN_GOI + '/4_CHAY_TOOL.command'];
+  const q2 = f2 ? (((f2.externalFileAttributes || 0) >>> 16) & 0o777) : null;
+  dung(q2 !== 0o755, 'đối chứng âm không báo lệch: nén kiểu Windows mà vẫn có bit thực thi');
+  return '5 file .command/.sh giữ 0755, cấu hình 0644 · đối chứng âm: nén kiểu Windows → quyền 0' + String((q2 || 0).toString(8)) + ' ← đúng như phải thế';
+}));
+
 function dungNodePortableGia(goi) {
   const np = path.join(goi, CAU_HINH, 'node-portable');
   fs.mkdirSync(path.join(np, 'node_modules', 'npm', 'docs'), { recursive: true });
