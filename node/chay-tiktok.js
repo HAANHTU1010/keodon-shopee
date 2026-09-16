@@ -180,7 +180,7 @@ function ghiLog(tep, dong) {
 const TEN_LY_DO = {
   KHONG_PHAI_DON_BAN: 'KHÔNG PHẢI ĐƠN BÁN (H ròng = 0: đơn hủy / hoàn tiền toàn bộ / khoản hoàn phí)',
   TREO_TRA_HANG: 'TREO — "Đang chờ hoàn tất trả hàng/hoàn tiền"',
-  TREO_HOAN_MOT_PHAN: 'TREO — có khoản hoàn một phần',
+  TREO_HOAN_MOT_PHAN: 'TREO — có khoản hoàn một phần, tool KHÔNG BAO GIỜ tự ghi (NHẬP TAY nếu đơn có bán thật)',
   DA_HUY: 'ĐÃ HỦY trong file Tất cả đơn hàng (Order Status)',
   TREO_THIEU_RTS: 'TREO — chưa có ngày sắp xếp vận chuyển',
   CHO_TINH_PHI: 'TikTok CHƯA TÍNH PHÍ (quyết toán ước tính = 0) — lượt sau ghi',

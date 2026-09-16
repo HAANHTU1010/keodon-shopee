@@ -100,7 +100,10 @@ var AdapterTikTok = (function () {
           'Giảm giá của người bán', 'Tổng phí',
           'Thuế GTGT do TikTok Shop khấu trừ', 'Thuế TNCN do TikTok Shop khấu trừ',
           'Số tiền quyết toán ước tính',
-          'Tổng phụ hoàn tiền trước giảm giá của người bán', 'Khoản hoàn tiền giảm giá của người bán'
+          'Tổng phụ hoàn tiền trước giảm giá của người bán', 'Khoản hoàn tiền giảm giá của người bán',
+          // Hai cột này KHÔNG có trong danh sách của đề bài nhưng PHẢI bắt buộc: vế (c) của D-83 ("Đang chờ hoàn tất trả hàng/hoàn tiền")
+          // và phép lọc 'Đơn hàng' đọc chúng. Thiếu mà vẫn chạy là luật tắt LẶNG — đơn đang trả hàng vào sổ, trừ kho oan.
+          'Loại giao dịch', 'Lý do chưa quyết toán'
         ]
       },
       cot: {
@@ -115,8 +118,8 @@ var AdapterTikTok = (function () {
         giam_gia_shop: COT_TIEN.giam_gia_shop, hoan_giam_gia_shop: COT_TIEN.hoan_giam_gia_shop,
         tong_phi: COT_TIEN.tong_phi, thue_gtgt: COT_TIEN.thue_gtgt, thue_tncn: COT_TIEN.thue_tncn,
         quyet_toan: 'Số tiền quyết toán ước tính',        // TỰ KIỂM
-        loai_giao_dich: 'Loại giao dịch',                 // không bắt buộc: có thì chỉ nhận 'Đơn hàng'
-        ly_do_chua_quyet_toan: 'Lý do chưa quyết toán'    // không bắt buộc: luật (b)
+        loai_giao_dich: 'Loại giao dịch',                 // BẮT BUỘC: chỉ nhận 'Đơn hàng'
+        ly_do_chua_quyet_toan: 'Lý do chưa quyết toán'    // BẮT BUỘC: vế (c) của D-83
       },
       loai_giao_dich_don: 'Đơn hàng',
       ly_do_treo: [LY_DO_TRA_HANG],
@@ -401,7 +404,7 @@ var AdapterTikTok = (function () {
           (Q !== 0 ? ', quyết toán ' + Q : '') + (ds[0].lyDo ? ' · ' + ds[0].lyDo : '') + ' — đơn hủy / hoàn, không có hàng bán');
       }
       if (ds.some(function (d) { return d.H === 0 || d.hoan !== 0; })) {
-        return boQua('TREO_HOAN_MOT_PHAN', 'đơn có khoản hoàn một phần — số lượng bán thật không suy được từ báo cáo, treo, không ghi');
+        return boQua('TREO_HOAN_MOT_PHAN', 'đơn có khoản hoàn một phần — số lượng bán thật không suy được từ báo cáo, treo, KHÔNG BAO GIỜ tự ghi: NHẬP TAY đơn này');
       }
       if (Q === 0 || ds.some(function (d) { return d.Q === 0; })) {
         return boQua('CHO_TINH_PHI', 'Số tiền quyết toán ước tính = 0 — TikTok chưa tính phí, lượt sau ghi');

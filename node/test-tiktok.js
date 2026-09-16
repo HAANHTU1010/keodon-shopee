@@ -415,7 +415,14 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
     const nd2 = AT.nhanDien([A.nd.tenSheet], () => thua);
     dung(nd2.thieuCot.length === 0 && nd2.canhBao.length === 1 && /"Cột mới TikTok"/.test(nd2.canhBao[0]) && /VẪN ĐỌC/.test(nd2.canhBao[0]), 'nhắc cột lạ: ' + nd2.canhBao);
     bang(AT.docSeThanhToan(thua, { tenFile: 'x' }).soDonDoc, 129, 'thừa cột vẫn đọc');
-    return '"' + e.message.slice(0, 110) + '…" · cột lạ: "' + nd2.canhBao[0].slice(0, 80) + '…"';
+    // Hai cột canh luật D-83 phải NẰM TRONG danh sách bắt buộc: thiếu mà vẫn chạy là luật tắt lặng, đơn đang trả hàng vào sổ.
+    ['Lý do chưa quyết toán', 'Loại giao dịch'].forEach((c) => {
+      const bo = A.bang.map((h, i) => (i === 4 ? h.map((t) => (t === c ? 'x' : t)) : h));
+      let eC = null;
+      try { AT.docSeThanhToan(bo, { tenFile: 'x.xlsx' }); } catch (x) { eC = x; }
+      dung(eC && eC.maKeodon === 'THIEU_COT' && eC.message.indexOf(c) >= 0, 'bỏ cột "' + c + '" phải CHẶN, không được chạy tiếp: ' + (eC ? eC.message.slice(0, 80) : 'đọc bình thường'));
+    });
+    return '"' + e.message.slice(0, 90) + '…" · bỏ cột Lý do / Loại giao dịch cũng CHẶN · cột lạ: "' + nd2.canhBao[0].slice(0, 80) + '…"';
   });
 
   await test('TT-50c', 'thả nhầm SÀN → TỪ CHỐI cả lượt, chưa gửi gói nào, file nằm nguyên: (1) file Shopee trong thư mục TikTok Shop (2) báo cáo TikTok trong thư mục Shopee mall (3) file lạ trong thư mục TikTok', async () => {
