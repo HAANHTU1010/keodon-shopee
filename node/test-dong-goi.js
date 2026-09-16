@@ -386,7 +386,10 @@ DS_CHO.push(() => testCho('DG-14', 'GÓI macOS: đúng hình dạng riêng (4 n�
   bang(pham.length, 0, 'gói Mac phải qua tự kiểm: ' + pham.join(' | '));
 
   const ngoai = fs.readdirSync(goi).sort();
-  bang(ngoai.join(','), DG.BON_NUT_MAC.concat(DG.KEM_MAC, ['1_THA_FILE_XUAT', 'Cấu hình']).sort().join(','), 'lớp ngoài cùng gói Mac');
+  bang(ngoai.join(','), DG.BON_NUT_MAC.concat(['1_THA_FILE_XUAT', 'Cấu hình']).sort().join(','), 'lớp ngoài cùng gói Mac: đúng 4 nút + 2 thư mục, y như bản Windows');
+  for (const t of DG.KEM_MAC) {
+    dung(fs.existsSync(path.join(goi, 'Cấu hình', t)), 'file kỹ thuật ' + t + ' phải nằm trong thư mục Cấu hình, không bày ra lớp ngoài');
+  }
   dung(!fs.existsSync(path.join(goi, 'Cấu hình', 'node-portable')), 'gói Mac KHÔNG được kèm node-portable (bản .exe của Windows)');
   // Node xách tay cho Mac: có bản nào trên máy dựng thì gói phải mang bản đó, và binary phải chạy được (bit x).
   for (const kt of DG.KIEN_TRUC_MAC) {
@@ -433,7 +436,8 @@ DS_CHO.push(() => testCho('DG-15', 'GÓI macOS: file .zip GIỮ BIT THỰC THI 0
     return typeof attr === 'number' ? attr & 0o777 : attr;
   };
   const loi = [];
-  for (const n of DG.BON_NUT_MAC.concat(['keodon-mac.sh'])) {
+  // Bốn nút ở lớp ngoài cùng; ruột `keodon-mac.sh` nằm trong thư mục cấu hình (giữ lớp ngoài giống bản Windows).
+  for (const n of DG.BON_NUT_MAC.concat(['Cấu hình/keodon-mac.sh'])) {
     const ten = DG.TEN_GOI_MAC + '/' + n;
     const q = quyenCua(ten);
     if (q !== 0o755) loi.push(n + ': quyền ' + (q == null ? 'không thấy file' : '0' + q.toString(8)) + ', cần 0755');

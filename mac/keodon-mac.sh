@@ -213,7 +213,16 @@ nut_cai_dat() {
   go_kiem_dich "$goc"
   NODE=$(tim_node "$(tim_thu_muc_cau_hinh "$goc")")
   if [ -z "$NODE" ]; then cau_thieu_node; doi_phim; exit 1; fi
-  "$NODE" "$goc/cai-dat-mac.js" --viec "$viec" --goc "$goc" "$@"
+  # `cai-dat-mac.js` nằm cạnh file này (bản giao: trong thư mục "Cấu hình"; kho mã: trong `mac/`).
+  BO_CAI=$(dirname "$RUOT")/cai-dat-mac.js
+  if [ ! -f "$BO_CAI" ]; then
+    echo "LỖI: thiếu bộ cài cai-dat-mac.js của tool."
+    echo ""
+    echo "  Giải nén lại gói Tool_nhap_lieu_mac.zip vào một thư mục mới rồi bấm lại nút này."
+    echo ""
+    doi_phim; exit 1
+  fi
+  "$NODE" "$BO_CAI" --viec "$viec" --goc "$goc" "$@"
   ma=$?
   echo ""
   doi_phim

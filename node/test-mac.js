@@ -239,7 +239,7 @@ test('MAC-07', 'nút 1 và nút 2 gọi `cai-dat-mac.js` kèm đúng việc (cai
   dung(/--viec cap-nhat/.test(r2.ra), 'nút 2 không gọi việc cap-nhat: ' + r2.ra.slice(0, 160));
   dung(/\/lui/.test(r3.ra) && r3.ma === 11, 'nút 2 không truyền /lui hoặc nuốt mã 11: mã ' + r3.ma);
   const am = doiChungAm(() => {
-    const g2 = dungMay({ cauHinh: true, ma: true, vaSua: [['  "$NODE" "$goc/cai-dat-mac.js" --viec "$viec" --goc "$goc" "$@"', '  "$NODE" "$goc/cai-dat-mac.js" --viec "$viec" --goc "$goc"']] });
+    const g2 = dungMay({ cauHinh: true, ma: true, vaSua: [['  "$NODE" "$BO_CAI" --viec "$viec" --goc "$goc" "$@"', '  "$NODE" "$BO_CAI" --viec "$viec" --goc "$goc"']] });
     fs.writeFileSync(path.join(g2, 'cai-dat-mac.js'), '// giả\n');
     const x = chayNut(g2, '2_CAP_NHAT.command', { duongNode: nodeGia(0), thamSo: ['/lui'] });
     return /\/lui/.test(x.ra) ? [] : ['nút 2 nuốt mất /lui — người bấm tưởng đã lùi mà thật ra vừa cập nhật tiếp'];

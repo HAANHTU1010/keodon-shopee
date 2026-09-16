@@ -285,11 +285,21 @@ function dungGoi(dich, nodePortable, nen) {
   // `bat/` là bản đem xuất bản, cũng chính là bản `2_CAP_NHAT.bat` tải về máy user. Lấy nút từ
   // `03_VAN_HANH` thì gói giao đi và bản cập nhật về sau có thể là hai bản khác nhau — đúng cái bệnh
   // "máy này một bản, máy kia một bản" mà cả đợt này sinh ra để diệt.
-  for (const t of (macOS ? BON_NUT_MAC.concat(KEM_MAC) : BON_NUT)) {
+  for (const t of (macOS ? BON_NUT_MAC : BON_NUT)) {
     const tu = path.join(macOS ? THU_MUC_MAC : NGUON_NUT, t);
     if (!fs.existsSync(tu)) throw new Error('thiếu nút ' + t + ' trong ' + (macOS ? THU_MUC_MAC : NGUON_NUT));
     fs.copyFileSync(tu, path.join(dich, t));
     if (macOS) fs.chmodSync(path.join(dich, t), QUYEN_CHAY);
+  }
+  // Hai file kỹ thuật của bản Mac nằm TRONG thư mục cấu hình: lớp ngoài cùng giữ đúng hình dạng của
+  // bản Windows — 4 nút + 2 thư mục — để người dùng không phải nhìn thứ mình không cần bấm.
+  if (macOS) {
+    for (const t of KEM_MAC) {
+      const tu = path.join(THU_MUC_MAC, t);
+      if (!fs.existsSync(tu)) throw new Error('thiếu ' + t + ' trong ' + THU_MUC_MAC);
+      fs.copyFileSync(tu, path.join(thuMucCauHinh, t));
+      fs.chmodSync(path.join(thuMucCauHinh, t), QUYEN_CHAY);
+    }
   }
 
   // --- hai file hướng dẫn, qua DANH SÁCH TRẮNG (C-3), lấy từ bat/ (bản có phiên bản) ---
@@ -426,7 +436,7 @@ function kiemGoi(dich) {
   // 1. đúng bằng này thứ ở lớp ngoài cùng, không hơn
   const ngoaiCung = ds.filter((x) => x.duong.indexOf(path.sep) < 0).map((x) => x.duong).sort();
   const macOS = ngoaiCung.indexOf('4_CHAY_TOOL.command') >= 0;
-  const mong = (macOS ? BON_NUT_MAC.concat(KEM_MAC) : BON_NUT).concat([TEN_THA, TEN_CAU_HINH]).sort();
+  const mong = (macOS ? BON_NUT_MAC : BON_NUT).concat([TEN_THA, TEN_CAU_HINH]).sort();
   const thua = ngoaiCung.filter((t) => mong.indexOf(t) < 0);
   const thieu = mong.filter((t) => ngoaiCung.indexOf(t) < 0);
   if (thua.length) pham.push('lớp ngoài cùng có thứ lạ: ' + thua.join(', '));

@@ -33,9 +33,11 @@ const { execFileSync, spawnSync } = require('child_process');
 const TEN_CAU_HINH = 'CAU_HINH_VAN_HANH.json';
 const TEN_MA = 'keodon-apps-script';
 const CHEP = ['src', 'node', 'package.json'];          // đúng ba thứ, như nút 2 của Windows
-const NUT_MAC = ['1_CAI_DAT_LAN_DAU.command', '2_CAP_NHAT.command', '3_TAO_FILE_THANG_MOI.command',
-  '4_CHAY_TOOL.command', 'keodon-mac.sh'];
+const NUT_MAC = ['1_CAI_DAT_LAN_DAU.command', '2_CAP_NHAT.command', '3_TAO_FILE_THANG_MOI.command', '4_CHAY_TOOL.command'];
+/** Hai file kỹ thuật: nằm trong thư mục cấu hình, không bày ra lớp ngoài cùng cho người dùng nhìn. */
+const RUOT_MAC = ['keodon-mac.sh', 'cai-dat-mac.js'];
 const GIU_BAN_CU = 3;
+const THAM_SO_NPM = ['install', '--omit=dev', '--no-audit', '--no-fund', '--no-progress', '--loglevel=error'];
 
 // ----------------------------------------------------------------- in ra màn hình
 const noi = (t) => console.log(t === undefined ? '' : t);
@@ -140,7 +142,9 @@ async function keoMaVe(cn) {
       'kiểm ba thứ: (1) máy có mạng không; (2) tên kho mã trong cấu hình có đúng không; (3) mạng công ty có chặn github.com không.');
   }
   try {
-    execFileSync('tar', ['-xzf', tep, '-C', tam]);     // macOS có sẵn bsdtar; Git Bash trên Windows cũng có
+    // Truyền TÊN FILE + cwd, không truyền đường dẫn tuyệt đối: `tar` bản GNU coi "C:…" là tên máy ở xa
+    // rồi báo "Cannot connect to C" — bẫy này bắt được khi chạy thử bộ cài trên máy Windows.
+    execFileSync('tar', ['-xzf', path.basename(tep)], { cwd: tam });   // macOS có sẵn bsdtar; Git Bash trên Windows cũng có
   } catch (e) {
     fs.rmSync(tam, { recursive: true, force: true });
     chet('tải về được nhưng không giải nén được gói mã.', 'gửi người phụ trách kỹ thuật câu lỗi này.');
@@ -178,8 +182,9 @@ function chayNpm(tool, base) {
   noi('Đang cài thư viện (npm install) — lần đầu mất 1–2 phút …');
   const cli = base ? npmXachTay(base) : null;
   const r = cli
-    ? spawnSync(process.execPath, [cli, 'install', '--omit=dev', '--no-audit', '--no-fund'], { cwd: tool, stdio: 'inherit' })
-    : spawnSync('npm', ['install', '--omit=dev', '--no-audit', '--no-fund'], { cwd: tool, stdio: 'inherit', shell: process.platform === 'win32' });
+    // `--loglevel=error`: npm bình thường in một mớ "deprecated…" mà người không chuyên đọc xong tưởng hỏng.
+    ? spawnSync(process.execPath, [cli].concat(THAM_SO_NPM), { cwd: tool, stdio: 'inherit' })
+    : spawnSync('npm', THAM_SO_NPM, { cwd: tool, stdio: 'inherit', shell: process.platform === 'win32' });
   if (r.status !== 0) {
     chet('npm install không xong nên tool chưa đọc được file .xlsx.',
       'mở Terminal, gõ:  cd "' + tool + '"  rồi  npm install  — và gửi người phụ trách kỹ thuật dòng lỗi cuối cùng.');
@@ -307,20 +312,36 @@ async function main() {
   for (const t of CHEP) {
     if (!chepMotThu(path.join(goc, t), path.join(tool, t))) chet('gói mã tải về thiếu "' + t + '".', 'gửi người phụ trách kỹ thuật.');
   }
+  let nut2Moi = false;
   for (const n of NUT_MAC) {
     const tu = path.join(goc, 'mac', n);
-    if (fs.existsSync(tu) && n !== '2_CAP_NHAT.command') {       // không tự ghi đè chính nút đang chạy
-      fs.cpSync(tu, path.join(o.goc, n));
-      try { fs.chmodSync(path.join(o.goc, n), 0o755); } catch (e) { /* Windows không cần */ }
+    if (!fs.existsSync(tu)) continue;
+    if (n === '2_CAP_NHAT.command') {
+      // KHÔNG tự ghi đè chính nút đang chạy: shell đọc script theo từng đoạn, thay file giữa chừng là
+      // câu lệnh sau đứt ngang. Chỉ so rồi nhắc, y như bản Windows.
+      try { nut2Moi = fs.readFileSync(tu, 'utf8') !== fs.readFileSync(path.join(o.goc, n), 'utf8'); } catch (e) { nut2Moi = false; }
+      continue;
     }
+    fs.cpSync(tu, path.join(o.goc, n));
+    try { fs.chmodSync(path.join(o.goc, n), 0o755); } catch (e) { /* Windows không cần */ }
   }
-  const capNhatMoi = path.join(goc, 'mac', 'cai-dat-mac.js');
-  if (fs.existsSync(capNhatMoi)) fs.cpSync(capNhatMoi, path.join(o.goc, 'cai-dat-mac.js'));
+  for (const n of RUOT_MAC) {
+    const tu = path.join(goc, 'mac', n);
+    if (!fs.existsSync(tu)) continue;
+    fs.cpSync(tu, path.join(base, n));
+    try { fs.chmodSync(path.join(base, n), 0o755); } catch (e) { /* Windows không cần */ }
+  }
   fs.rmSync(tam, { recursive: true, force: true });
   noi('[4/6] Đã chép mã mới: src, node, package.json và các nút');
 
   if (chuoiThuVien(tool) !== thuVienCu || !fs.existsSync(path.join(tool, 'node_modules', 'exceljs'))) chayNpm(tool, base);
   else noi('       Danh sách thư viện không đổi → bỏ qua npm install');
+
+  if (nut2Moi) {
+    noi('');
+    noi('CHÚ Ý: nút  2_CAP_NHAT.command  có bản mới mà tool không tự thay được (nó đang chạy).');
+    noi('       Không sao, mọi thứ vẫn chạy. Khi rảnh báo người phụ trách kỹ thuật thay giúp một lần.');
+  }
 
   const ma = await goiThu(tool, cfg);
 
@@ -339,8 +360,8 @@ async function main() {
     noi('  Đọc dòng [5/6] ở trên; thường là mạng, hoặc link Web App / khóa sai.');
   }
   noi('============================================================');
-  noi('  Đường lùi: bấm  2_CAP_NHAT.command  với tham số  /lui  (mở Terminal, kéo file');
-  noi('  vào rồi gõ thêm  /lui ) — lấy lại bản trước, cấu hình giữ nguyên.');
+  noi('  Bản mới có gì lạ? Báo người phụ trách kỹ thuật — có sẵn đường lùi lấy lại bản trước,');
+  noi('  cấu hình và thư mục thả file giữ nguyên, không mất gì.');
   noi('============================================================');
   process.exit(ma === 1 ? 1 : 0);
 }
