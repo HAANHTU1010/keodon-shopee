@@ -66,6 +66,15 @@ tim_thu_muc_ma() {
 # gói .pkg của nodejs.org cài vào /usr/local/bin, Homebrew vào /opt/homebrew/bin,
 # mà Finder chạy .command với PATH tối thiểu nên phải dò thêm hai chỗ đó.
 tim_node() {
+  # 1. Node XÁCH TAY kèm trong gói (như bản Windows) — ưu tiên số một: cùng một bản trên mọi máy,
+  #    user không phải cài gì. Thư mục theo kiến trúc máy: arm64 (Apple Silicon) hay x64 (Intel).
+  kt=$(uname -m 2>/dev/null)
+  [ "$kt" = "x86_64" ] && kt="x64"
+  for d in "$1" "$1/Cấu hình" "$(dirname "$1")"; do
+    n="$d/node-portable-mac-$kt/bin/node"
+    if [ -x "$n" ]; then echo "$n"; return 0; fi
+  done
+  # 2. Node của máy (user tự cài, hoặc máy Intel không có bản xách tay kèm theo).
   if command -v node >/dev/null 2>&1; then command -v node; return 0; fi
   for n in /usr/local/bin/node /opt/homebrew/bin/node /usr/bin/node; do
     [ -x "$n" ] && { echo "$n"; return 0; }
@@ -73,8 +82,19 @@ tim_node() {
   echo ""
 }
 
+# Gỡ cờ "tải từ Internet" (com.apple.quarantine) cho CẢ thư mục gói, ngay lần chạy đầu.
+# Không gỡ thì macOS chặn từng file một: `node` xách tay không chạy, ba nút còn lại cũng bị hỏi lại.
+# Chạy được đến dòng này nghĩa là người dùng đã cho phép nút ĐẦU TIÊN (chuột phải → Mở) — gỡ nốt phần còn lại.
+go_kiem_dich() {
+  [ "$(uname -s 2>/dev/null)" = "Darwin" ] || return 0
+  command -v xattr >/dev/null 2>&1 || return 0
+  xattr -dr com.apple.quarantine "$1" >/dev/null 2>&1 || true
+}
+
 cau_thieu_node() {
   echo "LỖI: máy chưa có Node.js nên tool không chạy được."
+  echo ""
+  echo "  (Gói này có kèm sẵn Node cho máy Apple Silicon. Máy Intel đời cũ thì phải cài một lần.)"
   echo ""
   echo "  Cách sửa (làm một lần, khoảng 3 phút):"
   echo "    1. Mở https://nodejs.org → tải bản \"LTS\" cho macOS (file .pkg)."
@@ -104,11 +124,12 @@ cau_chua_cai() {
 # Đặt CFGDIR, TOOL, NODE. Thiếu thứ nào thì in câu chỉ việc rồi thoát 1.
 chuan_bi() {
   goc="$1"
+  go_kiem_dich "$goc"
   CFGDIR=$(tim_thu_muc_cau_hinh "$goc")
   if [ -z "$CFGDIR" ]; then cau_thieu_cau_hinh; doi_phim; exit 1; fi
   TOOL=$(tim_thu_muc_ma "$goc")
   if [ -z "$TOOL" ]; then cau_chua_cai; doi_phim; exit 1; fi
-  NODE=$(tim_node)
+  NODE=$(tim_node "$CFGDIR")
   if [ -z "$NODE" ]; then cau_thieu_node; doi_phim; exit 1; fi
   if [ ! -d "$TOOL/node_modules/exceljs" ]; then
     echo "LỖI: thiếu thư viện của tool nên chưa đọc được file .xlsx."
@@ -189,7 +210,8 @@ nut_3() {
 nut_cai_dat() {
   goc="$1"; viec="$2"; shift 2
   [ "$viec" = "cai-dat" ] && tieu_de "CÀI ĐẶT LẦN ĐẦU" || tieu_de "CẬP NHẬT TOOL"
-  NODE=$(tim_node)
+  go_kiem_dich "$goc"
+  NODE=$(tim_node "$(tim_thu_muc_cau_hinh "$goc")")
   if [ -z "$NODE" ]; then cau_thieu_node; doi_phim; exit 1; fi
   "$NODE" "$goc/cai-dat-mac.js" --viec "$viec" --goc "$goc" "$@"
   ma=$?

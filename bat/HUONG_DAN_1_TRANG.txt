@@ -25,7 +25,7 @@ Thư mục này có đúng sáu thứ: hai thư mục và bốn nút
 
 Lần đầu trên máy mới
 
-> Có hai gói: một cho máy Windows, một cho MacBook. Gói Windows là bốn nút .bat kèm sẵn Node; gói Mac (Tool_nhap_lieu_mac.zip) là bốn nút .command và máy Mac phải cài Node một lần — xem mục *MacBook: ba việc khác Windows* ngay dưới. Việc hằng ngày của hai bản giống hệt nhau. Bản bấm nút ngay trong Google Sheet (không cài gì) vẫn nằm trong kế hoạch.
+> Có hai gói: một cho máy Windows, một cho MacBook. Gói Windows là bốn nút .bat, gói Mac (Tool_nhap_lieu_mac.zip) là bốn nút .command — cả hai đều kèm sẵn Node, không phải cài gì. Máy Mac chỉ khác đúng một thao tác lần đầu (mục *MacBook: khác Windows đúng một chỗ* ngay dưới). Việc hằng ngày của hai bản giống hệt nhau. Bản bấm nút ngay trong Google Sheet vẫn nằm trong kế hoạch.
 
 1. Giải nén gói ra một thư mục trên máy, ví dụ Desktop.
 2. Bấm đúp 1_CAI_DAT_LAN_DAU.bat. Nó tự kiểm sáu bước và báo bằng tiếng Việt.
@@ -35,15 +35,18 @@ Bạn không phải điền gì cả. Gói đã có sẵn link Google Sheet, chu
 
 Lần đầu chạy, nút này tự tải mã của tool từ trên mạng về nên hơi lâu một chút. Cứ để nó chạy.
 
-MacBook: ba việc khác Windows
+MacBook: khác Windows đúng một chỗ
 
-Gói cho Mac tên Tool_nhap_lieu_mac.zip, bốn nút đuôi .command (bấm đúp y như .bat). Khác đúng ba chỗ:
+Gói cho Mac tên Tool_nhap_lieu_mac.zip, bốn nút đuôi .command (bấm đúp y như .bat). Không phải cài Node — gói đã kèm sẵn.
 
-1. Cài Node.js một lần. Vào <https://nodejs.org>, tải bản LTS cho macOS (file .pkg), bấm đúp rồi bấm Tiếp tục tới hết. Không cài thì nút 1 dừng lại và in đúng ba bước này ra màn hình.
-2. Lần đầu bấm nút, macOS sẽ chặn vì file tải từ Internet: hiện câu *"không thể mở vì không rõ nhà phát triển"*. Cách mở: chuột phải vào nút → Mở → Mở. Chỉ phải làm một lần cho mỗi nút. (Không thấy chữ *Mở* thì vào Cài đặt hệ thống → Quyền riêng tư & Bảo mật, kéo xuống cuối, bấm Vẫn mở.)
-3. Lần đầu tool đọc thư mục thả file, macOS hỏi xin quyền vào Desktop/Documents — bấm Cho phép, không thì tool không thấy file bạn vừa thả.
+1. Lần đầu bấm nút, macOS chặn vì file tải từ Internet: hiện câu *"không thể mở vì không rõ nhà phát triển"*.
+   Cách mở: chuột phải vào 1_CAI_DAT_LAN_DAU.command → Mở → Mở. Chỉ làm một lần: chính nút đó tự gỡ cờ chặn cho cả gói, ba nút còn lại bấm đúp chạy thẳng.
+   (Không thấy chữ *Mở* thì vào Cài đặt hệ thống → Quyền riêng tư & Bảo mật, kéo xuống cuối, bấm Vẫn mở.)
+2. Lần đầu tool đọc thư mục thả file, macOS hỏi xin quyền vào Desktop/Documents — bấm Cho phép, không thì tool không thấy file bạn vừa thả.
 
-Sau ba việc đó thì mọi thứ y hệt bản Windows: thả file vào đúng thư mục gian hàng rồi bấm đúp 4_CHAY_TOOL.command.
+Sau đó mọi thứ y hệt bản Windows: thả file vào đúng thư mục gian hàng rồi bấm đúp 4_CHAY_TOOL.command.
+
+> MacBook đời cũ chạy chip Intel (máy trước 2020): gói kèm sẵn Node cho máy Apple Silicon thôi, nên máy Intel sẽ thấy nút 1 in ba bước cài Node từ <https://nodejs.org> (chọn bản LTS, file .pkg). Cài xong bấm lại nút 1 là chạy tiếp bình thường.
 
 ---
 

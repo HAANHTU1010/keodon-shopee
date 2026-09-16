@@ -70,6 +70,8 @@ const BON_NUT_MAC = [
 /** Đi cùng bốn nút Mac ở lớp ngoài cùng của gói. */
 const KEM_MAC = ['keodon-mac.sh', 'cai-dat-mac.js'];
 const TEN_GOI_MAC = 'Tool_nhap_lieu_mac';
+/** Kiến trúc máy Mac có bản Node xách tay. `uname -m` trả `arm64` hoặc `x86_64` (nút quy về `x64`). */
+const KIEN_TRUC_MAC = ['arm64', 'x64'];
 /** File phải giữ bit thực thi khi giải nén trên máy Mac (JSZip mặc định không đặt quyền → bấm đúp không chạy). */
 const QUYEN_CHAY = 0o755;
 const QUYEN_THUONG = 0o644;
@@ -165,11 +167,14 @@ const THU_MUC_CAM = ['src', 'node', 'node_modules', '.git'];
  */
 const TEN_NODE_PORTABLE = 'node-portable';
 const CAY_NODE_PORTABLE = path.join('Cấu hình'.normalize('NFC'), TEN_NODE_PORTABLE) + path.sep;
+/** Bản Mac có một cây cho mỗi kiến trúc: `node-portable-mac-arm64`, `node-portable-mac-x64`. */
+const CAY_NODE_MAC = path.join('Cấu hình'.normalize('NFC'), 'node-portable-mac-') ;
 const LOP_NGOAI_NODE_PORTABLE = ['node.exe', 'npm', 'npm.cmd', 'npx', 'npx.cmd', 'PHIEN_BAN.txt', 'node_modules'];
 
 /** Đường dẫn tương đối này có nằm TRONG cây node-portable không (không tính chính thư mục gốc cây). */
 function trongCayNodePortable(duong) {
-  return duong.normalize('NFC').startsWith(CAY_NODE_PORTABLE);
+  const d = duong.normalize('NFC');
+  return d.startsWith(CAY_NODE_PORTABLE) || d.startsWith(CAY_NODE_MAC);
 }
 
 function doc(t) { return fs.readFileSync(t, 'utf8').replace(/^﻿/, ''); }
@@ -304,7 +309,26 @@ function dungGoi(dich, nodePortable, nen) {
   // --- Node xách tay: không dựng ra được, chỉ chép nếu có ---
   // Mặc định lấy bản đang dùng trên máy chủ dự án; không có thì gói vẫn dựng được nhưng KÊU LÊN.
   if (macOS) {
-    return { dich, soGian: dsGian.length, soKyThang: Object.keys(cfg.link_thang).length, canhBao, nen: 'mac' };
+    // Node xách tay cho Mac — cùng vai trò như `node-portable` của Windows: user KHÔNG phải cài gì.
+    // Một cây cho mỗi kiến trúc; hiện chỉ có arm64 (Apple Silicon). Máy Intel không có cây x64 thì
+    // nút 1 in ba bước cài từ nodejs.org — tool vẫn chạy, chỉ là phải cài một lần.
+    let soCay = 0;
+    for (const kt of KIEN_TRUC_MAC) {
+      const tu = path.join(NGUON, TEN_CAU_HINH, 'node-portable-mac-' + kt);
+      if (!fs.existsSync(path.join(tu, 'bin', 'node'))) continue;
+      chepCay(tu, path.join(thuMucCauHinh, 'node-portable-mac-' + kt));
+      fs.chmodSync(path.join(thuMucCauHinh, 'node-portable-mac-' + kt, 'bin', 'node'), QUYEN_CHAY);
+      for (const t of ['npm', 'npx']) {
+        const f = path.join(thuMucCauHinh, 'node-portable-mac-' + kt, 'bin', t);
+        if (fs.existsSync(f)) fs.chmodSync(f, QUYEN_CHAY);
+      }
+      soCay++;
+    }
+    if (!soCay) {
+      canhBao.push('gói macOS CHƯA có node-portable-mac-*. Máy Mac phải tự cài Node từ nodejs.org. ' +
+        'Dựng bản xách tay: npm pack node-bin-darwin-arm64@<bản> npm@<bản> rồi xếp vào 03_VAN_HANH/Cấu hình/node-portable-mac-arm64.');
+    }
+    return { dich, soGian: dsGian.length, soKyThang: Object.keys(cfg.link_thang).length, canhBao, nen: 'mac', soCayNodeMac: soCay };
   }
   if (nodePortable == null) {
     const macDinh = path.join(NGUON, TEN_CAU_HINH, TEN_NODE_PORTABLE);
@@ -653,6 +677,7 @@ async function main() {
 function inKetQua(kq, pham) {
   if (kq.soGian != null) console.log('  · ' + kq.soGian + ' thư mục gian hàng, mỗi cái một "đã xử lý" và một .keep');
   console.log('  · ' + (kq.nen === 'mac' ? BON_NUT_MAC.length + ' nút bấm .command lấy từ mac/ (kèm keodon-mac.sh, cai-dat-mac.js)' : BON_NUT.length + ' nút bấm lấy từ bat/'));
+  if (kq.soCayNodeMac != null) console.log('  · ' + kq.soCayNodeMac + ' bản Node xách tay cho Mac (' + KIEN_TRUC_MAC.join(', ') + ' — có bản nào chép bản đó)');
   if (kq.soKyThang != null) console.log('  · cấu hình đầy đủ: web_app_url, chuoi_bi_mat, ' + kq.soKyThang + ' kỳ link_thang');
   console.log('');
   if (pham && pham.length) {
@@ -664,7 +689,7 @@ function inKetQua(kq, pham) {
   (kq.canhBao || []).forEach((c) => console.log('\nCHÚ Ý: ' + c));
 }
 
-module.exports = { dungGoi, kiemGoi, dongGoiZip, nenZip, dongBoVanHanh, kiemDongBoBat, mdSangTxt, CAU_CANH_BAO_GOI, BON_NUT_MAC, KEM_MAC, TEN_GOI_MAC, TEN_THU_MUC_TIKTOK,
+module.exports = { dungGoi, kiemGoi, dongGoiZip, nenZip, dongBoVanHanh, kiemDongBoBat, mdSangTxt, CAU_CANH_BAO_GOI, BON_NUT_MAC, KEM_MAC, TEN_GOI_MAC, TEN_THU_MUC_TIKTOK, KIEN_TRUC_MAC,
   THU_MUC_BAT_KHO, THU_MUC_BAN_GIAO, NGUON_NUT, dsFileBat, TRANG_HUONG_DAN, TEN_GIU_CHO,
   TEN_NODE_PORTABLE, LOP_NGOAI_NODE_PORTABLE, trongCayNodePortable, BON_NUT, TEN_GOI, TEN_CAU_HINH,
   TEN_NHAT_KY, TEN_THA, KHOA_CHI_CHO_EXCEL, HAI_DONG_BI_MAT };

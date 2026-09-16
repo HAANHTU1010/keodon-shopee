@@ -178,7 +178,7 @@ test('MAC-04', 'máy CHƯA cài Node → in đúng ba bước cài từ nodejs.o
   const am = doiChungAm(() => {
     const g2 = dungMay({
       cauHinh: true, ma: true,
-      vaSua: [khongCoNode, ['  NODE=$(tim_node)\n  if [ -z "$NODE" ]; then cau_thieu_node; doi_phim; exit 1; fi\n  if [ ! -d "$TOOL/node_modules/exceljs" ]; then',
+      vaSua: [khongCoNode, ['  NODE=$(tim_node "$CFGDIR")\n  if [ -z "$NODE" ]; then cau_thieu_node; doi_phim; exit 1; fi\n  if [ ! -d "$TOOL/node_modules/exceljs" ]; then',
         '  NODE=node\n  if [ ! -d "$TOOL/node_modules/exceljs" ]; then']]
     });
     const r2 = chayNut(g2, '4_CHAY_TOOL.command', {});

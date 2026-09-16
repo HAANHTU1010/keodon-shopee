@@ -167,9 +167,19 @@ function chuoiThuVien(d) {
   } catch (e) { return ''; }
 }
 
-function chayNpm(tool) {
+/** npm của bản Node xách tay kèm trong gói (nếu có) — để máy Mac không phải cài gì. */
+function npmXachTay(base) {
+  const kt = process.arch === 'arm64' ? 'arm64' : 'x64';
+  const cli = path.join(base, 'node-portable-mac-' + kt, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  return fs.existsSync(cli) ? cli : null;
+}
+
+function chayNpm(tool, base) {
   noi('Đang cài thư viện (npm install) — lần đầu mất 1–2 phút …');
-  const r = spawnSync('npm', ['install', '--omit=dev', '--no-audit', '--no-fund'], { cwd: tool, stdio: 'inherit', shell: process.platform === 'win32' });
+  const cli = base ? npmXachTay(base) : null;
+  const r = cli
+    ? spawnSync(process.execPath, [cli, 'install', '--omit=dev', '--no-audit', '--no-fund'], { cwd: tool, stdio: 'inherit' })
+    : spawnSync('npm', ['install', '--omit=dev', '--no-audit', '--no-fund'], { cwd: tool, stdio: 'inherit', shell: process.platform === 'win32' });
   if (r.status !== 0) {
     chet('npm install không xong nên tool chưa đọc được file .xlsx.',
       'mở Terminal, gõ:  cd "' + tool + '"  rồi  npm install  — và gửi người phụ trách kỹ thuật dòng lỗi cuối cùng.');
@@ -222,7 +232,7 @@ function lui(base, tool) {
     const tu = path.join(cu.duong, t);
     if (fs.existsSync(tu)) chepMotThu(tu, path.join(tool, t));
   }
-  if (chuoiThuVien(cu.duong) !== chuoiThuVien(tool)) chayNpm(tool);
+  if (chuoiThuVien(cu.duong) !== chuoiThuVien(tool)) chayNpm(tool, base);
   noi('');
   vach();
   noi('  ĐÃ LÙI. Bản đang chạy bây giờ: ' + banCua(tool));
@@ -281,7 +291,7 @@ async function main() {
   if (o.lui) return lui(base, tool);
 
   // [1] Node — đã có (chính file này đang chạy bằng Node), chỉ in ra cho người bấm yên tâm.
-  noi('[1/6] Node.js: OK (' + process.version + ')');
+  noi('[1/6] Node.js: OK (' + process.version + (npmXachTay(base) ? ', bản xách tay kèm trong gói' : ', bản cài trên máy') + ')');
 
   // [2] kho mã
   const { tam, goc } = await keoMaVe(cfg.cap_nhat);
@@ -309,7 +319,7 @@ async function main() {
   fs.rmSync(tam, { recursive: true, force: true });
   noi('[4/6] Đã chép mã mới: src, node, package.json và các nút');
 
-  if (chuoiThuVien(tool) !== thuVienCu || !fs.existsSync(path.join(tool, 'node_modules', 'exceljs'))) chayNpm(tool);
+  if (chuoiThuVien(tool) !== thuVienCu || !fs.existsSync(path.join(tool, 'node_modules', 'exceljs'))) chayNpm(tool, base);
   else noi('       Danh sách thư viện không đổi → bỏ qua npm install');
 
   const ma = await goiThu(tool, cfg);

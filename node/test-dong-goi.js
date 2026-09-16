@@ -388,6 +388,17 @@ DS_CHO.push(() => testCho('DG-14', 'GÓI macOS: đúng hình dạng riêng (4 n�
   const ngoai = fs.readdirSync(goi).sort();
   bang(ngoai.join(','), DG.BON_NUT_MAC.concat(DG.KEM_MAC, ['1_THA_FILE_XUAT', 'Cấu hình']).sort().join(','), 'lớp ngoài cùng gói Mac');
   dung(!fs.existsSync(path.join(goi, 'Cấu hình', 'node-portable')), 'gói Mac KHÔNG được kèm node-portable (bản .exe của Windows)');
+  // Node xách tay cho Mac: có bản nào trên máy dựng thì gói phải mang bản đó, và binary phải chạy được (bit x).
+  for (const kt of DG.KIEN_TRUC_MAC) {
+    const co = fs.existsSync(path.join('E:/CODE/BAN HANG/03_VAN_HANH/Cấu hình', 'node-portable-mac-' + kt, 'bin', 'node'));
+    const trongGoi = path.join(goi, 'Cấu hình', 'node-portable-mac-' + kt, 'bin', 'node');
+    if (co) {
+      dung(fs.existsSync(trongGoi), 'máy dựng có node-portable-mac-' + kt + ' mà gói không mang theo → user Mac phải tự cài Node');
+      dung(fs.existsSync(path.join(goi, 'Cấu hình', 'node-portable-mac-' + kt, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js')), 'thiếu npm trong bản Node xách tay ' + kt + ' → nút 1 không cài được thư viện');
+    } else {
+      dung(!fs.existsSync(trongGoi), 'gói có node-portable-mac-' + kt + ' mà máy dựng không có — lấy ở đâu ra?');
+    }
+  }
   dung(!ngoai.some((t) => /\.bat$/i.test(t)), 'gói Mac còn sót nút .bat của Windows');
 
   const txt = fs.readFileSync(path.join(goi, 'Cấu hình', 'HUONG_DAN_1_TRANG.txt'), 'utf8');
