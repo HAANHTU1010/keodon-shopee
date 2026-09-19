@@ -411,7 +411,7 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
     return 'dòng 6 → 2026-09-15 · ô A sổ giờ Mỹ hiện 2026-09-16 (ngày chạy) · ' + am;
   });
 
-  await test('TT-05', 'CÔNG THỨC CHỐT (ròng hoàn tiền, đổi dấu): H − I − J − K = "Số tiền quyết toán ước tính" → 130/130 dòng; ĐƠN BÌNH THƯỜNG (không dấu bất thường nào) lệch ĐÚNG MỘT ĐỒNG → `kiemTuKiem` ném TU_KIEM_LECH, DỪNG cả phần TikTok, đơn đó không vào ĐƠN CHUẨN', async () => {
+  await test('TT-05', 'TỰ KIỂM bằng bốn số THÀNH PHẦN (ròng hoàn tiền, đổi dấu — từ 19/9 chỉ để đối chiếu, KHÔNG ghi lên sổ): h − i − j − k = "Số tiền quyết toán ước tính" → 130/130 dòng; ĐƠN BÌNH THƯỜNG (không dấu bất thường nào) lệch ĐÚNG MỘT ĐỒNG → `kiemTuKiem` ném TU_KIEM_LECH, DỪNG cả phần TikTok, đơn đó không vào ĐƠN CHUẨN', async () => {
     const khop = (dt) => dt.filter((x) => x.H - x.I - x.J - x.K === x.Q).length;
     bang(khop(DCN.dongTho), 130, 'số dòng khớp');
     // Luật 16/9: đơn ĐÃ có cảnh báo thì tiền lệch chỉ thêm một câu Note; chỉ ĐƠN BÌNH THƯỜNG lệch mới DỪNG. Muốn chấm đúng vế "DỪNG" phải
@@ -538,6 +538,16 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
   L1.sim.demLai();
   const R1 = await chayTT(L1.sim, vh1);
   const DON_MOI = DCN.don.filter((d) => !MA_TREN_SO.has(d.maDon));
+  /** LUẬT TIỀN 19/9 — số chuẩn của ô H: Σ cột "Số tiền quyết toán ước tính" của đơn, đọc THẲNG từ bảng thô theo tên cột (không hỏi adapter). */
+  const qtTho = (() => {
+    const hd = A.bang[4].map((t) => String(t).trim());
+    const iMa = hd.indexOf('ID đơn hàng/điều chỉnh'), iQt = hd.indexOf('Số tiền quyết toán ước tính');
+    if (iMa < 0 || iQt < 0) throw new Error('file A thật thiếu cột mã đơn / "Số tiền quyết toán ước tính"');
+    const tong = {};
+    A.bang.slice(5).forEach((h) => { const m = String(h[iMa] == null ? '' : h[iMa]).trim(); if (m) tong[m] = (tong[m] || 0) + Number(h[iQt]); });
+    return (ma) => (ma in tong ? tong[ma] : NaN);
+  })();
+  const laTrong = (v) => v === '' || v == null;
 
   await test('TT-11', 'file có đơn cũ lẫn đơn mới → CHỈ ghi đơn mới: sheet đang có 71 mã → lần đầu ghi 58, bỏ qua 71 đã có, 0 ĐƠN BỊ BỎ (CÓ ĐƠN LÀ GHI) và màn hình in khối "… ĐƠN CẦN SOÁT TAY" thay cho câu bỏ đơn; báo cáo chuyển vào "đã xử lý" sau khi ghi', async () => {
     dung(!R1.e, 'lượt chạy lỗi: ' + (R1.e && R1.e.message) + '\n' + R1.ra.slice(-600));
@@ -572,12 +582,12 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
     return 'ghi 58 · bỏ qua 71 đã có · 0 đơn bị bỏ · gói ' + goi.join('→') + ' · nhật ký LOG_*_TIKTOK.txt có dòng RUN, 0 link/ID/bí mật\n        · ' + am;
   });
 
-  await test('TT-06', 'đơn 1 SKU, Mapping 1 tên viết tắt, không cấu phần → 1 dòng, D = tên viết tắt, G = SL, H/I/J/K = báo cáo, không gộp ô', async () => {
+  await test('TT-06', 'đơn 1 SKU, Mapping 1 tên viết tắt, không cấu phần → 1 dòng, D = tên viết tắt, G = SL, H = "Số tiền quyết toán ước tính" của đơn, I/J/K TRỐNG (luật tiền 19/9), không gộp ô', async () => {
     const d = DON_MOI.filter((x) => x.dong.length === 1 && cauPhanGau(x.dong[0].tenPhanLoai).length === 1 && x.dong[0].tenPhanLoai !== PL_HE_SO_2 && x.dong[0].tenListing === TEN_GAU)[0];
     dung(d, 'file thật không còn đơn mới dạng này');
     const s = dongCua(L1.ss, d.maDon);
-    bang([s.rows.length, s.rows[0].D, s.rows[0].G, s.H, s.I, s.J, s.K, s.gop], [1, 'Teddy Nâu', d.dong[0].soLuong, d.tien.H, d.tien.I, d.tien.J, d.tien.K, []]);
-    return 'đơn ' + d.maDon + ' → 1 dòng Teddy Nâu, H/I/J/K = ' + [s.H, s.I, s.J, s.K].join('/');
+    bang([s.rows.length, s.rows[0].D, s.rows[0].G, s.H, [s.I, s.J, s.K].every(laTrong), s.gop], [1, 'Teddy Nâu', d.dong[0].soLuong, qtTho(d.maDon), true, []]);
+    return 'đơn ' + d.maDon + ' → 1 dòng Teddy Nâu, H = quyết toán ' + s.H + ', I/J/K trống';
   });
 
   await test('TT-08', 'combo 4 cấu phần (30cm Nâu · Túi kính+thiệp · in 2 mặt) → 4 dòng kho D = Teddy Nâu/Áo Gấu/Túi Kính Trắng/Thiệp, C H I J K L gộp CẢ CỤM, tiền ghi MỘT lần, L = quyết toán', async () => {
@@ -585,6 +595,7 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
     dung(d, 'file thật không còn đơn mới combo 4');
     const s = dongCua(L1.ss, d.maDon);
     bang([s.rows.length, s.rows.map((x) => x.D), s.rows.map((x) => x.G), s.gop], [4, ['Teddy Nâu', 'Áo Gấu', 'Túi Kính Trắng', 'Thiệp'], [1, 1, 1, 1], [3, 8, 9, 10, 11, 12]]);
+    bang([s.H, [s.I, s.J, s.K].every(laTrong)], [qtTho(d.maDon), true], 'H = quyết toán, I/J/K trống (luật tiền 19/9)');
     bang(s.H - s.I - s.J - s.K, d.quyetToan, 'L = H − I − J − K');
     const sh = L1.ss.getSheetByName(SHEET);
     bang([2, 3].map((i) => sh.giaTri[(s.r0 + i) + ':8'] || ''), ['', ''], 'H chỉ ở ô trên cùng của cụm');
@@ -606,7 +617,7 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
     return 'SL ' + d.dong[0].soLuong + ' × 2 = ' + s.rows[0].G;
   });
 
-  await test('TT-07', 'đơn NHIỀU SKU (đơn 2 dòng đầu tiên của file, đổi mã thành đơn mới) → mỗi SKU nổ cấu phần, tiền ghi MỘT LẦN = tổng các dòng (phí phân bổ theo dòng), cụm C H I J K L gộp', async () => {
+  await test('TT-07', 'đơn NHIỀU SKU (đơn 2 dòng đầu tiên của file, đổi mã thành đơn mới) → mỗi SKU nổ cấu phần, tiền ghi MỘT LẦN: H = tổng "Số tiền quyết toán ước tính" các dòng (phí phân bổ theo dòng), I/J/K trống, cụm C H I J K L gộp', async () => {
     const ma = DCN.don.filter((d) => d.dong.length === 2)[0].maDon, maMoi = ma.slice(0, 15) + '999';
     const bangMoi = A.bang.map((h, i) => (i >= 5 && h[1] === ma ? h.map((v, j) => (j === 1 || j === 7 || j === 63 ? maMoi : v)) : h));
     const tam = tamMoi('multi');
@@ -621,10 +632,57 @@ function soKhac(a, b) { return [...new Set(Object.keys(a).concat(Object.keys(b))
     dung(!r.e, 'lỗi: ' + (r.e && r.e.message));
     const s = dongCua(X.ss, maMoi);
     const soDongKho = goc.dong.reduce((t, x) => t + cauPhanGau(x.tenPhanLoai).length, 0);
-    bang([s.rows.length, s.gop, s.H, s.I, s.J, s.K, s.soLanC], [soDongKho, [3, 8, 9, 10, 11, 12], goc.dong[0].H + goc.dong[1].H, goc.tien.I, goc.tien.J, goc.tien.K, 1]);
+    bang([s.rows.length, s.gop, s.H, [s.I, s.J, s.K].every(laTrong), s.soLanC], [soDongKho, [3, 8, 9, 10, 11, 12], qtTho(ma), true, 1]);
     bang(s.H - s.I - s.J - s.K, goc.quyetToan, 'L = tổng quyết toán các dòng của đơn');
     X.sim.thaoGo();
     return goc.dong.length + ' SKU → ' + soDongKho + ' dòng, gộp C/H/I/J/K/L, L = tổng quyết toán ' + goc.dong.length + ' dòng của đơn';
+  });
+
+  await test('TT-58', 'LUẬT TIỀN 19/9 (chủ dự án, bản 2.8.1): MỌI đơn mới lên sổ có H "Tổng Tiền SP" = Σ cột "Số tiền quyết toán ước tính" của đơn (đọc thẳng từ file) và I/J/K TRỐNG → L = H = số TikTok trả, kể cả đơn vàng; căn cứ: đơn người dùng nhập tay trên sổ T9 để trống I/J/K 71/71 và có H = Σ cột đó ở 68/71', async () => {
+    const soiSo = (ss) => {
+      const loi = [];
+      DON_MOI.forEach((d) => {
+        const s = dongCua(ss, d.maDon);
+        if (!s) { loi.push(d.maDon + ': chưa lên sổ'); return; }
+        const q = qtTho(d.maDon);
+        if (s.H !== q) loi.push(d.maDon + ': H = ' + JSON.stringify(s.H) + ' ≠ Σ "Số tiền quyết toán ước tính" ' + q);
+        [['I', s.I], ['J', s.J], ['K', s.K]].forEach(([c, v]) => { if (!laTrong(v)) loi.push(d.maDon + ': ô ' + c + ' = ' + JSON.stringify(v) + ' (phải TRỐNG)'); });
+      });
+      return loi;
+    };
+    bang(DON_MOI.length, 58, 'đơn mới');
+    bang(soiSo(L1.ss).slice(0, 5), [], 'đơn mới trên sổ');
+    const soVang = DON_MOI.filter((d) => d.canhBao.length).length;
+    dung(soVang > 0, 'file thật phải còn đơn vàng để chấm vế "kể cả đơn vàng"');
+    // Căn cứ của luật: cách người dùng đang nhập tay trên sổ T9 thật (71 mã đơn, dòng 4–208). Đếm theo MÃ (sổ tay có một mã gõ hai lần),
+    // lấy ô đầu tiên của mỗi mã — đúng cách khử trùng `MA_TREN_SO` ở trên.
+    const shTay = MAU.so.getSheetByName(SHEET);
+    const daDem = new Set();
+    let tay = 0, tayKhop = 0, tayTrong = 0;
+    for (let r = 4; r <= 210; r++) {
+      const m = shTay.giaTri[r + ':3'];
+      if (!m || daDem.has(String(m))) continue;
+      daDem.add(String(m));
+      tay++;
+      if (Number(shTay.giaTri[r + ':8']) === qtTho(String(m))) tayKhop++;
+      if ([9, 10, 11].every((c) => laTrong(shTay.giaTri[r + ':' + c]))) tayTrong++;
+    }
+    bang([tay, tayTrong, tayKhop], [71, 71, 68], 'đơn tay / I-J-K trống / H tay = Σ quyết toán');
+    const chayVoi = async (tc) => {
+      const X = dungSim({});
+      const glob = tc.lop ? ['DanhMuc', 'MapListing', 'Normalize'] : [];
+      glob.forEach((t) => { global[t] = tc.lop[t]; });
+      try {
+        const r = await chayTT(X.sim, dungVh(X.sim, { tiktok: [FILE.A] }), tc);
+        return r.e ? ['lỗi ' + String(r.e.message).slice(0, 120)] : soiSo(X.ss);
+      } finally { glob.forEach((t) => { global[t] = lop[t]; }); X.sim.thaoGo(); }
+    };
+    const am1 = await doiChungAm(() => chayVoi({ lop: napLoiSua('adapters/AdapterTikTok.gs', 'tien: { H: Q }, thanhPhan: t,', 'tien: t, thanhPhan: t,') }),
+      'bộ đọc trả lại tiền kiểu 2.8.0 (H = tổng phụ trước giảm + hoàn)');
+    const am2 = await doiChungAm(() => chayVoi({ mod: napNodeSua('chay-tiktok.js', [['      d.tien = { H: x.tien.H };', '      d.tien = { H: x.tien.H, I: null, J: null, K: null };']]) }),
+      'máy gửi I/J/K = null (Google ghi thành số 0, không còn ô trống)');
+    return DON_MOI.length + ' đơn mới (' + soVang + ' đơn vàng): H = Σ quyết toán, I/J/K trống · sổ tay: I/J/K trống ' + tayTrong + '/' + tay +
+      ', H = Σ quyết toán ' + tayKhop + '/' + tay + '\n        · ' + am1 + '\n        · ' + am2;
   });
 
   await test('TT-15', '166 dòng nhập tay cũ (dòng 4–208 sheet TikTok Shop) KHÔNG ĐỔI MỘT Ô: giá trị, công thức, nền, vùng gộp; dòng 3 y nguyên (INV-8); ngoài vùng đó chỉ có hai ô của tool: dấu thời gian dòng 1 và tiêu đề "Note" dòng 2', async () => {

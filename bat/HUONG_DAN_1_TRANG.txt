@@ -87,7 +87,7 @@ Ba thứ tool tự làm với đơn TikTok, không cần bạn động tay
 
 - Một đơn nổ thành nhiều dòng. Một đơn gấu bông = con gấu + áo + túi quà + thiệp. Tool tự tách đúng số dòng và gộp ô tiền cho cả cụm, giống hệt đơn combo bên Shopee.
 - Đơn hủy / hoàn / chưa chốt tiền vẫn được ghi, nhưng TÔ VÀNG. Tool đẩy lên đủ đơn đủ số như báo cáo rồi tô vàng dòng đó và ghi lý do vào cột Note ("SOÁT TAY: …") — ví dụ đơn hủy, đơn đã hoàn tiền toàn bộ, đơn khách đang đòi trả hàng, đơn TikTok chưa tính phí. Bạn soát mấy dòng vàng đó rồi sửa tay (xóa dòng, sửa số lượng, sửa tiền). Chạy lại tool không bao giờ sửa dòng đã ghi, nên phần bạn chỉnh tay không bị đè.
-- Lấy đúng số tiền của TikTok. Tool không tự tính lại phí và thuế, nó chép nguyên số TikTok đã chốt. Cột Doanh Thu của sổ tự ra đúng số tiền TikTok sẽ trả về.
+- Lấy đúng số tiền TikTok trả về. Cột Tổng Tiền SP = cột Số tiền quyết toán ước tính trong file TikTok (đơn nhiều dòng thì cộng lại) — đúng con số bạn vẫn gõ tay. Ba cột MGG Shop, Chi phí, Thuế để trống như cách bạn vẫn nhập, nên Doanh Thu = Tổng Tiền SP. Tool không tự tính phí hay thuế. Vài đơn có thể chênh vài nghìn so với số trên màn hình đơn hàng của Seller Center (màn hình tách riêng phí SFR) — số trong file mới là số TikTok trả thật.
 
 Tool ghi vào sheet TikTok Shop. Không nhập tay vào sheet Tiktok đang ẩn: Lợi nhuận cộng cả hai sheet, có số ở cả hai là doanh số bị cộng hai lần.
 
@@ -104,7 +104,7 @@ Lỗi hay gặp riêng của TikTok
    … ĐƠN CẦN SOÁT TAY   ·   Không phải lỗi. Đơn hủy / hoàn / chưa chốt tiền đã được ghi và tô vàng; đọc cột Note rồi sửa tay mấy dòng đó
    BỎ QUA … ĐƠN KHÔNG PHẢI ĐƠN BÁN   ·   Giao dịch không phải đơn hàng (tiền quảng cáo, điều chỉnh…) — không có tên hàng nên không ghi được thành dòng
    KHÔNG CÓ FILE MỚI   ·   Chưa thả file, hoặc file lần trước đã sang đã xử lý
-   TU_KIEM_LECH   ·   Tiền trong báo cáo không khớp công thức — tool không ghi đơn TikTok nào. Gửi file cho người phụ trách, trong lúc chờ nhập tay như cũ
+   TU_KIEM_LECH   ·   Các cột tiền trong báo cáo không cộng ra đúng Số tiền quyết toán ước tính (TikTok có thể đã đổi cách ghi) — tool không ghi đơn TikTok nào. Gửi file cho người phụ trách, trong lúc chờ nhập tay như cũ
    THẢ NHẦM SÀN   ·   Báo cáo TikTok nằm trong thư mục gian Shopee, hoặc file Shopee nằm trong thư mục TikTok Shop. Chuyển file về đúng chỗ rồi bấm lại. Tool chưa ghi gì
    LỖI TIKTOK SHOP: …   ·   Phần TikTok không xong nhưng bốn gian Shopee vẫn chạy bình thường. Đọc câu sau dấu hai chấm; file TikTok nằm nguyên trong thư mục để bấm lại
    THIẾU … cột bắt buộc   ·   TikTok đổi tên cột trong file xuất. Báo người phụ trách, đừng tự sửa

@@ -155,7 +155,7 @@ Số bài lấy từ dòng tổng kết mỗi bộ tự in ra; chạy lại là 
 | `npm run test-dong-run` | `T-RUN-xx` | YC-38.3 dòng tổng kết RUN: RUN id giờ Việt Nam, Web App ghi nhật ký + trả số dòng CÓ và băm Mapping, thả lại cùng file ra cùng dòng |
 | `npm run test-tao-thang-moi-web` | `TM-W-xx` | YC-35 hành động `taoThangMoi` trên Web App giả, chạy trên file tháng 9 khuôn mới (bản sao → tháng 10) và tháng 8 thật (TM-01…TM-12); TM-W-19…22 phía máy trọn đường: nút 3 → `WebAppGoogleSheet.taoThangMoi` → Web App giả; bộ này GHIM múi giờ dự án (TM-W-25); TM-W-26…29 YC-43: dán vào ô gộp, đóng băng trước khi dọn, câu báo giữa chừng, bản sao kẹt B5; TM-W-30…32 YC-44/2.7.1: cột I chép nguyên văn khuôn + rà mọi công thức tool ghi, dừng ngay khi ô vừa ghi ra #ERROR!, hành động chỉ-đọc `coTaoThang` |
 | `npm run test-chuyen-huong` | `T-CH-xx` | 2.7.1 đường truyền: đi theo chuyển hướng tới 5 nấc, ghi đường đi từng nấc, 3xx hỏng/thân rỗng KHÔNG gọi là lỗi quyền; nút 3 mất đường trả lời thì đọc lại cờ rồi mới kết luận (mã thoát 6 khi Google vẫn chạy); T-CH-12 `DA_CHAY_XONG` mã 5 (YC-45); T-CH-14 tháng trên cờ O2 thay so đồng hồ (YC-46) |
-| `npm run test-tiktok` | `TT-xx` | Đợt 4 TikTok Shop trên file THẬT `00_DAU_VAO/TIKTOK` + sổ tháng 9 thật: bộ đọc (130/129, không ghi 7 + 1 treo, mã chuỗi 18, ngày, công thức ròng 130/130 + dừng khi lệch, đổi thứ tự cột), đối chiếu tổng A/B/C, MỘT file + cột A = ngày chạy (D-87 bản sửa) + D-83 ba vế + câu 2B.11, nhận diện + thả nhầm sàn, ghi có gộp ô / cấu phần / Hệ số / thiếu Mapping / công thức / khuôn 17 cột, thả lại cùng file, 166 dòng tay không đổi, báo cáo B không ghi, TT-14 nút 4 trọn đường: Shopee y hệt khi có/không TikTok và TikTok hỏng không chặn Shopee |
+| `npm run test-tiktok` | `TT-xx` | Đợt 4 TikTok Shop trên file THẬT `00_DAU_VAO/TIKTOK` + sổ tháng 9 thật: bộ đọc (130/129, không ghi 7 + 1 treo, mã chuỗi 18, ngày, tự kiểm thành phần 130/130 + dừng khi lệch, đổi thứ tự cột), TT-58 luật tiền 19/9 (H = Σ quyết toán, I/J/K trống, đối chiếu cách ghi tay), đối chiếu tổng A/B/C, MỘT file + cột A = ngày chạy (D-87 bản sửa) + D-83 ba vế + câu 2B.11, nhận diện + thả nhầm sàn, ghi có gộp ô / cấu phần / Hệ số / thiếu Mapping / công thức / khuôn 17 cột, thả lại cùng file, 166 dòng tay không đổi, báo cáo B không ghi, TT-14 nút 4 trọn đường: Shopee y hệt khi có/không TikTok và TikTok hỏng không chặn Shopee |
 
 **Bộ test phải 0 hỏng ở MỌI múi giờ máy**, không riêng giờ Việt Nam. Thử lại trước khi push:
 `TZ=UTC npm run test-tat-ca` (Git Bash) hoặc `$env:TZ='UTC'; npm run test-tat-ca` (PowerShell). Tên múi giờ có dấu `/`
@@ -314,7 +314,7 @@ dòng đó là sinh ra ca mất đơn mà không ai biết — file đã đi kh�
 - **Sửa file trên máy user: ghi file tạm rồi đổi tên**, không bao giờ mở file đích bằng chế độ ghi. Đứt
   giữa chừng thì bản cũ còn nguyên, thay vì thành một file hỏng nửa vời.
 
-### 6.5. Gian TikTok Shop (Đợt 4, 2.8.0)
+### 6.5. Gian TikTok Shop (Đợt 4, 2.8.0; luật tiền 2.8.1)
 
 - **Đầu vào là báo cáo TÀI CHÍNH, không phải file xuất đơn hàng.** File "Tất cả đơn hàng" không có số user nhập (0/70 đơn khớp). Báo cáo
   "Sẽ thanh toán" (`Onhold-unsettled-orders-*.xlsx`, sheet `Đơn hàng chưa quyết toán và kho`, tiêu đề dòng 5) có SKU + tiền. Báo cáo "Đã
@@ -325,9 +325,15 @@ dòng đó là sinh ra ca mất đơn mà không ai biết — file đã đi kh�
   mặc định TẮT. Ở chế độ mặc định file Tất cả đơn hàng / Đã quyết toán thả vào chỉ bị nhắc "không dùng", không đọc, không chuyển.
 - **`<dimension>` của cả ba loại file TikTok SAI** (`A1:BX6` cho 135 dòng…). SheetJS tin nó và đọc hụt, im lặng. `chay-tiktok.js`
   `bangDayDu` dò lại vùng từ ô; đối chiếu: A ô "Tổng số giao dịch", B sheet "Báo cáo" (hai ô tổng), C số dòng ≥ vùng khai — lệch là dừng.
-- **Công thức CHỐT (BA 16/9), chung A và B**: H = Tổng phụ trước giảm + Tổng phụ hoàn tiền trước giảm; I = −(Giảm giá người bán + Khoản hoàn
-  giảm giá); K = −(GTGT + TNCN); J = −Tổng phí − K. Tự kiểm từng đơn H − I − J − K = quyết toán: lệch MỘT ĐỒNG là dừng cả phần TikTok
-  (`TU_KIEM_LECH`). Thuế TikTok làm tròn CHẴN (half-even) — CẤM tự dựng công thức thuế, luôn lấy từ báo cáo.
+- **Tiền ghi lên sổ — chủ dự án chốt 19/9 (2.8.1)**: H `Tổng Tiền SP` = Σ `Số tiền quyết toán ước tính` các dòng của đơn (cột E của báo cáo
+  lúc đo, tool tra theo tên cột); **I/J/K để TRỐNG** như người dùng nhập tay (71/71 đơn tay trên sổ T9), nên L = H = số TikTok trả.
+  `don.tien` của ĐƠN CHUẨN chỉ có khóa `H`; lệnh ghi thiếu khóa I/J/K → `so_` của vỏ Google ghi ô rỗng. **Gửi `null`/`''` là ra SỐ 0** — đừng.
+  Bản 2.8.0 ghi H = tiền trước giảm rồi trừ I/J/K: L vẫn đúng nhưng H lệch cách ghi tay (0/71), H3 trộn hai nghĩa (D-91). Dòng 2.8.0 đã ghi
+  thì giữ nguyên (INV-1), L của chúng vẫn đúng. TT-58 canh luật này (hai đối chứng âm: tiền kiểu 2.8.0 · gửi `null`).
+- **Tự kiểm bằng bốn số THÀNH PHẦN (BA 16/9, giữ nguyên), chung A và B** — không ghi lên sổ, chỉ đối chiếu độc lập với cột quyết toán:
+  h = Tổng phụ trước giảm + Tổng phụ hoàn tiền trước giảm; i = −(Giảm giá người bán + Khoản hoàn giảm giá); k = −(GTGT + TNCN); j = −Tổng phí − k.
+  Từng đơn h − i − j − k = quyết toán: lệch MỘT ĐỒNG là dừng cả phần TikTok (`TU_KIEM_LECH`). Trong mã là `don.thanhPhan` và H/I/J/K của
+  `dong`/`dongTho`. Thuế TikTok làm tròn CHẴN (half-even) — CẤM tự dựng công thức thuế, luôn lấy từ báo cáo.
 - **CÓ ĐƠN LÀ GHI (chủ dự án chốt 16/9 sáng, đè luật bỏ đơn D-83)**: đơn hủy / hoàn toàn bộ / hoàn một phần / "Đang chờ hoàn tất trả
   hàng/hoàn tiền" / quyết toán ước tính = 0 đều ghi đủ dòng đủ số, rồi **tô vàng + Note `SOÁT TAY: <lý do>`** để nhân viên chỉnh tay
   (tool không bao giờ sửa dòng đã ghi nên phần chỉnh tay không bị đè). Mỗi đơn mang `canhBao: []` từ `docSeThanhToan`.
@@ -338,8 +344,9 @@ dòng đó là sinh ra ca mất đơn mà không ai biết — file đã đi kh�
 - **Mã đơn là chuỗi 18 chữ số** — không bao giờ ép số. Ô đã thành số (file bị mở-lưu bằng Excel) là dừng. Cột C của sổ có mã bị Google đổi
   thành `5.86087E+17` cũng dừng (`soatMaDonTrenSo`): khử trùng so chuỗi sẽ trượt và ghi trùng.
 - **Đổi dấu, không trị tuyệt đối**: có khoản phí DƯƠNG (hoàn phí SFR).
-- **TikTok đi đường `ghi`, không `xuLy`.** `xuLy` để Google tự tính thuế (K lõi khớp báo cáo 66/130 dòng) và ghi MỘT ngày cho cả gói. Đường
-  `ghi` nhận H/I/J/K + ngày từng đơn; lõi Shopee (`dungKeHoachGhi_`) vẫn tra Mapping, nổ cấu phần, khử trùng; Google vẫn gộp ô, chép công thức,
+- **TikTok đi đường `ghi`, không `xuLy`.** `xuLy` để Google tự tính đủ bốn ô tiền theo luật Shopee (thuế tự tính: K lõi khớp báo cáo 66/130
+  dòng) — sổ TikTok chỉ ghi H, để trống I/J/K. Đường
+  `ghi` nhận tiền + ngày từng đơn; lõi Shopee (`dungKeHoachGhi_`) vẫn tra Mapping, nổ cấu phần, khử trùng; Google vẫn gộp ô, chép công thức,
   hợp đồng sổ tháng, hàng rào công thức. Gian `TT_SHOP` khai cho Google qua `cauHinh` của CHÍNH gói TikTok — gói Shopee không mang khóa này, nên
   sheet TikTok Shop sai khuôn chỉ chặn TikTok (TT-14). Không sửa `.gs` cho phần TikTok.
 - **Lỗi TikTok không chặn Shopee**: `chay-thu.js` bọc `chayTikTok`. Riêng thả nhầm SÀN (`soatThaNhamSan`) dừng cả lượt trước mọi việc.

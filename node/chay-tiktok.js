@@ -2,17 +2,19 @@
  * chay-tiktok.js — KÉO ĐƠN TIKTOK SHOP LÊN GOOGLE SHEET (Đợt 4, YC-49…YC-53; YC-54 chỉ nhận diện). Nút 4 gọi qua `chay-thu.js`.
  *
  * VÌ SAO ĐI ĐƯỜNG `ghi`, KHÔNG ĐI `xuLy` (đo 15/9, báo cáo phản biện P-4):
- *   · `xuLy` để Google TỰ TÍNH thuế (`Normalize.tinhThue`) — K của lõi khớp báo cáo TikTok chỉ 66/130 dòng, tức L lệch 1 đ ở 64 dòng.
- *     Đề bài chốt "không tự tính thuế, lấy thẳng từ báo cáo".
- *   · `xuLy` ghi MỘT ngày cho cả gói (`ngayGhi`); cột A TikTok từng tính theo mốc ngày TỪNG đơn — D-87 bản sửa (16/9) chốt lại cột A = NGÀY CHẠY như Shopee, lý do còn lại là thuế.
+ *   · `xuLy` để Google TỰ TÍNH tiền theo luật Shopee (H từ giá, I/J từ file, K = thuế `Normalize.tinhThue`) rồi ghi đủ bốn ô. Sổ TikTok
+ *     không ghi như thế: từ 19/9 (chủ dự án, bản 2.8.1) ô H = Σ "Số tiền quyết toán ước tính" lấy thẳng từ báo cáo, I/J/K để TRỐNG như
+ *     người dùng nhập tay. (Trước đó, 2.8.0: K lõi tự tính khớp báo cáo TikTok chỉ 66/130 dòng — đề bài chốt "không tự tính thuế".)
+ *   · `xuLy` ghi MỘT ngày cho cả gói (`ngayGhi`); cột A TikTok từng tính theo mốc ngày TỪNG đơn — D-87 bản sửa (16/9) chốt lại cột A = NGÀY CHẠY như Shopee, lý do còn lại là tiền.
  *   Đường `ghi` có sẵn trên Google từ trước 2.4.0 (đường lùi đã nghiệm thu, `test-xu-ly` so từng ô hai đường): máy gửi lệnh ghi mang
- *   H/I/J/K và ngày của từng đơn; Google vẫn tự làm phần của nó — hợp đồng sổ tháng (YC-38.1), hàng rào công thức (YC-39), khử trùng tầng 2
- *   trong khóa, nối dòng, gộp ô C/H/I/J/K/L, chép công thức E/F/L/M/N, tô vàng + Note, tô lại Mapping. KHÔNG SỬA `.gs`, KHÔNG DEPLOY.
+ *   tiền và ngày của từng đơn; Google vẫn tự làm phần của nó — hợp đồng sổ tháng (YC-38.1), hàng rào công thức (YC-39), khử trùng tầng 2
+ *   trong khóa, nối dòng, gộp ô C/H/I/J/K/L, chép công thức E/F/L/M/N, tô vàng + Note, tô lại Mapping. Phần TikTok KHÔNG SỬA `.gs`.
+ *   Khóa tiền thiếu trong lệnh ghi → `so_` của vỏ Google trả '' → ô trống (Number(undefined) = NaN). Gửi `null`/'' là ra SỐ 0 — đừng gửi.
  *   Gian `TT_SHOP` khai cho Google qua `cauHinh` của gói (Config.tao gộp vào cấu hình mặc định) — gói Shopee không mang khóa này.
  *
  * TỪ ĐƠN CHUẨN TRỞ XUỐNG dùng CHÍNH lõi Shopee (`dungKeHoachGhi_` nạp từ `src/ShellAppsScript.gs`): tra Mapping bộ ba (Gian hàng, Tên trên sàn,
- * Phân loại), nổ Cấu phần / Hệ số, nối tên mới vào Mapping (dòng vàng), khử trùng tầng 1. Máy chỉ ĐÈ hai thứ trước khi gửi: `tien` (lấy thẳng
- * từ báo cáo); `ngay` chỉ đè khi hồ sơ không để NGAY_CHAY (mặc định D-87 bản sửa: ngày chạy). Không một dòng lõi nào đổi.
+ * Phân loại), nổ Cấu phần / Hệ số, nối tên mới vào Mapping (dòng vàng), khử trùng tầng 1. Máy chỉ ĐÈ hai thứ trước khi gửi: `tien` (= `don.tien`
+ * của ĐƠN CHUẨN: chỉ H); `ngay` chỉ đè khi hồ sơ không để NGAY_CHAY (mặc định D-87 bản sửa: ngày chạy). Không một dòng lõi nào đổi.
  *
  * LỖI Ở ĐÂY KHÔNG ĐƯỢC CHẶN SHOPEE: `chay-thu.js` bọc lời gọi, in lỗi, chạy tiếp bốn gian Shopee như cũ (TT-14).
  * Riêng thả nhầm sàn (`soatThaNhamSan`) thì dừng CẢ lượt khi chưa ghi gì — đó là cửa chắn trước mọi việc (YC-50).
@@ -376,7 +378,10 @@ async function chayTikTok(o) {
     goi.lenh.forEach((l) => l.don.forEach((d) => {
       const x = theoMa[String(d.maDon)];
       if (!x) throw new Error('Lỗi lập trình: lệnh ghi có đơn ' + d.maDon + ' không có trong ĐƠN CHUẨN');
-      d.tien = { H: x.tien.H, I: x.tien.I, J: x.tien.J, K: x.tien.K };
+      // LUẬT TIỀN 19/9 (chủ dự án): CHỈ gửi H = Σ "Số tiền quyết toán ước tính". KHÔNG có khóa I/J/K (kể cả null/'') → Google ghi ô
+      // TRỐNG như người dùng nhập tay; công thức L = H − I − J − K của sổ ra đúng H.
+      if (!Number.isInteger(x.tien.H)) throw new Error('Lỗi lập trình: đơn ' + d.maDon + ' không có số quyết toán nguyên (' + x.tien.H + ')');
+      d.tien = { H: x.tien.H };
       if (hoSo.ngay_ghi === 'NGAY_TAO_DON') d.ngay = x.ngay;
       else if (hoSo.ngay_ghi === 'RTS_ORDER_EXPORT') {
         d.ngay = x.rts || x.ngay;

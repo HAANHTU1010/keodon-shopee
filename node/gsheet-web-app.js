@@ -46,7 +46,7 @@ const { URL } = require('url');
  * Bản của VỎ MÁY — bằng `version` trong package.json và `var PHIEN_BAN` trong `src/ShellAppsScript.gs` khi phát hành
  * (T-DT-23 canh). Gửi lên Google trong trường `banMay` của mọi gói.
  */
-const PHIEN_BAN = '2.8.0';
+const PHIEN_BAN = '2.8.1';
 
 /**
  * YC-42: bản Web App THẤP NHẤT máy này còn dùng được. Web App dưới mốc → CHẶN trước lô đầu tiên, câu nói rõ bên nào cũ và

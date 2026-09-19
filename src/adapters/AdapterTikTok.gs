@@ -13,12 +13,21 @@
  *
  * TỪ ĐƠN CHUẨN TRỞ XUỐNG là mã production của bốn gian Shopee — không sửa dòng nào. File này KHÔNG tính thuế, KHÔNG tính phí.
  *
- * CÔNG THỨC CHỐT (BA 16/9) — CHUNG cho A và B, đo A 130/130 dòng, B 311/311 dòng (công thức 4 cột gốc: 124/130 và 225/311):
- *   H = Tổng phụ trước giảm giá + Tổng phụ hoàn tiền trước giảm giá của người bán
- *   I = −(Giảm giá của người bán + Khoản hoàn tiền giảm giá của người bán)
- *   K = −(Thuế GTGT + Thuế TNCN)            (thuế trong báo cáo luôn ≤ 0 nên bằng |GTGT| + |TNCN|; gặp thuế DƯƠNG là dừng)
- *   J = −(Tổng phí) − K
- *   Tự kiểm TỪNG ĐƠN: H − I − J − K = Số tiền quyết toán. Lệch MỘT ĐỒNG là DỪNG cả phần TikTok, không ghi đơn nào (`kiemTuKiem`).
+ * TIỀN GHI LÊN SỔ — CHỦ DỰ ÁN CHỐT 19/9 (bản 2.8.1; đè cách ánh xạ H/I/J/K của D-78 và "công thức chốt" BA 16/9 mà bản 2.8.0 ghi):
+ *   H (Tổng Tiền SP) = Σ "Số tiền quyết toán ước tính" của mọi dòng SKU trong đơn (cột E của báo cáo A lúc đo — tool tra theo TÊN cột).
+ *   I (MGG Shop) · J (Chi phí) · K (Thuế) để TRỐNG: ĐƠN CHUẨN chỉ mang `tien.H`, lệnh ghi không có khóa I/J/K nên `so_` của vỏ Google ghi ô
+ *   rỗng — đúng cách người dùng nhập tay (71/71 đơn tay trên sổ T9 để trống cả ba ô). Công thức sẵn có L = H − I − J − K ra đúng H.
+ *   Vì sao đổi: 2.8.0 ghi H = tiền trước giảm rồi trừ I/J/K — L đúng nhưng H lệch cách ghi tay (0/71 đơn khớp) và cột H của sheet trộn
+ *   hai nghĩa (D-91). Nay H khớp tay 68/71 đơn (2 đơn lệch đúng phí SFR mà màn hình Seller Center tách riêng, 1 ô tay để trống).
+ *
+ * TỰ KIỂM — hàng rào tiền BA 16/9, GIỮ NGUYÊN. Bốn số THÀNH PHẦN dựng từ các cột khác, CHUNG cho A và B (đo A 130/130 dòng, B 311/311):
+ *   h = Tổng phụ trước giảm giá + Tổng phụ hoàn tiền trước giảm giá của người bán
+ *   i = −(Giảm giá của người bán + Khoản hoàn tiền giảm giá của người bán)
+ *   k = −(Thuế GTGT + Thuế TNCN)            (thuế trong báo cáo luôn ≤ 0 nên bằng |GTGT| + |TNCN|; gặp thuế DƯƠNG là dừng)
+ *   j = −(Tổng phí) − k
+ *   Từng đơn: h − i − j − k = Số tiền quyết toán. Bốn số này KHÔNG ghi lên sổ (trong mã là `thanhPhan`, và H/I/J/K của từng dòng); chúng là
+ *   phép đối chiếu ĐỘC LẬP với chính con số được ghi: TikTok đổi nghĩa cột quyết toán hay đổi cách tính phí thì đơn bình thường lệch và
+ *   tool DỪNG cả phần TikTok, không ghi đơn nào (`kiemTuKiem`). Lệch MỘT ĐỒNG là dừng.
  * THUẾ TIKTOK LÀM TRÒN CHẴN (half-even) 1% và 0,5% trên Tổng doanh thu (BA đo 122/123 dòng; một đơn tính trên cơ sở khác) — lõi Shopee làm
  * tròn lên nên lệch 1 đ ở 64/130 dòng. CẤM tự dựng công thức thuế cho TikTok: luôn lấy số từ báo cáo.
  *
@@ -71,7 +80,7 @@ var AdapterTikTok = (function () {
     'Phí vận chuyển khách hàng thanh toán trước giảm giá', 'Giảm phí vận chuyển của người bán',
     'TikTok Shop giảm phí vận chuyển cho khách hàng', 'Trọng lượng kiện hàng ước tính', 'Trọng lượng kiện hàng được tính phí'];
 
-  /** Sáu cột tiền của công thức chốt — cùng TÊN ở báo cáo A và B. */
+  /** Bảy cột tiền THÀNH PHẦN của phép tự kiểm — cùng TÊN ở báo cáo A và B. Không cột nào trong số này được ghi lên sổ. */
   var COT_TIEN = {
     tien_truoc_giam: 'Tổng phụ trước giảm giá',
     hoan_truoc_giam: 'Tổng phụ hoàn tiền trước giảm giá của người bán',
@@ -118,7 +127,7 @@ var AdapterTikTok = (function () {
         tien_truoc_giam: COT_TIEN.tien_truoc_giam, hoan_truoc_giam: COT_TIEN.hoan_truoc_giam,
         giam_gia_shop: COT_TIEN.giam_gia_shop, hoan_giam_gia_shop: COT_TIEN.hoan_giam_gia_shop,
         tong_phi: COT_TIEN.tong_phi, thue_gtgt: COT_TIEN.thue_gtgt, thue_tncn: COT_TIEN.thue_tncn,
-        quyet_toan: 'Số tiền quyết toán ước tính',        // TỰ KIỂM
+        quyet_toan: 'Số tiền quyết toán ước tính',        // → cột H "Tổng Tiền SP" (chủ dự án 19/9) + vế phải của TỰ KIỂM
         loai_giao_dich: 'Loại giao dịch',                 // BẮT BUỘC: chỉ nhận 'Đơn hàng'
         ly_do_chua_quyet_toan: 'Lý do chưa quyết toán'    // BẮT BUỘC: vế (c) của D-83
       },
@@ -169,6 +178,7 @@ var AdapterTikTok = (function () {
       loai_giao_dich_don: 'Đơn hàng',                    // bỏ 36 dòng "GMV thanh toán cho Quảng cáo TikTok"
       tao_dong_moi: false,                                // KHÔNG BAO GIỜ: không có ID SKU / Số lượng / Tên sản phẩm
       // INV-1b (D-81) — cập nhật 4 ô H I J K của đơn DO TOOL GHI. HOÃN SANG ĐỢT 5 (D-88). Công tắc TẮT.
+      // Khi làm: theo luật tiền 19/9, H = "Tổng số tiền quyết toán" của đơn, I/J/K để trống — KHÔNG ghi `tien` thành phần của bộ đọc B.
       cap_nhat_tien_inv1b: false
     },
 
@@ -243,7 +253,10 @@ var AdapterTikTok = (function () {
 
   function o(bang, dong, cot) { var h = bang[dong - 1]; return h ? h[cot] : undefined; }
 
-  /** Bốn cột H/I/J/K của MỘT dòng theo công thức chốt. `ci` = chỉ số cột, `c` = tên cột (để báo lỗi). */
+  /**
+   * Bốn số THÀNH PHẦN h/i/j/k của MỘT dòng (đầu file) — CHỈ cho phép tự kiểm và các cờ SOÁT TAY, KHÔNG ghi lên sổ (luật tiền 19/9).
+   * `ci` = chỉ số cột, `c` = tên cột (để báo lỗi).
+   */
   function tienDong(h, ci, c, r) {
     var n = function (k) { return soNguyen(h[ci[k]], c[k], r); };
     var G = n('thue_gtgt'), T = n('thue_tncn');
@@ -330,8 +343,11 @@ var AdapterTikTok = (function () {
    * @param {Object} nguon   { tenFile }
    * @param {Object} [hoSo]  mặc định HO_SO.TIKTOK_SE_THANH_TOAN (test truyền bản sửa để dựng đối chứng âm)
    * @returns ĐƠN CHUẨN: { hoSo, tenFile, soDongDoc, soDonDoc, tongGiaoDichKhai, thoiGianTai,
-   *   don: [{maDon, ngay:'yyyy-MM-dd' (ngày tạo), tien:{H,I,J,K}, quyetToan, lyDo, dong:[{tenListing, tenPhanLoai, soLuong, idSku, H, I, J, K, Q}]}],
+   *   don: [{maDon, ngay:'yyyy-MM-dd' (ngày tạo), tien:{H}, thanhPhan:{H,I,J,K}, quyetToan, lyDo, canhBao,
+   *          dong:[{tenListing, tenPhanLoai, soLuong, idSku, H, I, J, K, Q}]}],
    *   boQua: [{maDon, ma, chiTiet, dong}], loiTuKiem: [{maDon, chiTiet}], dongTho: [{maDon, soDong, ngay, H, I, J, K, Q}], canhBao, thongBao }
+   *   `tien` = ĐÚNG những ô tiền được GHI lên sổ: chỉ H = Σ Q các dòng của đơn (luật 19/9); không có khóa I/J/K → ô trống.
+   *   `thanhPhan` và H/I/J/K của `dong`/`dongTho` = bốn số THÀNH PHẦN (đầu file) — chỉ để tự kiểm / gắn cờ, KHÔNG ghi. Q = quyết toán của dòng.
    *   `don` chỉ gồm đơn GHI ĐƯỢC, xếp theo ngày tạo tăng dần (trong một ngày: đơn cũ trước — file TikTok liệt kê mới nhất trước).
    *   `loiTuKiem` KHÁC RỖNG thì vỏ PHẢI dừng (`kiemTuKiem`) — không ghi đơn nào.
    */
@@ -413,17 +429,21 @@ var AdapterTikTok = (function () {
       var duongLa = ds.some(function (d) { return d.thueDuong; }) || t.I < 0 || t.J < 0 || t.K < 0;
       var lechTuKiem = t.H - t.I - t.J - t.K !== Q;
       if (duongLa || lechTuKiem) {
+        // Câu nói theo TÊN CỘT BÁO CÁO, không theo H/I/J/K của sổ: từ 19/9 ô H trên sổ đã là số quyết toán, I/J/K trống.
         var cauTien = duongLa
-          ? 'sau khi đổi dấu MGG Shop ' + t.I + ' · Chi phí ' + t.J + ' · Thuế ' + t.K + ' — có khoản dương bất thường'
-          : 'H − I − J − K = ' + (t.H - t.I - t.J - t.K) + ' ≠ quyết toán ' + Q;
+          ? 'sau khi đổi dấu: giảm giá người bán ' + t.I + ' · phí ' + t.J + ' · thuế ' + t.K + ' — có khoản dương bất thường'
+          : 'các cột tiền thành phần cộng ra ' + (t.H - t.I - t.J - t.K) + ' ≠ "Số tiền quyết toán ước tính" ' + Q;
         // Đơn BÌNH THƯỜNG mà tiền không khớp → DỪNG cả phần TikTok (luật tiền của BA, không ghi số sai).
         // Đơn đã có dấu bất thường (hủy/hoàn/chưa chốt phí) thì tiền lệch là chuyện của chính nó → vẫn ghi, tô vàng, ghi rõ ở Note.
         if (!cb.length) { kq.loiTuKiem.push({ maDon: ma, chiTiet: cauTien }); return; }
         cb.push('tiền trong báo cáo không khớp phép tự kiểm (' + cauTien + ')');
       }
 
+      // LUẬT TIỀN 19/9 (chủ dự án): ghi đúng con số TikTok trả về — H = Σ "Số tiền quyết toán ước tính", I/J/K KHÔNG có khóa → ô trống.
+      // Đơn mang cờ SOÁT TAY cũng ghi đúng con số đó — có thể là 0 (hoàn toàn bộ, chưa tính phí) hoặc một khoản TikTok vẫn trả cho đơn hủy
+      // (bồi hoàn phí); người dùng soát dòng vàng. `thanhPhan` chỉ để soi, không ghi.
       kq.don.push({
-        maDon: ma, ngay: ds[0].ngay, viTriFile: viTri, tien: t, quyetToan: Q, lyDo: ds[0].lyDo, canhBao: cb,
+        maDon: ma, ngay: ds[0].ngay, viTriFile: viTri, tien: { H: Q }, thanhPhan: t, quyetToan: Q, lyDo: ds[0].lyDo, canhBao: cb,
         dong: ds.map(function (d) { return { tenListing: d.tenListing, tenPhanLoai: d.tenPhanLoai, soLuong: d.soLuong, idSku: d.idSku, H: d.H, I: d.I, J: d.J, K: d.K, Q: d.Q }; })
       });
     });
@@ -436,15 +456,17 @@ var AdapterTikTok = (function () {
   function kiemTuKiem(dcn) {
     var ds = (dcn && dcn.loiTuKiem) || [];
     if (!ds.length) return;
-    throw loi('TU_KIEM_LECH', 'TU_KIEM_LECH — Báo cáo "' + dcn.tenFile + '": ' + ds.length + ' đơn KHÔNG khớp công thức H − I − J − K = số tiền quyết toán: ' +
+    throw loi('TU_KIEM_LECH', 'TU_KIEM_LECH — Báo cáo "' + dcn.tenFile + '": ' + ds.length + ' đơn có các cột tiền thành phần (tổng phụ, giảm giá, phí, thuế) ' +
+      'KHÔNG cộng ra đúng "Số tiền quyết toán ước tính": ' +
       ds.slice(0, 5).map(function (x) { return x.maDon + ' (' + x.chiTiet + ')'; }).join('; ') + (ds.length > 5 ? ' …' : '') +
       '. TikTok có thể đã đổi cách ghi tiền. Tool DỪNG, KHÔNG ghi đơn nào — gửi file cho người phụ trách.');
   }
 
   /**
    * ĐƠN CHUẨN → dòng theo "hợp đồng với lớp 2" (lược đồ ở đầu `AdapterFileXuat.gs`) để lõi Shopee tra Mapping, nổ cấu phần, khử trùng.
-   * MGG Shop và Chi phí đặt CÙNG một số (của cả đơn) trên mọi dòng: lõi lấy một lần cho đơn. Tiền lõi tự tính KHÔNG được dùng — vỏ đè bằng
-   * `don.tien` trước khi ghi (thuế TikTok làm tròn chẵn, lõi làm tròn lên).
+   * Tiền đưa cho lõi khớp luật 19/9: tiền khách trả = quyết toán CỦA DÒNG (cộng lại = H của đơn), giảm giá shop và phí sàn = 0 trên mọi dòng
+   * (giống nhau → lõi không kêu "khác nhau giữa các dòng"). Tiền lõi tự tính vẫn KHÔNG được dùng — vỏ (`chay-tiktok.js`) đè bằng `don.tien`
+   * trước khi ghi (lõi tự tính thuế, làm tròn lên; sổ TikTok để trống ô Thuế).
    */
   function sangDongLop1(dcn) {
     var dong = [];
@@ -453,7 +475,7 @@ var AdapterTikTok = (function () {
         dong.push({
           san: 'TIKTOK', maGianHang: MA_GIAN, maDonSan: d.maDon, ngayDat: null, trangThai: 'KHAC', trangThaiRaw: '',
           skuSan: x.idSku, tenListing: x.tenListing, tenPhanLoai: x.tenPhanLoai, soLuongListing: x.soLuong,
-          donGia: null, tienKhachTra: x.H, giamGiaShop: d.tien.I, giamGiaSan: 0, phiSan: d.tien.J,
+          donGia: null, tienKhachTra: x.Q, giamGiaShop: 0, giamGiaSan: 0, phiSan: 0,
           sttDongTrongDon: i + 1, soDongTrongDon: d.dong.length, tenFileNguon: dcn.tenFile
         });
       });
@@ -496,7 +518,8 @@ var AdapterTikTok = (function () {
   // ---------------------------------------------------------------- B: ĐÃ QUYẾT TOÁN (YC-54 — chỉ đọc, Đợt 5 mới cập nhật)
 
   /**
-   * Đọc báo cáo "Đã quyết toán" ra tổng theo ĐƠN (công thức chốt), lọc `Loại giao dịch` = Đơn hàng. KHÔNG tạo dòng, KHÔNG cập nhật ô nào.
+   * Đọc báo cáo "Đã quyết toán" ra tổng theo ĐƠN, lọc `Loại giao dịch` = Đơn hàng. KHÔNG tạo dòng, KHÔNG cập nhật ô nào.
+   * `tien` ở đây là bốn số THÀNH PHẦN (để đối chiếu `khopTuKiem`), KHÔNG phải số ghi sổ — theo luật 19/9 ô H là `quyetToan`, I/J/K trống.
    * @param {Array[]} [bangBaoCao]  sheet "Báo cáo" — đối chiếu tổng (bẫy 7): cộng MỌI dòng chi tiết phải bằng ô tổng. Lệch → DỪNG.
    */
   function docDaQuyetToan(bang, nguon, hoSo, bangBaoCao) {

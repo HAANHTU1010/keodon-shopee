@@ -1,6 +1,6 @@
 {
   "name": "keodon-apps-script",
-  "version": "2.8.0",
+  "version": "2.8.1",
   "private": true,
   "description": "Kéo đơn Shopee về file tracking — một lõi hai vỏ (Excel trên máy · Google Sheet qua Web App Apps Script)",
   "scripts": {
