@@ -78,6 +78,30 @@ function napGs(danhSachFile, moiTruong, suaNguon) {
 
 function khoaO(r, c) { return r + ':' + c; }
 
+/**
+ * YC-62: bơm "Google ngắt lệnh" vào một lệnh Bảng tính giả. Bài test đặt `sim.loi.quaHan = { kieu, lan: […], sauKhiLam?, cau?: 'vi' }`:
+ *   · `kieu`      lệnh nào — 'xoaDong' · 'boGop' · 'docCongThuc' · 'congThuc' · 'giaTri' · 'flush' · '*' (mọi lệnh có móc)
+ *   · `lan`       số thứ tự (1, 2, …) của các lần gọi lệnh đó sẽ bị ném — các lần khác chạy bình thường
+ *   · `sauKhiLam` làm xong lệnh RỒI mới ném — đúng ca nguy hiểm BA nêu: Google ĐÃ xóa dòng xong mới báo quá hạn
+ *   · `cau`       'vi' → câu tiếng Việt của Google (sổ đặt ngôn ngữ Việt); mặc định câu tiếng Anh
+ * Câu ném mang ID THẬT của sổ giả, như Google — mã mà để lọt ra câu báo thì bài INV-7 bắt được.
+ */
+function bomQuaHan(ss, kieu, lamTruoc) {
+  const sim = ss && ss.sim;
+  const q = sim && sim.loi && sim.loi.quaHan;
+  if (!q || (q.kieu !== kieu && q.kieu !== '*')) return;
+  q.dem = (q.dem || 0) + 1;
+  if (!(q.lan || []).some((x) => x === q.dem)) return;
+  if (q.sauKhiLam && lamTruoc) lamTruoc();
+  sim.soLanBomQuaHan++;
+  const id = (ss && ss.id) || 'ID_FILE_GIA_LAP_KHONG_RO';
+  // `cau: 'khac'`: Google chết ngay sau lệnh nhưng KHÔNG phải quá hạn (câu lạ) — vỏ không được thử lại, phải dừng ồn ào.
+  if (q.cau === 'khac') throw new Error('GIẢ LẬP: Google cắt ngang ngay sau lệnh ' + kieu + ' (không phải quá hạn).');
+  throw new Error(q.cau === 'vi'
+    ? 'Dịch vụ Bảng tính đã hết thời gian chờ khi truy cập vào tài liệu có mã ' + id + '.'
+    : 'Service Spreadsheets timed out while accessing document with id ' + id + '.');
+}
+
 /** Một sheet giả: lưu giá trị, công thức R1C1, định dạng số, nền, ô gộp — và ghi lại MỌI lệnh chạm vào. */
 class SheetGia {
   constructor(ten, ss) {
@@ -156,6 +180,13 @@ class SheetGia {
   deleteRows(r, n) {
     const max = this.getMaxRows();
     if (r < 1 || n < 1 || r + n - 1 > max) throw new Error('deleteRows ngoài lưới: ' + r + '+' + n + ' > ' + max);
+    // YC-62: bơm "Google ngắt lệnh" — `sauKhiLam` dựng đúng ca nguy hiểm: Google ĐÃ xóa dòng xong rồi mới báo quá hạn.
+    bomQuaHan(this.ss, 'xoaDong', () => this._xoaDongThat(r, n));
+    this._xoaDongThat(r, n);
+    return this;
+  }
+  _xoaDongThat(r, n) {
+    const max = this.getMaxRows();
     const het = r + n - 1;
     this._doiKho((rr, cc) => (rr < r ? [rr, cc] : (rr > het ? [rr - n, cc] : null)));
     this.gopO = this.gopO.map((g) => {
@@ -166,7 +197,6 @@ class SheetGia {
     }).filter((g) => g && !(g.r1 === g.r2 && g.c1 === g.c2));
     this.soDongToiDa = max - n;
     this._ghiNhatSheet('xoaDong', r, 1, n, 0);
-    return this;
   }
   /** Như Google: chèn một cột trống trước cột `c`, mọi cột từ `c` dịch phải; cụm gộp cắt qua `c` nở thêm một cột. */
   insertColumnBefore(c) {
@@ -275,6 +305,15 @@ class VungGia {
   }
   breakApart() {
     const r2 = this.r + this.nr - 1, c2 = this.c + this.nc - 1;
+    // YC-62: như Google (BA ghi trong đề bài) — vùng phủ MỘT PHẦN một cụm gộp thì từ chối, không gỡ gì. Cụm nằm trọn trong vùng
+    // (hay vùng chính là cụm) thì gỡ. Thiếu luật này, giả lập để lọt một lệnh `breakApart` cả vùng mà Google thật sẽ ném.
+    const catMotPhan = this.sh.gopO.filter((g) => !(g.r2 < this.r || g.r1 > r2 || g.c2 < this.c || g.c1 > c2) &&
+      !(g.r1 >= this.r && g.r2 <= r2 && g.c1 >= this.c && g.c2 <= c2));
+    if (catMotPhan.length) {
+      throw new Error('Bạn không thể bỏ hợp nhất khi vùng chọn giao một phần với một ô hợp nhất. (giả lập: ' + this.getA1Notation() +
+        ' cắt ' + catMotPhan.length + ' cụm, vd ' + JSON.stringify(catMotPhan[0]) + ')');
+    }
+    bomQuaHan(this.sh.ss, 'boGop');
     this._ghiNhat('boGop');
     this.sh.gopO = this.sh.gopO.filter((g) => g.r2 < this.r || g.r1 > r2 || g.c2 < this.c || g.c1 > c2);
     return this;
@@ -320,6 +359,8 @@ class VungGia {
 
   getFormulaR1C1() { return this.sh.congThuc[khoaO(this.r, this.c)] || ''; }
   getFormulasR1C1() {
+    bomQuaHan(this.sh.ss, 'docCongThuc');
+    this._ghiNhatDoc();
     const out = [];
     this._duyet((r, c, i, j) => { if (!out[i]) out[i] = []; out[i][j] = this.sh.congThuc[khoaO(r, c)] || ''; });
     return out;
@@ -327,6 +368,7 @@ class VungGia {
 
   setValues(bang) {
     if (!Array.isArray(bang) || bang.length !== this.nr) throw new Error('setValues: số dòng không khớp vùng');
+    bomQuaHan(this.sh.ss, 'giaTri');
     this._ghiNhat('giaTri');
     this._duyet((r, c, i, j) => {
       const v = bang[i][j];
@@ -363,6 +405,10 @@ class VungGia {
   }
 
   setFormulasR1C1(b) {
+    if (!Array.isArray(b) || b.length !== this.nr || b.some((h) => !Array.isArray(h) || h.length !== this.nc)) {
+      throw new Error('setFormulasR1C1: cỡ bảng không khớp vùng ' + this.getA1Notation());
+    }
+    bomQuaHan(this.sh.ss, 'congThuc');
     this._ghiNhat('congThuc');
     this._duyet((r, c, i, j) => {
       this.sh.congThuc[khoaO(r, c)] = b[i][j];
@@ -614,6 +660,9 @@ function taoGiaLap(tc) {
     khoaBiMayKhacGiu: false,
     soLanFlush: 0,
     demGoiGhi: 0,
+    tongNguMs: 0,                // YC-62: tổng Utilities.sleep (chờ thử lại)
+    cacLanNgu: [],               // YC-62: từng lần chờ (ms), để chứng minh chờ tăng dần
+    soLanBomQuaHan: 0,           // YC-62: số lần giả lập đã ném "Service Spreadsheets timed out…"
     epNgayNhuGoogle: o.epNgayNhuGoogle === true
   };
 
@@ -639,7 +688,7 @@ function taoGiaLap(tc) {
         if (!ss) throw new Error('Unexpected error while getting the method or property openById on object SpreadsheetApp.');
         return ss;
       },
-      flush() { sim.soLanFlush++; if (typeof sim.khiFlush === 'function') sim.khiFlush(); },
+      flush() { bomQuaHan({ sim: sim, id: sim.idDangGhi || '' }, 'flush'); sim.soLanFlush++; if (typeof sim.khiFlush === 'function') sim.khiFlush(); },
       CopyPasteType: { PASTE_FORMAT: 'PASTE_FORMAT', PASTE_VALUES: 'PASTE_VALUES', PASTE_NORMAL: 'PASTE_NORMAL' }
     },
     PropertiesService: {
@@ -674,7 +723,9 @@ function taoGiaLap(tc) {
     Utilities: {
       formatDate: (d, tz, mau) => dinhDangNgay(d, tz, mau),
       parseDate: (chuoi, tz, mau) => new DateGia(phanTichNgayTheoMuiGio(chuoi, tz, mau)),
-      sleep: () => { },
+      // YC-62: `Utilities.sleep` làm đồng hồ Google TRÔI đúng ngần ấy (ngưỡng dừng gọn tính cả thời gian chờ thử lại) và ghi lại
+      // để test chứng minh có chờ tăng dần. Không ngủ thật.
+      sleep: (ms) => { const n = Math.max(0, Number(ms) || 0); hopThoiGian.moc += n; sim.tongNguMs += n; sim.cacLanNgu.push(n); },
       DigestAlgorithm: { SHA_256: 'SHA_256' },
       Charset: { UTF_8: 'UTF_8' },
       // Apps Script trả mảng byte CÓ DẤU (-128..127). Trả byte không dấu ở đây thì `bam256_` trên giả lập

@@ -129,7 +129,7 @@ async function kichBan(tc) {
   const ssCu = saoFile(m.ss, sim.khaiThang(m.ky, m.ten));
   const ssMoi = saoFile(m.ss, sim.khaiThang(kyMoi, o.tenMoi || ('THÁNG-' + Number(kyMoi.slice(5)) + '-' + kyMoi.slice(0, 4) + '-KINH-DOANH')));
   if (o.vo) o.vo(ssMoi, ssCu, sim);
-  sim.khiFlush = () => { tinhLaiBangTinh(ssMoi); if (o.sauTinh) o.sauTinh(ssMoi); };
+  sim.khiFlush = khiFlushTietKiem(sim, ssMoi, o.sauTinh);
   const truocCu = chup(ssCu), truocMoi = chup(ssMoi);
   if (o.buocMs) sim.datBuocDongHo(o.buocMs);
   sim.demLai();
@@ -139,15 +139,36 @@ async function kichBan(tc) {
     thangMoi: Number(kyMoi.slice(5)), namMoi: Number(kyMoi.slice(0, 4)), idMoi: sim.idCua(kyMoi),
     nguongGiay: o.nguongGiay
   }, o.body || {});
-  const kqs = [];
+  const kqs = [], luot = [];
   for (let i = 0; i < (o.toiDaLuot || 1); i++) {
+    const ghiTu = sim.nhatKyGhi.length, flushTu = sim.soLanFlush;
     const kq = JSON.parse(sim.vo.doPost({ postData: { contents: JSON.stringify(body) } }).getContent());
     kqs.push(kq);
+    // YC-62: từng lượt — lệnh ghi của riêng lượt đó, cờ BUOC_DA_XONG ngay sau lượt, số flush — để chấm cờ mức sheet.
+    luot.push({ kq, ghi: sim.nhatKyGhi.slice(ghiTu), co: coTM(ssMoi, 5), flush: sim.soLanFlush - flushTu });
     if (!(kq.ok && kq.xong === false)) break;
     body.buocDungTruoc = kq.buocKe;               // như máy thật: báo lại bước vừa dừng dở
   }
   sim.datBuocDongHo(0);
-  return { sim, ssCu, ssMoi, kq: kqs[kqs.length - 1], kqs, truocCu, truocMoi, kyMoi };
+  return { sim, ssCu, ssMoi, kq: kqs[kqs.length - 1], kqs, luot, truocCu, truocMoi, kyMoi };
+}
+
+/**
+ * Google tính lại công thức sau mỗi `flush`. Giả lập tính lại CẢ SỔ mỗi lần — từ 2.8.2 vỏ flush sau MỖI sheet của B3 (cờ mức sheet,
+ * YC-62) nên tính lại mù là bộ test chậm gấp rưỡi. Chỉ tính lại khi kể từ lần tính trước có lệnh ghi ngoài `Mapping_san_pham`
+ * (khối cờ / bảng Mapping không nuôi công thức nào). `sauTinh` (bộ phân tích VN giả…) vẫn chạy mỗi flush như trước.
+ */
+function khiFlushTietKiem(sim, ssMoi, sauTinh) {
+  let moc = 0;
+  return () => {
+    const ds = sim.nhatKyGhi;
+    if (ds.length < moc) moc = 0;
+    let can = false;
+    for (let i = moc; i < ds.length && !can; i++) if (ds[i].sheet !== 'Mapping_san_pham') can = true;
+    moc = ds.length;
+    if (can) tinhLaiBangTinh(ssMoi);
+    if (sauTinh) sauTinh(ssMoi);
+  };
 }
 
 /** Số ô công thức của một cột từ dòng 4, dòng đầu và dòng cuối. */
@@ -481,19 +502,25 @@ function lechCongThuc2000(ssMoi) {
     bang(lamLai, [], 'bước đã xong ở lượt trước bị làm lại');
     bang(soOKhac(chupBoCo(A.ssMoi), chupBoCo(x.ssMoi)), 0, 'khác bản chạy một hơi');
     bang(coTM(x.ssMoi, 5), 'B7', 'cờ tiến độ cuối');
-    // Ca (b) — MỘT BƯỚC DÀI HƠN NGƯỠNG: 450 ms → B3 không xong nổi trong một lượt; lượt sau chạy B3 tới cùng.
+    // Ca (b) — MỘT PHẦN VIỆC DÀI HƠN NGƯỠNG: 450 ms → B3 không xong nổi trong một lượt; từ YC-62 (2.8.2) B3 dừng ở ranh giới SHEET,
+    // `buocKe` = `B3:<tên sheet>` (BA cho đổi phép chấm từ 'B3' sang 'B3:<sheet>'); lượt sau chạy đúng sheet đó tới cùng.
     const y = await kichBan({ buocMs: 450, nguongGiay: 20, toiDaLuot: 40 });
-    dung(y.kq.ok === true && y.kq.xong === true && y.kqs[0].buocKe === 'B3', 'ca bước dài: ' + JSON.stringify(y.kq).slice(0, 200));
+    dung(y.kq.ok === true && y.kq.xong === true && /^B3:.+/.test(String(y.kqs[0].buocKe)), 'ca bước dài: ' + JSON.stringify(y.kq).slice(0, 200));
     bang(soOKhac(chupBoCo(A.ssMoi), chupBoCo(y.ssMoi)), 0, 'ca bước dài khác bản chạy một hơi');
     return '(a) ' + theoLuot.map((d, i) => 'lượt ' + (i + 1) + ': ' + (d.join(',') || '—')).join(' · ') + ' · (b) ' + y.kqs.length +
-      ' lượt · ' + await doiChungAm(async () => {
-      const z = await kichBan({ buocMs: 300, nguongGiay: 20, toiDaLuot: 40, suaNguon: sua('      ghiCoTM_(ssMoi, 5, b.mocSau);\n', '') });
+      ' lượt, lượt 1 dừng trước ' + y.kqs[0].buocKe + ' · ' + await doiChungAm(async () => {
+      // Mốc 2.8.2: cờ ghi sau MỖI phần việc (`dv.mocSau`) VÀ cờ "B3" cuối bước (`b.mocSau`) — bỏ cả hai là không còn cờ tiến độ nào
+      // (B1 vẫn ghi lại cờ cũ), mọi lượt làm lại từ B2b: B5a chèn cột lần hai hoặc kẹt B5_DANG_LAM hoặc không bao giờ xong.
+      const boCo = (s) => sua('        ghiCoTM_(ssMoi, 5, b.mocSau);\n', '')(sua('        ghiCoTM_(ssMoi, 5, dv.mocSau);\n', '')(s));
+      const z = await kichBan({ buocMs: 300, nguongGiay: 20, toiDaLuot: 40, suaNguon: boCo });
       const khac = soOKhac(chupBoCo(A.ssMoi), chupBoCo(z.ssMoi));
       return (!z.kq.ok || z.kq.xong === false || khac)
         ? ['không ghi cờ tiến độ: ' + (z.kq.loi || (z.kq.xong === false ? 'chưa xong' : 'ok')) + ', lệch ' + khac + ' ô'] : [];
     }, 'không ghi BUOC_DA_XONG sau mỗi bước') + ' · ' + await doiChungAm(async () => {
-      const y = await kichBan({ buocMs: 450, nguongGiay: 20, toiDaLuot: 12,
-        suaNguon: sua('      var epXong = body.buocDungTruoc != null && String(body.buocDungTruoc) === b.ma;', '      var epXong = false;') });
+      // Từ 2.8.2 một phần việc là MỘT sheet nên 450 ms × 44 lần hỏi giờ đủ cho một sheet; muốn thấy "kẹt" khi bỏ luật ép chạy tới
+      // cùng thì đồng hồ phải trôi 2 giây mỗi lần hỏi (10 lần hỏi/lượt < số lệnh của một sheet).
+      const y = await kichBan({ buocMs: 2000, nguongGiay: 20, toiDaLuot: 12,
+        suaNguon: sua('        var epXong = bdt != null && (bdt === dv.maDung || (dv.laPhan && dv.phanDau && bdt === b.ma));', '        var epXong = false;') });
       return y.kq.xong === false ? ['sau ' + y.kqs.length + ' lượt vẫn kẹt ở ' + y.kq.buocKe] : [];
     }, 'bỏ luật chạy tới cùng bước vừa dừng dở');
   });
@@ -644,7 +671,7 @@ function lechCongThuc2000(ssMoi) {
     const ssCu = saoFile(MAU.T9.ss, sim.khaiThang('2026-09', MAU.T9.ten));
     const ssMoi = saoFile(MAU.T9.ss, sim.khaiThang('2026-10', o.tenMoi || 'THÁNG-10-2026-KINH-DOANH', { khongKhaiLink: true }));
     if (o.vo) o.vo(ssMoi, ssCu, sim);
-    sim.khiFlush = () => { tinhLaiBangTinh(ssMoi); if (o.sauTinh) o.sauTinh(ssMoi); };
+    sim.khiFlush = khiFlushTietKiem(sim, ssMoi, o.sauTinh);
     if (o.buocMs) sim.datBuocDongHo(o.buocMs);
     const vh = fs.mkdtempSync(path.join(os.tmpdir(), 'keodon-tmw-may-'));
     RAC_MAY.push(vh);
@@ -727,13 +754,16 @@ function lechCongThuc2000(ssMoi) {
     const tt = goiDi.filter((g) => g.goi && g.goi.hanhDong === 'taoThangMoi');
     dung(goiDi[0].goi.hanhDong === 'ping', 'lượt đầu phải là ping chốt phiên bản');
     dung(tt.length >= 2 && kq.soLuot === tt.length, 'bước dài hơn ngưỡng phải gọi lại ≥ 2 lượt, được ' + tt.length);
-    dung(tt[0].goi.buocDungTruoc === undefined && tt[1].goi.buocDungTruoc === 'B3', 'lượt 2 phải báo lại bước vừa dừng dở B3, được ' + tt[1].goi.buocDungTruoc);
+    // YC-62 (2.8.2): B3 dừng ở ranh giới SHEET → máy gửi lại đúng `B3:<tên sheet>` (BA cho đổi phép chấm từ 'B3').
+    dung(tt[0].goi.buocDungTruoc === undefined && /^B3:.+/.test(String(tt[1].goi.buocDungTruoc)), 'lượt 2 phải báo lại sheet vừa dừng dở B3:<sheet>, được ' + tt[1].goi.buocDungTruoc);
     bang(tt.map((g) => g.cho).filter((c) => c !== gw.TIMEOUT_TAO_THANG_MS), [], 'thời gian chờ lượt taoThangMoi');
     dung(gw.TIMEOUT_TAO_THANG_MS >= 370000 && goiDi[0].cho === gw.TIMEOUT_MS, 'chờ tạo tháng phải ≥ 6 phút 10 giây; ping giữ thời gian chờ kéo đơn TIMEOUT_MS');
     bang(soOKhac(chupBoCo(A.ssMoi), chupBoCo(X.ssMoi)), 0, 'khác bản chạy một hơi');
     return tt.length + ' lượt · chờ ' + (gw.TIMEOUT_TAO_THANG_MS / 1000) + ' giây/lượt · ' + await doiChungAm(async () => {
       const Sai = napBanSua('gsheet-web-app.js', [['        buocDungTruoc: buocDungTruoc || undefined,\n', '        buocDungTruoc: undefined,\n']]);
-      const Y = dungMay({ buocMs: 450 });
+      // 2.8.2: một phần việc là MỘT sheet, 450 ms × 44 lần hỏi giờ đủ cho một sheet nên không gửi `buocDungTruoc` vẫn nhích được;
+      // muốn thấy "kẹt" thì đồng hồ phải trôi 2 giây mỗi lần hỏi (10 lần hỏi/lượt < số lệnh của một sheet).
+      const Y = dungMay({ buocMs: 2000 });
       try { const r = await chayMay(Sai, Y); return r.kq.ok ? [] : ['không xong: ' + r.kq.loi]; } catch (e) { return ['kẹt: ' + e.message.slice(0, 90)]; }
     }, 'không gửi buocDungTruoc') + ' · ' + await doiChungAm(async () => {
       const Sai = napBanSua('gsheet-web-app.js', [['    const choMs = laTaoThang ? TIMEOUT_TAO_THANG_MS : TIMEOUT_MS;', '    const choMs = TIMEOUT_MS;']]);
@@ -1172,7 +1202,7 @@ function lechCongThuc2000(ssMoi) {
     bang(coTM(hong.ssMoi, 5), 'B3', 'cờ BUOC_DA_XONG dừng ở B3 (B4 chưa được đánh dấu xong)');
     bang(hong.ssMoi.getSheetByName('Lợi nhuận').getRange(5, 4).getValue(), hong.truocMoi['Lợi nhuận'].gt['5:4'], '`Lợi nhuận`!D5 chưa bị chèn cột');
     // (3) ĐỐI CHỨNG ÂM: cấy chuỗi sai + BỎ phép đọc lại → lỗi chỉ lộ ở tự kiểm cuối
-    const boKiem = sua('      kiemCongThucVuaGhiTM_(ssMoi, b.thaoTac, b.ma);', '');
+    const boKiem = sua('      kiemCongThucVuaGhiTM_(ctx.ssMoi, dv.thaoTac, dv.nhan);', '');   // mốc 2.8.2: phép đọc lại nằm trong chayPhanViecTM_
     const mu = await kichBan({ sauTinh: parserVN, suaNguon: (s) => boKiem(doiDau(cay(s))) });
     const k6 = (mu.kq.kiem || []).filter((p) => p.ma === 'K-6')[0];
     if (!(mu.kq.loi === 'TU_KIEM_LECH' && k6 && !k6.dat)) console.log('        [chẩn đoán] ' + JSON.stringify({ loi: mu.kq.loi, tb: String(mu.kq.thongBao || '').slice(0, 300) }));
@@ -1295,6 +1325,232 @@ function lechCongThuc2000(ssMoi) {
     const cung = keTS(sua('  function boCucTikTokShop(ss) {\n    if (!ss) return null;', "  function boCucTikTokShop(ss) {\n    if (ss) return { boCuc: BO_CUC.TIKTOK_SHOP, ten: 'gán cứng' };"));
     const am = await doiChungAm(() => cung.ctOP.length || JSON.stringify(cung.keo) !== '[5,6,12,13,14]' ? ['kéo ' + JSON.stringify(cung.keo) + ' · gieo O/P: ' + cung.ctOP.slice(0, 3).join(' ')] : [], 'gán cứng khuôn 17 cột (2.7.2)');
     return 'DEMO: khuôn 17 cột · sổ thật: kéo E/F/L/M/N, 0 công thức vào O/P · khuôn lạ: KHUON_TIKTOK_LA, 0 lệnh ghi\n        · ' + am;
+  });
+
+  // ---------------------------------------------------------------- YC-62 (2.8.2): B3 quá hạn trên Google thật — TM-W-36…42
+  console.log('\n--- YC-62: B3 từng sheet có cờ riêng · thử lại khi Google ngắt lệnh · gom lệnh ---');
+  /** Tên sheet đã dọn xong trong MỘT lượt, theo dòng nhật ký `B3 › <sheet> — xong: …`. */
+  const sheetXongTrongLuot = (kq) => (kq.nhatKy || []).map((s) => (/^B3 › (.+?) — xong: /.exec(s) || [])[1]).filter(Boolean);
+  const B3_SHEET = GIAN.concat(['TikTok Shop', 'Đơn ngoài', 'Chi Phí Hàng Ngày', 'Tiktok']);
+  const ID_LOT = (x) => [x.sim.idCua('2026-09'), x.sim.idCua('2026-10')].filter((id) => JSON.stringify(x.kqs).indexOf(id) >= 0);
+  const boCoSheet = sua('        ghiCoTM_(ssMoi, 5, dv.mocSau);\n', '        if (!dv.laPhan) ghiCoTM_(ssMoi, 5, dv.mocSau);\n');
+
+  await test('TM-W-36', 'YC-62 (b): cờ mức sheet `B3:<tên>` — dừng gọn giữa B3 rồi gọi lại: lượt sau KHÔNG ghi một lệnh nào vào sheet đã xong, ' +
+    'dọn tiếp đúng sheet kế (buocKe = B3:<sheet kế>), cờ + flush sau MỖI sheet, kết quả cuối y hệt chạy một hơi', async () => {
+    const x = await kichBan({ buocMs: 450, nguongGiay: 20, toiDaLuot: 40 });
+    dung(x.kq.ok === true && x.kq.xong === true, 'lượt cuối phải xong 8/8: ' + JSON.stringify(x.kq).slice(0, 200));
+    const l1 = x.luot[0], l2 = x.luot[1];
+    dung(l1 && l2 && l1.kq.xong === false && /^B3:.+/.test(String(l1.kq.buocKe)), 'lượt 1 phải dừng giữa B3: ' + JSON.stringify(l1 && l1.kq).slice(0, 200));
+    const xongL1 = sheetXongTrongLuot(l1.kq);
+    dung(xongL1.length >= 1 && xongL1.length < B3_SHEET.length, 'lượt 1 phải dọn xong vài sheet rồi dừng, được ' + xongL1.length);
+    bang(l1.co, 'B3:' + xongL1[xongL1.length - 1], 'cờ ngay sau lượt 1 = sheet cuối đã xong');
+    bang(l1.kq.buocKe, 'B3:' + B3_SHEET[B3_SHEET.indexOf(xongL1[xongL1.length - 1]) + 1], 'buocKe lượt 1 = sheet kế sau cờ');
+    dung(l1.flush >= 2 * xongL1.length, 'mỗi sheet xong phải có ≥ 2 flush (sau thao tác, sau cờ): ' + l1.flush + ' flush cho ' + xongL1.length + ' sheet');
+    const ghiSheetXong = l2.ghi.filter((g) => xongL1.indexOf(g.sheet) >= 0).map((g) => g.sheet + ':' + g.kieu);
+    bang(ghiSheetXong, [], 'lượt 2 ghi vào sheet đã xong');
+    dung((l2.kq.nhatKy || []).some((s) => s.indexOf('bỏ qua ' + xongL1.length + ' sheet, dọn tiếp từ `' + l1.kq.buocKe.slice(3) + '`') >= 0),
+      'lượt 2 phải nói bỏ qua ' + xongL1.length + ' sheet: ' + JSON.stringify(l2.kq.nhatKy).slice(0, 300));
+    bang(sheetXongTrongLuot(l2.kq)[0], l1.kq.buocKe.slice(3), 'lượt 2 dọn tiếp đúng sheet kế');
+    const lamLai = x.luot.slice(1).map((l, i) => sheetXongTrongLuot(l.kq).filter((t) => x.luot.slice(0, i + 1).some((d) => sheetXongTrongLuot(d.kq).indexOf(t) >= 0))).flat();
+    bang(lamLai, [], 'sheet đã xong ở lượt trước bị dọn lại');
+    bang(soOKhac(chupBoCo(A.ssMoi), chupBoCo(x.ssMoi)), 0, 'khác bản chạy một hơi');
+    bang(coTM(x.ssMoi, 5), 'B7', 'cờ cuối');
+    bang(ID_LOT(x), [], 'ID file lọt vào phản hồi');
+    return x.luot.length + ' lượt · lượt 1 xong ' + xongL1.join(', ') + ' → cờ ' + l1.co + ' → buocKe ' + l1.kq.buocKe + ' · ' + await doiChungAm(async () => {
+      const z = await kichBan({ buocMs: 450, nguongGiay: 20, toiDaLuot: 40, suaNguon: boCoSheet });
+      const a1 = sheetXongTrongLuot(z.luot[0].kq);
+      const lai = (z.luot[1] ? z.luot[1].ghi : []).filter((g) => a1.indexOf(g.sheet) >= 0);
+      return lai.length ? ['không có cờ mức sheet: lượt 2 ghi lại ' + lai.length + ' lệnh vào sheet đã xong (' + a1.join(', ') + ')'] : [];
+    }, 'bỏ cờ B3:<sheet> (chỉ còn cờ B3 cuối bước như 2.8.1)');
+  });
+
+  await test('TM-W-37', 'YC-62 (b): cờ `B3:<tên lạ>` (không khớp sheet nào) → dọn lại B3 từ đầu, nói rõ trong nhật ký, vẫn 8/8 và y hệt chạy một hơi', async () => {
+    const coLa = (ssMoi) => {
+      const sh = ssMoi.getSheetByName('Mapping_san_pham') || ssMoi.themSheet('Mapping_san_pham');
+      sh.giaTri['1:15'] = 'DANG_KHOI_TAO_2026-10-01 08:00'; sh.giaTri['2:15'] = '2026-10'; sh.dinhDang['2:15'] = '@'; sh.giaTri['5:15'] = 'B3:Sheet Không Có';
+    };
+    const x = await kichBan({ vo: coLa });
+    dung(x.kq.ok === true && (x.kq.kiem || []).every((p) => p.dat), 'phải 8/8: ' + JSON.stringify(x.kq).slice(0, 200));
+    dung((x.kq.nhatKy || []).some((s) => /Cờ BUOC_DA_XONG = B3:Sheet Không Có không khớp sheet nào trong kế hoạch → dọn lại B3 từ đầu/.test(s)),
+      'phải nói rõ dọn lại từ đầu: ' + JSON.stringify(x.kq.nhatKy).slice(0, 300));
+    bang(sheetXongTrongLuot(x.kq).length, B3_SHEET.filter((t) => x.ssMoi.getSheetByName(t)).length, 'số sheet dọn ở lượt này = đủ mọi sheet');
+    bang(soOKhac(chupBoCo(A.ssMoi), chupBoCo(x.ssMoi)), 0, 'khác bản chạy một hơi');
+    return 'cờ lạ → ' + sheetXongTrongLuot(x.kq).length + ' sheet dọn lại, 8/8 · ' + await doiChungAm(async () => {
+      // Khuyết tật: tên lạ bị coi là "mọi sheet đã xong" → B3 bỏ qua hết, đơn tháng cũ còn nguyên → K-7 lệch.
+      const z = await kichBan({ vo: coLa, suaNguon: sua("      } else {\n        kq.thongBao.push('Cờ BUOC_DA_XONG = B3:'",
+        "      } else {\n        phanB3.forEach(function (p) { p.daXong = true; });\n        kq.thongBao.push('Cờ BUOC_DA_XONG = B3:'") });
+      return z.kq.ok ? [] : ['tên lạ bị coi là đã xong: ' + z.kq.loi + ' ' + String(z.kq.thongBao).slice(0, 80)];
+    }, 'tên lạ → coi như mọi sheet đã xong');
+  });
+
+  await test('TM-W-38', 'YC-62 (c): Google ngắt lệnh (timed out) ở lần 1–2 → chờ 5 rồi 15 giây, làm lại với thao tác tính lại từ ảnh chụp mới, lần 3 xong 8/8 ' +
+    '(cả câu tiếng Việt của Google); ID file không lọt ra câu báo', async () => {
+    const x = await kichBan({ vo: (ssMoi, ssCu, sim) => sim.datLoi({ quaHan: { kieu: 'xoaDong', lan: [1, 2] } }) });
+    dung(x.kq.ok === true && (x.kq.kiem || []).every((p) => p.dat), 'phải 8/8 sau hai lần bị ngắt: ' + JSON.stringify(x.kq).slice(0, 300));
+    bang(x.sim.soLanBomQuaHan, 2, 'số lần giả lập đã ném');
+    bang(x.sim.cacLanNgu, [5000, 15000], 'chờ tăng dần (ms)');
+    const dongNgat = (x.kq.nhatKy || []).filter((s) => /Google ngắt lệnh/.test(s));
+    dung(dongNgat.length === 2 && /chờ 5 giây rồi làm lại \(lần 2\/4\)/.test(dongNgat[0]) && /chờ 15 giây rồi làm lại \(lần 3\/4\)/.test(dongNgat[1]),
+      'nhật ký phải có hai dòng ngắt lệnh với số lần: ' + JSON.stringify(dongNgat));
+    dung((x.kq.nhatKy || []).some((s) => /^B3 › Shopee mall — xong: .*đã thử lại 2 lần/.test(s)), 'dòng sheet phải ghi đã thử lại 2 lần: ' + JSON.stringify(x.kq.nhatKy).slice(0, 400));
+    bang(ID_LOT(x), [], 'ID file lọt vào phản hồi (câu Google mang ID)');
+    dung(JSON.stringify(x.kqs).indexOf('<ID file tháng>') >= 0, 'câu Google phải được che ID thành <ID file tháng>');
+    bang(soOKhac(chupBoCo(A.ssMoi), chupBoCo(x.ssMoi)), 0, 'khác bản chạy một hơi');
+    const vi = await kichBan({ vo: (ssMoi, ssCu, sim) => sim.datLoi({ quaHan: { kieu: 'docCongThuc', lan: [1], cau: 'vi' } }) });
+    dung(vi.kq.ok === true && vi.sim.soLanBomQuaHan === 1 && vi.sim.cacLanNgu.length === 1, 'câu tiếng Việt của Google cũng phải được thử lại: ' + JSON.stringify(vi.kq).slice(0, 200));
+    return '2 lần ngắt ở xóa dòng → chờ 5 + 15 giây → 8/8 · câu VN ở đọc công thức → thử lại 1 lần · ' + await doiChungAm(async () => {
+      const z = await kichBan({ vo: (ssMoi, ssCu, sim) => sim.datLoi({ quaHan: { kieu: 'xoaDong', lan: [1] } }), suaNguon: sua('var TM_SO_LAN_THU_LAI = 3;', 'var TM_SO_LAN_THU_LAI = 0;') });
+      return z.kq.ok ? [] : ['không thử lại: ' + z.kq.loi];
+    }, 'tắt thử lại (TM_SO_LAN_THU_LAI = 0)');
+  });
+
+  await test('TM-W-39', 'YC-62 (c): Google ngắt cả 4 lần → câu tiếng Việt: quá tải, đã thử lại 3 lần, đợi ~10 phút, bấm lại nút 3 chế độ 1 với đúng bảy giá trị, ' +
+    'chạy tiếp từ sheet nào, link_thang chưa khai; cờ là sheet TRƯỚC; mã GOOGLE_QUA_TAI', async () => {
+    const x = await kichBan({ vo: (ssMoi, ssCu, sim) => sim.datLoi({ quaHan: { kieu: 'xoaDong', lan: [1, 2, 3, 4] } }) });
+    const tb = String(x.kq.thongBao || '');
+    bang(x.kq.ok, false, 'phải thất bại');
+    bang(x.kq.loi, 'GOOGLE_QUA_TAI', 'mã lỗi');
+    bang(x.sim.soLanBomQuaHan, 4, 'số lần giả lập đã ném');
+    bang(x.sim.cacLanNgu, [5000, 15000, 30000], 'ba lần chờ tăng dần');
+    dung(/Google quá tải/.test(tb) && /ở B3 › Shopee mall/.test(tb) && /đã thử lại 3 lần/.test(tb) && /đợi khoảng 10 phút/.test(tb) &&
+      /bấm lại nút 3 chế độ 1 với đúng bảy giá trị/.test(tb) && /chạy tiếp từ sau bước B2b/.test(tb) && /link_thang chưa được khai/.test(tb), 'câu quá tải thiếu ý: ' + tb);
+    bang(coTM(x.ssMoi, 5), 'B2b', 'cờ: chưa sheet nào xong');
+    bang(ID_LOT(x), [], 'ID file lọt vào phản hồi');
+    // Ngắt ở sheet THỨ HAI (lần xóa dòng 2…5) → cờ B3:Shopee mall, câu nói chạy tiếp từ sau sheet `Shopee mall`.
+    const y = await kichBan({ vo: (ssMoi, ssCu, sim) => sim.datLoi({ quaHan: { kieu: 'xoaDong', lan: [2, 3, 4, 5] } }) });
+    const tbY = String(y.kq.thongBao || '');
+    dung(y.kq.loi === 'GOOGLE_QUA_TAI' && /ở B3 › Offood/.test(tbY) && /chạy tiếp từ sau sheet `Shopee mall` \(bước B3\)/.test(tbY), 'câu sheet thứ hai: ' + tbY);
+    bang(coTM(y.ssMoi, 5), 'B3:Shopee mall', 'cờ = sheet trước đã xong');
+    return 'ngắt 4/4 ở Shopee mall → GOOGLE_QUA_TAI, cờ B2b · ngắt 4/4 ở Offood → cờ B3:Shopee mall, "chạy tiếp từ sau sheet `Shopee mall`" · ' + await doiChungAm(async () => {
+      // Khuyết tật: hết lần thử mà ném NGUYÊN câu Google (như 2.8.1) → mất "Google quá tải / đã thử lại / đợi 10 phút", mã NGOAI_LE.
+      const z = await kichBan({ vo: (ssMoi, ssCu, sim) => sim.datLoi({ quaHan: { kieu: 'xoaDong', lan: [1, 2, 3, 4] } }),
+        suaNguon: sua('      if (lan > TM_SO_LAN_THU_LAI) throw loiQuaTaiTM_(e, dv.nhan, lan - 1, ctx.daXong, false);', '      if (lan > TM_SO_LAN_THU_LAI) throw e;') });
+      return z.kq.loi !== 'GOOGLE_QUA_TAI' || !/đợi khoảng 10 phút/.test(String(z.kq.thongBao)) ? ['mã ' + z.kq.loi + ': ' + String(z.kq.thongBao).slice(0, 90)] : [];
+    }, 'hết lần thử vẫn ném nguyên câu Google');
+  });
+
+  await test('TM-W-40', 'YC-62 (c): deleteRows ĐÃ chạy xong phía Google rồi mới báo quá hạn → lần làm lại tính lại thao tác từ ảnh chụp mới, KHÔNG xóa dòng lần hai; kết quả y hệt', async () => {
+    const x = await kichBan({ vo: (ssMoi, ssCu, sim) => sim.datLoi({ quaHan: { kieu: 'xoaDong', lan: [1], sauKhiLam: true } }) });
+    dung(x.kq.ok === true && (x.kq.kiem || []).every((p) => p.dat), 'phải 8/8: ' + JSON.stringify(x.kq).slice(0, 200));
+    const xoa = x.sim.nhatKyGhi.filter((g) => g.kieu === 'xoaDong' && g.sheet === 'Shopee mall');
+    bang(xoa.length, 1, 'Shopee mall chỉ được xóa dòng ĐÚNG MỘT lần');
+    bang(lechCongThuc2000(x.ssMoi), [], 'vùng công thức 2.000 dòng');
+    bang(soOKhac(chupBoCo(A.ssMoi), chupBoCo(x.ssMoi)), 0, 'khác bản chạy một hơi');
+    return 'xóa ' + xoa[0].soDong + ' dòng một lần, lần làm lại không phát XOA_DONG nữa · ' + await doiChungAm(async () => {
+      // Khuyết tật BA cấm: lặp mù lệnh vừa hỏng (không chụp lại, không tính lại) → deleteRows chạy lần hai.
+      const z = await kichBan({ vo: (ssMoi, ssCu, sim) => sim.datLoi({ quaHan: { kieu: 'xoaDong', lan: [1], sauKhiLam: true } }),
+        suaNguon: sua('      if (lan > 0) dv.thaoTac = tinhLaiThaoTacTM_(ctx, dv);\n', '') });
+      const n = z.sim.nhatKyGhi.filter((g) => g.kieu === 'xoaDong' && g.sheet === 'Shopee mall').length;
+      return n > 1 ? ['lặp mù: Shopee mall bị xóa dòng ' + n + ' lần (lần hai nuốt dòng công thức của chủ shop)'] : [];
+    }, 'lặp lại mù lệnh vừa hỏng, không tính lại thao tác');
+  });
+
+  await test('TM-W-41', 'YC-62 (c): KHÔNG thử lại lỗi nghiệp vụ — CONG_THUC_HONG (#ERROR!) và lỗi Google cắt ngang thường: không chờ, không làm lại, dừng ngay như YC-44', async () => {
+    const parserVN = (ss) => {
+      const sh = ss.getSheetByName('Tổng nhập');
+      Object.keys(sh.congThuc).forEach((k) => {
+        const [r, c] = k.split(':').map(Number);
+        if (c === 9 && r >= 4 && sh.congThuc[k] && /^=?iferror\(H\d+\*G\d+,""\)$/.test(r1c1SangA1(sh.congThuc[k], r, c))) sh.giaTri[k] = '#ERROR!';
+      });
+    };
+    const cay = (s) => sua("var dau = ts.dauPhanCach || dauPhanCachCuaAnh([anhMoi, anhCu]);", "var dau = ',';")(sua('.filter(laMauCotI)[0] || null;', '.filter(laMauCotI)[0] && null;')(s));
+    const x = await kichBan({ sauTinh: parserVN, suaNguon: cay });
+    bang(x.kq.loi, 'CONG_THUC_HONG', 'mã lỗi');
+    bang(x.sim.cacLanNgu, [], 'không được chờ thử lại');
+    bang(x.sim.nhatKyGhi.filter((g) => g.kieu === 'xoaDong' && g.sheet === 'Tổng nhập').length, 1, 'B4 chỉ chạy một lần');
+    dung(!(x.kq.nhatKy || []).some((s) => /Google ngắt lệnh/.test(s)), 'không được có dòng thử lại');
+    const y = await kichBan({ suaNguon: sua('    var t = dsThaoTac[i];', "    var t = dsThaoTac[i];\n    if (t.sheet === 'Tổng nhập') throw new Error('GIẢ LẬP: Google cắt ngang giữa lúc ghi Tổng nhập');") });
+    dung(y.kq.loi === 'NGOAI_LE' && y.sim.cacLanNgu.length === 0 && /ở bước B4 · Ghi khối nhập đầu kỳ/.test(String(y.kq.thongBao)), 'lỗi thường phải dừng ngay, không thử lại: ' + JSON.stringify(y.kq).slice(0, 200));
+    return 'CONG_THUC_HONG: 0 lần chờ, B4 chạy 1 lần · lỗi cắt ngang thường: NGOAI_LE, 0 lần chờ · ' + await doiChungAm(async () => {
+      // Khuyết tật: coi mọi lỗi là quá tải → CONG_THUC_HONG bị chờ và làm lại.
+      const z = await kichBan({ sauTinh: parserVN, suaNguon: (s) => sua('  if (!err || err.maKeodon) return false;\n  var s = String(err.message || err);\n  return ', '  if (!err) return false;\n  var s = String(err.message || err);\n  return true || ')(cay(s)) });
+      return z.sim.cacLanNgu.length ? ['CONG_THUC_HONG bị thử lại ' + z.sim.cacLanNgu.length + ' lần'] : [];
+    }, 'coi mọi lỗi là Google quá tải');
+  });
+
+  await test('TM-W-42', 'YC-62 (a): gom lệnh B3 — gỡ gộp một lệnh cả vùng, kéo công thức một khối mỗi sheet: số lệnh ghi/đọc B3 giảm trên DEMO T9 và sổ T9 THẬT; ' +
+    'sổ sau khi dọn GIỐNG HỆT bản gỡ từng cụm + kéo từng cột (so từng ô, công thức, cụm gộp)', async () => {
+    const FILE_THAT = path.join(DAU_VAO, 'TIKTOK', 'THÁNG-9-2026-KINH-DOANH-POB (1).xlsx');
+    if (!MAU.THAT) {
+      const simN = gl.taoGiaLap({});
+      const ssN = simN.khaiThang('2026-09', 'THÁNG-9-2026-KINH-DOANH-POB');
+      await napXlsxVaoGiaLap(ssN, FILE_THAT);
+      tinhLaiBangTinh(ssN);
+      MAU.THAT = { ss: ssN, ky: '2026-09', ten: 'THÁNG-9-2026-KINH-DOANH-POB' };
+    }
+    // "Bản cũ" = chính mã 2.8.2 nhưng gỡ từng cụm (bỏ nhánh gỡ cả vùng) và kéo từng cột (khối chỉ nhận một cột).
+    const kieuCu = (s) => sua("        dsThaoTac[jK].r1 === t.r1 && dsThaoTac[jK].r2 === t.r2) { dsCot.push(dsThaoTac[jK].c); jK++; }",
+      "        dsThaoTac[jK].r1 === t.r1 && dsThaoTac[jK].r2 === t.r2 && !dsCot.length) { dsCot.push(dsThaoTac[jK].c); jK++; }")(
+      sua("    if (mr1 >= vg.getRow() && mc1 >= vg.getColumn() && mr2 <= vr2 && mc2 <= vc2) { tron++; return; }\n", '')(s));
+    const demB3 = (x) => {
+      const laB3 = (g) => B3_SHEET.indexOf(g.sheet) >= 0;
+      const ghi = x.sim.nhatKyGhi.filter(laB3), doc = x.sim.nhatKyDoc.filter(laB3);
+      const theo = {};
+      ghi.forEach((g) => { theo[g.kieu] = (theo[g.kieu] || 0) + 1; });
+      return { ghi: ghi.length, doc: doc.length, theo };
+    };
+    const ketQua = [];
+    for (const mau of ['T9', 'THAT']) {
+      const moi = await kichBan({ mau }), cu = await kichBan({ mau, suaNguon: kieuCu });
+      dung(moi.kq.ok === true && cu.kq.ok === true, mau + ': cả hai bản phải 8/8: ' + JSON.stringify(moi.kq).slice(0, 150) + ' | ' + JSON.stringify(cu.kq).slice(0, 150));
+      bang(soOKhac(chupBoCo(cu.ssMoi), chupBoCo(moi.ssMoi)), 0, mau + ': sổ sau khi dọn phải GIỐNG HỆT bản gỡ từng cụm + kéo từng cột');
+      const a = demB3(cu), b = demB3(moi);
+      dung(b.ghi < a.ghi && (b.theo.boGop || 0) < (a.theo.boGop || 0) && (b.theo.congThuc || 0) < (a.theo.congThuc || 0) && (b.theo.chenDong || 0) <= (a.theo.chenDong || 0),
+        mau + ': phải giảm lệnh: trước ' + JSON.stringify(a) + ' sau ' + JSON.stringify(b));
+      ketQua.push(mau + ': lệnh ghi B3 ' + a.ghi + ' → ' + b.ghi + ' (gỡ gộp ' + (a.theo.boGop || 0) + ' → ' + (b.theo.boGop || 0) + ', kéo công thức ' +
+        (a.theo.congThuc || 0) + ' → ' + (b.theo.congThuc || 0) + ', nới lưới ' + (a.theo.chenDong || 0) + ' → ' + (b.theo.chenDong || 0) + ') · lệnh đọc ' + a.doc + ' → ' + b.doc);
+    }
+    return ketQua.join(' ‖ ') + ' · ' + await doiChungAm(async () => {
+      // Khuyết tật: khối kéo công thức bỏ cột cuối (như quên một cột) → phép so từng ô phải LỆCH.
+      const z = await kichBan({ suaNguon: sua('  var n = r2 - r1 + 1, cMin = cot[0], cMax = cot[cot.length - 1];', '  cot = cot.slice(0, -1);\n  var n = r2 - r1 + 1, cMin = cot[0], cMax = cot[cot.length - 1];') });
+      const khac = soOKhac(chupBoCo(A.ssMoi), chupBoCo(z.ssMoi));
+      return khac ? ['khối kéo bỏ cột cuối → lệch ' + khac + ' ô'] : [];
+    }, 'khối kéo công thức bỏ sót cột cuối');
+  });
+
+  await test('TM-W-43', 'YC-62 CHẠY TIẾP (bấm lại) trên sheet đã xóa dòng dở — Google chết ngay SAU deleteRows, trước cờ, lỗi thường không thử lại: ' +
+    'bấm lại KHÔNG xóa dòng lần hai (mốc xóa theo cột khóa D), ô lạc đã dồn lên dòng 4 được giữ + cảnh báo, vẫn 8/8', async () => {
+    const BODY = (sim) => ({ token: sim.biMat, phienBanMongDoi: sim.vo.PHIEN_BAN, hanhDong: 'taoThangMoi', thangCu: 9, namCu: 2026, idCu: sim.idCua('2026-09'), thangMoi: 10, namMoi: 2026, idMoi: sim.idCua('2026-10') });
+    // Mỗi lượt một bộ lỗi MỚI: `quaHan.dem` đếm trên chính đối tượng, dùng chung là lượt sau không còn bị ném nữa.
+    const chet = () => ({ quaHan: { kieu: 'xoaDong', lan: [1], sauKhiLam: true, cau: 'khac' } });
+    /** Lượt 1: chết ngay sau deleteRows của Shopee mall (đã xóa dòng, chưa ghi cờ). */
+    const chayLuot1 = async () => {
+      const x = await kichBan({ vo: (ssMoi, ssCu, sim) => sim.datLoi(chet()) });
+      dung(x.kq.ok === false && x.kq.loi === 'NGOAI_LE' && /ở bước B3 › Shopee mall/.test(String(x.kq.thongBao)) && x.sim.cacLanNgu.length === 0,
+        'lượt 1 phải chết ngay sau xóa dòng, không thử lại: ' + JSON.stringify(x.kq).slice(0, 200));
+      bang(coTM(x.ssMoi, 5), 'B2b', 'cờ lúc chết');
+      bang(x.sim.nhatKyGhi.filter((g) => g.kieu === 'xoaDong' && g.sheet === 'Shopee mall').length, 1, 'lượt 1 đã xóa dòng một lần');
+      return x;
+    };
+    /**
+     * Bấm lại trên một Web App giả MỚI (mã có thể vá cho đối chứng âm) mang đúng trạng thái sổ dở của lượt 1 — vá mã ở cả lượt 1
+     * thì khuyết tật làm lượt 1 xóa luôn ô lạc, không còn gì để lượt 2 làm sai.
+     */
+    const bamLai = (x, suaNguon) => {
+      const sim2 = gl.taoGiaLap({ ngay: '2026-10-01T02:00:00Z', suaNguon });
+      const ssCu2 = saoFile(x.ssCu, sim2.khaiThang('2026-09', MAU.T9.ten));
+      const ssMoi2 = saoFile(x.ssMoi, sim2.khaiThang('2026-10', 'THÁNG-10-2026-KINH-DOANH'));
+      sim2.khiFlush = khiFlushTietKiem(sim2, ssMoi2, null);
+      sim2.demLai();
+      const kq = JSON.parse(sim2.vo.doPost({ postData: { contents: JSON.stringify(BODY(sim2)) } }).getContent());
+      sim2.thaoGo();
+      return { kq, sim: sim2, ssMoi: ssMoi2, ssCu: ssCu2 };
+    };
+    const x = await chayLuot1();
+    const r = bamLai(x);
+    dung(r.kq.ok === true && (r.kq.kiem || []).every((p) => p.dat), 'bấm lại phải 8/8: ' + JSON.stringify(r.kq).slice(0, 300));
+    bang(r.sim.nhatKyGhi.filter((g) => g.kieu === 'xoaDong' && g.sheet === 'Shopee mall').length, 0, 'bấm lại KHÔNG được xóa dòng Shopee mall lần nữa');
+    bang(lechCongThuc2000(r.ssMoi), [], 'vùng công thức 2.000 dòng');
+    const lac = oDuLieu(r.ssMoi.getSheetByName('Shopee mall'), 4, 15);
+    dung(lac.length > 0 && (r.kq.canhBao || []).some((s) => /Sheet `Shopee mall`: có ô gõ tay nằm DƯỚI khối đơn/.test(s)),
+      'ô lạc đã dồn lên phải được GIỮ và cảnh báo (tool không đoán), được ' + lac.length + ' ô: ' + JSON.stringify(r.kq.canhBao).slice(0, 200));
+    return 'chết sau deleteRows → cờ B2b; bấm lại: 0 lần xóa dòng, ' + lac.length + ' ô lạc (vd ' + lac[0] + ') giữ + cảnh báo, 8/8 · ' + await doiChungAm(async () => {
+      // Khuyết tật đã bác trong chú thích `dongCuoiDuLieu`: mốc xóa theo dòng cuối có dữ liệu ở BẤT KỲ cột nào thay vì cột khóa D →
+      // hai ô ngày lạc đã dồn lên A4:A5 bị coi là khối đơn → bấm lại xóa hẳn dòng lần hai (nuốt dòng công thức dự trữ).
+      const z = bamLai(await chayLuot1(), sua('    if (!cKhoa) kq.dong = kq.dongMoiCot;', '    kq.dong = kq.dongMoiCot;'));
+      const n = z.sim.nhatKyGhi.filter((g) => g.kieu === 'xoaDong' && g.sheet === 'Shopee mall').length;
+      return n ? ['mốc theo mọi cột: bấm lại xóa dòng Shopee mall thêm ' + n + ' lần (ô lạc dồn lên bị coi là khối đơn)'] : [];
+    }, 'mốc xóa dòng theo bất kỳ cột nào thay vì cột khóa (chỉ ở lượt bấm lại)');
   });
 
   RAC_MAY.forEach((d) => { try { fs.rmSync(d, { recursive: true, force: true }); } catch (e) { /* thư mục tạm */ } });

@@ -153,7 +153,7 @@ Số bài lấy từ dòng tổng kết mỗi bộ tự in ra; chạy lại là 
 | `npm run test-gian-hang` | `T-GH-xx` | file thả nhầm thư mục gian hàng: luật D-04 trên 12 file xuất thật, và vỏ Google chặn trước khi ghi |
 | `npm run test-hop-dong` | `T-HD-xx` | YC-38.1 hợp đồng file tháng: lệch khuôn → `SAI_HOP_DONG` trước lệnh ghi đầu tiên; không chặn oan khuôn thật; Mapping ghi THEO TÊN CỘT |
 | `npm run test-dong-run` | `T-RUN-xx` | YC-38.3 dòng tổng kết RUN: RUN id giờ Việt Nam, Web App ghi nhật ký + trả số dòng CÓ và băm Mapping, thả lại cùng file ra cùng dòng |
-| `npm run test-tao-thang-moi-web` | `TM-W-xx` | YC-35 hành động `taoThangMoi` trên Web App giả, chạy trên file tháng 9 khuôn mới (bản sao → tháng 10) và tháng 8 thật (TM-01…TM-12); TM-W-19…22 phía máy trọn đường: nút 3 → `WebAppGoogleSheet.taoThangMoi` → Web App giả; bộ này GHIM múi giờ dự án (TM-W-25); TM-W-26…29 YC-43: dán vào ô gộp, đóng băng trước khi dọn, câu báo giữa chừng, bản sao kẹt B5; TM-W-30…32 YC-44/2.7.1: cột I chép nguyên văn khuôn + rà mọi công thức tool ghi, dừng ngay khi ô vừa ghi ra #ERROR!, hành động chỉ-đọc `coTaoThang` |
+| `npm run test-tao-thang-moi-web` | `TM-W-xx` | YC-35 hành động `taoThangMoi` trên Web App giả, chạy trên file tháng 9 khuôn mới (bản sao → tháng 10) và tháng 8 thật (TM-01…TM-12); TM-W-19…22 phía máy trọn đường: nút 3 → `WebAppGoogleSheet.taoThangMoi` → Web App giả; bộ này GHIM múi giờ dự án (TM-W-25); TM-W-26…29 YC-43: dán vào ô gộp, đóng băng trước khi dọn, câu báo giữa chừng, bản sao kẹt B5; TM-W-30…32 YC-44/2.7.1: cột I chép nguyên văn khuôn + rà mọi công thức tool ghi, dừng ngay khi ô vừa ghi ra #ERROR!, hành động chỉ-đọc `coTaoThang`; TM-W-36…42 YC-62 (2.8.2): cờ mức sheet `B3:<tên>` + chạy tiếp đúng sheet kế, cờ lạ dọn lại từ đầu, thử lại khi Google ngắt lệnh (chờ 5/15/30 giây, tính lại thao tác, không xóa dòng lần hai, hết 4 lần → câu `GOOGLE_QUA_TAI`), không thử lại `CONG_THUC_HONG`, gom lệnh gỡ gộp/kéo công thức đếm trước–sau trên DEMO T9 và sổ T9 thật |
 | `npm run test-chuyen-huong` | `T-CH-xx` | 2.7.1 đường truyền: đi theo chuyển hướng tới 5 nấc, ghi đường đi từng nấc, 3xx hỏng/thân rỗng KHÔNG gọi là lỗi quyền; nút 3 mất đường trả lời thì đọc lại cờ rồi mới kết luận (mã thoát 6 khi Google vẫn chạy); T-CH-12 `DA_CHAY_XONG` mã 5 (YC-45); T-CH-14 tháng trên cờ O2 thay so đồng hồ (YC-46) |
 | `npm run test-tiktok` | `TT-xx` | Đợt 4 TikTok Shop trên file THẬT `00_DAU_VAO/TIKTOK` + sổ tháng 9 thật: bộ đọc (130/129, không ghi 7 + 1 treo, mã chuỗi 18, ngày, tự kiểm thành phần 130/130 + dừng khi lệch, đổi thứ tự cột), TT-58 luật tiền 19/9 (H = Σ quyết toán, I/J/K trống, đối chiếu cách ghi tay), đối chiếu tổng A/B/C, MỘT file + cột A = ngày chạy (D-87 bản sửa) + D-83 ba vế + câu 2B.11, nhận diện + thả nhầm sàn, ghi có gộp ô / cấu phần / Hệ số / thiếu Mapping / công thức / khuôn 17 cột, thả lại cùng file, 166 dòng tay không đổi, báo cáo B không ghi, TT-14 nút 4 trọn đường: Shopee y hệt khi có/không TikTok và TikTok hỏng không chặn Shopee |
 
@@ -253,8 +253,26 @@ dòng đó là sinh ra ca mất đơn mà không ai biết — file đã đi kh�
   phải gọi `setBackgrounds` một lần cho cả vùng; tô từng ô là nguyên nhân số một gây hết giờ.
 - **Máy chờ Google đủ lâu.** Kéo đơn chờ 300 giây mỗi lượt (`TIMEOUT_MS`): `xuLy` tự dừng gọn ở 240 giây rồi còn
   làm nốt khối đang ghi — chờ 180 như bản cũ là máy báo "không trả lời" giữa lúc Google vẫn ghi (T-WA-32 đọc 240 thẳng
-  từ `.gs`). Tạo tháng chờ 400 giây: `taoThangMoi` tự dừng ở 270 giây, và bước dở được lượt sau chạy TỚI CÙNG không
+  từ `.gs`). Tạo tháng chờ 400 giây: `taoThangMoi` tự dừng ở 270 giây, và phần dở được lượt sau chạy TỚI CÙNG không
   canh giờ (`buocDungTruoc`) — một lượt có thể đi sát trần 6 phút (`TIMEOUT_TAO_THANG_MS`, bài TM-W-19).
+- **Google ngắt MỘT lệnh Bảng tính vì quá lâu — khác trần 6 phút (YC-62, 2.8.2).** Chuyển sổ 9 → 10 trên sổ thật (11/10) chết ở
+  B3 với "Service Spreadsheets timed out while accessing document…" (sổ tiếng Việt: "Dịch vụ Bảng tính đã hết thời gian chờ khi
+  truy cập vào tài liệu…"). Đây là ngưỡng NỘI BỘ của một lệnh, không điều khiển được; sổ càng nhiều công thức từng dòng (D-57
+  kéo 2.000 dòng × 5 cột × 6–7 sheet, tham chiếu chéo 19 sheet) lệnh xóa dòng / áp thay đổi đang chờ càng dễ chạm. Ba việc:
+  (a) **gom lệnh** — gỡ gộp một `breakApart` cho cả vùng (cụm cắt một phần gỡ riêng trước, `boGopVungTM_`), kéo công thức một
+  khối cột mỗi sheet, nới lưới một lần (`keoCongThucKhoiTM_`), kết quả trên sổ giống hệt bản gỡ từng cụm + kéo từng cột (TM-W-42);
+  (b) **cờ mức từng sheet trong B3** — sau mỗi sheet: chạy → flush → đọc lại công thức → ghi cờ `B3:<tên sheet>` → flush; lượt sau
+  bỏ qua sheet đã xong, thao tác sheet còn lại tính lại từ ảnh chụp hiện tại; dừng gọn giữa B3 trả `buocKe = B3:<sheet kế>`, luật ép
+  chạy tới cùng chỉ áp cho đúng sheet đó (máy cũ gửi `B3` trơn → sheet đầu còn lại); tên trong cờ không khớp → dọn lại B3 từ đầu
+  và nói rõ (`buocBatDau`, `phan` của bước B3, TM-W-36/37); (c) **thử lại khi Google ngắt lệnh** — tối đa 3 lần, chờ 5/15/30 giây
+  (`TM_SO_LAN_THU_LAI`, `TM_CHO_THU_LAI_GIAY`), mỗi lần CHỤP LẠI sheet và để lõi tính lại thao tác (`tinhLaiThaoTacTM_`) — cấm lặp
+  mù lệnh vừa hỏng vì `deleteRows` báo quá hạn có thể ĐÃ chạy xong (TM-W-40) — lần tính lại nhận `khoiDonLuotTruoc` (dòng cuối khối
+  đơn lần đầu) để biết dòng đã dồn lên bao nhiêu và soi ô lạc theo độ dồn đó (`mocXoaDong`); bấm lại sau khi Google chết ngay sau
+  `deleteRows` cũng không xóa dòng lần hai vì mốc xóa theo cột khóa D, ô lạc dồn lên dòng 4 được giữ + cảnh báo (TM-W-43); không đủ giờ để chờ → dừng gọn; hết 4 lần → câu
+  `GOOGLE_QUA_TAI` "đợi khoảng 10 phút rồi bấm lại nút 3 chế độ 1, chạy tiếp từ sau sheet …" (TM-W-38/39); lỗi nghiệp vụ, lỗi quyền,
+  `CONG_THUC_HONG` không thử lại (TM-W-41). Câu Google mang ID file được che (`cheIdTrongCauTM_`, INV-7). Nhật ký nút 3 in số giây
+  và số lệnh từng sheet (`B3 › Shopee mall — xong: 12 giây · 9 lệnh …`) để đo được trên Google thật. Giả lập mô phỏng Google từ
+  chối `breakApart` trên vùng phủ một phần cụm gộp và bơm được lỗi quá hạn theo lệnh (`bomQuaHan`, `sim.loi.quaHan`).
 - **Google cấm DÁN vào vùng giao một phần với ô gộp.** `copyTo` mà vùng dán cắt ngang một cụm gộp là ném "Bạn không thể
   thực hiện lệnh dán khi vùng dán giao một phần với một ô hợp nhất" — chèn cột còn làm cụm gộp vắt qua chỗ chèn giãn ra.
   Nút 3 chết ở B5 đúng vì thế trên Google thật (14/9, khuôn tháng 9 gộp `Lợi nhuận`!B3:D3). Mọi lệnh dán phải gỡ gộp trước,

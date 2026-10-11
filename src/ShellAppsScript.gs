@@ -60,7 +60,7 @@
  * Số bản của vỏ Google — bằng `PHIEN_BAN` trong `node/gsheet-web-app.js` và `version` của package.json khi phát hành.
  * Mọi phản hồi đã qua cửa bí mật kèm bản thật này ở trường `banWebApp`.
  */
-var PHIEN_BAN = '2.8.1';
+var PHIEN_BAN = '2.8.2';
 
 /**
  * YC-42: bản MÁY thấp nhất Web App này còn phục vụ gói ghi (`ghi`, `xuLy`, `taoThangMoi`). Dưới mốc → từ chối
@@ -1878,6 +1878,15 @@ function hanhDongXuLy_(body, batDau) {
 var TM_NGUONG_GIAY = 270;
 /** Lô ghi tối đa mỗi lần `setValues` (A.7.3). */
 var TM_LO_DONG = 200;
+/**
+ * YC-62 (2.8.2): Google ngắt MỘT lệnh Bảng tính vì chạy quá lâu ("Service Spreadsheets timed out while accessing document…", sổ
+ * tiếng Việt: "Dịch vụ Bảng tính đã hết thời gian chờ khi truy cập vào tài liệu…") — ngưỡng nội bộ của Google, không phải trần 6 phút.
+ * Gặp nó ở một phần việc (một sheet của B3, hay trọn một bước khác) thì chờ rồi làm lại phần đó, tối đa ngần này lần, chờ tăng dần.
+ * Mỗi lần làm lại đều CHỤP LẠI sheet và để lõi tính lại thao tác — cấm lặp mù lệnh vừa hỏng: `deleteRows` báo quá hạn có thể ĐÃ chạy
+ * xong phía Google, xóa lần hai là mất dòng công thức. Lỗi nghiệp vụ của tool, lỗi quyền, công thức hỏng: không thử lại.
+ */
+var TM_SO_LAN_THU_LAI = 3;
+var TM_CHO_THU_LAI_GIAY = [5, 15, 30];
 /** Sheet cần chụp ảnh — không chụp `Thông tin shop ` (INV-10), không chụp sổ chạy liên tục. */
 var TM_SHEET_CHUP = ['Tổng tồn kho', 'Tổng nhập', 'Shopee mall', 'Offood', 'Importmart', 'Babyiu', 'TikTok Shop',
   'Tiktok', 'Đơn ngoài', 'Chi Phí Hàng Ngày', 'Lợi nhuận', 'Mapping_san_pham', 'Mapping sản phẩm'];
@@ -1995,30 +2004,86 @@ function ghiKhoiO_(sh, dsOp) {
  * chép NGUYÊN VĂN chính là "kéo chuột": tham chiếu tương đối giữ nguyên độ lệch. Ô có GIÁ TRỊ gõ tay để yên.
  * Ghi theo từng đoạn ô trống liền nhau. Lưới thiếu dòng thì nới trước (Google không tự nới).
  */
-function keoCongThucTM_(sh, c, r1, r2) {
+function keoCongThucTM_(sh, c, r1, r2, dem) {
+  return keoCongThucKhoiTM_(sh, [c], r1, r2, dem);
+}
+
+/**
+ * YC-62 (2.8.2) — `KEO_CT` cho CẢ KHỐI CỘT cùng sheet, cùng đoạn dòng: nới lưới MỘT lần, đọc công thức + giá trị MỘT lượt cho cả
+ * khối `cMin..cMax`, rồi ghi gộp. Tới 2.8.1 mỗi cột là 1 lần nới lưới + 2 lệnh đọc + ≥ 1 lệnh ghi — 5 cột × 6 sheet là 30/30/30 lệnh
+ * (BA đếm trên Web App giả); mỗi lệnh đọc còn ép Google áp ngay mọi thay đổi đang chờ, đúng chỗ Google báo "timed out".
+ *
+ * LUẬT LẤP GIỮ NGUYÊN TỪNG CỘT (2.6.0): ô trống lấy công thức R1C1 của ô có công thức GẦN NHẤT phía trên; đoạn đầu chưa có ô nào
+ * phía trên thì lấy ô gần nhất phía dưới; ô có GIÁ TRỊ gõ tay để yên; cột không còn ô công thức nào thì không lấp. Kết quả trên sổ
+ * GIỐNG HỆT bản ghi từng cột — chỉ cách gom lệnh ghi khác: các dòng liền nhau có CÙNG tập cột phải lấp gom thành một hình chữ nhật
+ * cho mỗi dải cột kề nhau (E:F và L:N của sheet gian hàng → đuôi 4→2003 còn 2 lệnh ghi thay vì 5). Cột ở GIỮA khối không nằm trong
+ * `dsCot` (G..K) chỉ được đọc, không bao giờ bị ghi.
+ * @returns {number} số ô đã lấp
+ */
+function keoCongThucKhoiTM_(sh, dsCot, r1, r2, dem) {
+  var cot = dsCot.slice().sort(function (a, b) { return a - b; });
   var mr = sh.getMaxRows();
-  if (mr < r2) sh.insertRowsAfter(mr, r2 - mr);
-  var n = r2 - r1 + 1;
-  var vung = sh.getRange(r1, c, n, 1);
+  if (mr < r2) { sh.insertRowsAfter(mr, r2 - mr); demTM_(dem, 'noiLuoi'); }
+  var n = r2 - r1 + 1, cMin = cot[0], cMax = cot[cot.length - 1];
+  var vung = sh.getRange(r1, cMin, n, cMax - cMin + 1);
   var ct = vung.getFormulasR1C1(), gt = vung.getValues();
-  var dau = -1;
-  for (var i = 0; i < n; i++) if (ct[i][0]) { dau = i; break; }
-  if (dau < 0) return 0;
-  var mau = ct[dau][0], dem = 0, doan = null;
-  var xa = function () {
-    if (!doan) return;
-    sh.getRange(r1 + doan.i, c, doan.ds.length, 1).setFormulasR1C1(doan.ds);
-    doan = null;
-  };
-  for (var j = 0; j < n; j++) {
-    if (ct[j][0]) { xa(); mau = ct[j][0]; continue; }
-    if (gt[j][0] !== '' && gt[j][0] != null) { xa(); continue; }
-    if (!doan) doan = { i: j, ds: [] };
-    doan.ds.push([j < dau ? ct[dau][0] : mau]);
-    dem++;
+  demTM_(dem, 'doc', 2);
+  var lap = [], soO = 0;
+  for (var i = 0; i < n; i++) lap.push({});
+  cot.forEach(function (c) {
+    var k = c - cMin, dau = -1;
+    for (var i2 = 0; i2 < n; i2++) if (ct[i2][k]) { dau = i2; break; }
+    if (dau < 0) return;
+    var mau = ct[dau][k];
+    for (var j = 0; j < n; j++) {
+      if (ct[j][k]) { mau = ct[j][k]; continue; }
+      if (gt[j][k] !== '' && gt[j][k] != null) continue;
+      lap[j][c] = j < dau ? ct[dau][k] : mau;
+      soO++;
+    }
+  });
+  if (!soO) return 0;
+  var khoaDong = function (d) { return cot.filter(function (c) { return lap[d][c] != null; }).join(','); };
+  var i3 = 0;
+  while (i3 < n) {
+    var khoa = khoaDong(i3);
+    if (!khoa) { i3++; continue; }
+    var j3 = i3;
+    while (j3 + 1 < n && khoaDong(j3 + 1) === khoa) j3++;
+    var cotLap = khoa.split(',').map(Number);
+    var d1 = 0;
+    while (d1 < cotLap.length) {
+      var d2 = d1;
+      while (d2 + 1 < cotLap.length && cotLap[d2 + 1] === cotLap[d2] + 1) d2++;
+      var bang = [];
+      for (var r = i3; r <= j3; r++) {
+        var h = [];
+        for (var q = d1; q <= d2; q++) h.push(lap[r][cotLap[q]]);
+        bang.push(h);
+      }
+      sh.getRange(r1 + i3, cotLap[d1], bang.length, d2 - d1 + 1).setFormulasR1C1(bang);
+      demTM_(dem, 'keo');
+      d1 = d2 + 1;
+    }
+    i3 = j3 + 1;
   }
-  xa();
-  return dem;
+  return soO;
+}
+
+/** Bộ đếm lệnh Google của một phần việc (YC-62): `{ tong, theoLoai }` — in vào nhật ký để đo được trên Google thật. */
+function demMoiTM_() { return { tong: 0, theoLoai: {} }; }
+function demTM_(dem, loai, so) {
+  if (!dem) return;
+  var k = so == null ? 1 : so;
+  dem.tong += k;
+  dem.theoLoai[loai] = (dem.theoLoai[loai] || 0) + k;
+}
+function cauDemTM_(dem) {
+  if (!dem) return '';
+  var TEN = { doc: 'đọc', ghi: 'ghi', goGop: 'gỡ gộp', xoaDong: 'xóa dòng', xoaVung: 'xóa vùng', keo: 'kéo công thức', noiLuoi: 'nới lưới',
+    gopO: 'gộp ô', chenCot: 'chèn cột', taoSheet: 'tạo sheet' };
+  var ds = Object.keys(dem.theoLoai).map(function (k) { return (TEN[k] || k) + ' ' + dem.theoLoai[k]; });
+  return dem.tong + ' lệnh' + (ds.length ? ' (' + ds.join(', ') + ')' : '');
 }
 
 /**
@@ -2074,8 +2139,37 @@ function chenCotGiuGop_(sh, truocCot) {
   }
 }
 
-/** Chạy một danh sách thao tác của lõi trên file MỚI. Dừng gọn giữa hai thao tác khi hết giờ. */
-function thucThiThaoTacTM_(ssMoi, dsThaoTac, hetGio) {
+/**
+ * `BO_GOP` (YC-62): gỡ MỌI cụm gộp cắt qua vùng bằng ÍT lệnh nhất mà kết quả y hệt gỡ từng cụm. Cụm nằm TRỌN trong vùng → một
+ * `breakApart()` cho cả vùng (tới 2.8.1 là một lệnh mỗi cụm: 91 lệnh trên DEMO T9, 213 trên sổ T9 thật, riêng `TikTok Shop` ~200).
+ * Cụm chỉ CẮT MỘT PHẦN qua vùng → gỡ riêng đúng cụm đó như cũ, TRƯỚC lệnh gỡ cả vùng — Google từ chối `breakApart` trên vùng phủ
+ * một phần cụm gộp (cùng họ với lỗi dán vào ô gộp của YC-43).
+ * @returns {number} số cụm đã gỡ
+ */
+function boGopVungTM_(sh, r1, c1, r2, c2, dem) {
+  var vg = vungKep_(sh, r1, c1, r2, c2);
+  if (!vg) return 0;
+  var ds = vg.getMergedRanges();
+  demTM_(dem, 'doc');
+  if (!ds.length) return 0;
+  var vr2 = vg.getRow() + vg.getNumRows() - 1, vc2 = vg.getColumn() + vg.getNumColumns() - 1;
+  var tron = 0;
+  ds.forEach(function (m) {
+    var mr1 = m.getRow(), mc1 = m.getColumn(), mr2 = mr1 + m.getNumRows() - 1, mc2 = mc1 + m.getNumColumns() - 1;
+    if (mr1 >= vg.getRow() && mc1 >= vg.getColumn() && mr2 <= vr2 && mc2 <= vc2) { tron++; return; }
+    m.breakApart();
+    demTM_(dem, 'goGop');
+  });
+  if (tron) { vg.breakApart(); demTM_(dem, 'goGop'); }
+  return ds.length;
+}
+
+/**
+ * Chạy một danh sách thao tác của lõi trên file MỚI. Dừng gọn giữa hai thao tác khi hết giờ.
+ * YC-62: `dem` (tùy chọn) đếm lệnh Google theo loại để in vào nhật ký; `KEO_CT` liền nhau cùng sheet + cùng đoạn dòng gom thành một
+ * khối (`keoCongThucKhoiTM_`), `BO_GOP` gỡ cả vùng một lệnh (`boGopVungTM_`).
+ */
+function thucThiThaoTacTM_(ssMoi, dsThaoTac, hetGio, dem) {
   var i = 0;
   while (i < dsThaoTac.length) {
     if (hetGio()) return { xong: false, daLam: i };
@@ -2083,26 +2177,34 @@ function thucThiThaoTacTM_(ssMoi, dsThaoTac, hetGio) {
     if (t.loai === 'GHI_O' || t.loai === 'GHI_CT') {
       var j = i;
       while (j < dsThaoTac.length && (dsThaoTac[j].loai === 'GHI_O' || dsThaoTac[j].loai === 'GHI_CT') && dsThaoTac[j].sheet === t.sheet) j++;
-      ghiKhoiO_(sheetTM_(ssMoi, t.sheet), dsThaoTac.slice(i, j));
+      demTM_(dem, 'ghi', ghiKhoiO_(sheetTM_(ssMoi, t.sheet), dsThaoTac.slice(i, j)));
       i = j;
+      continue;
+    }
+    if (t.loai === 'KEO_CT') {
+      var jK = i, dsCot = [];
+      while (jK < dsThaoTac.length && dsThaoTac[jK].loai === 'KEO_CT' && dsThaoTac[jK].sheet === t.sheet &&
+        dsThaoTac[jK].r1 === t.r1 && dsThaoTac[jK].r2 === t.r2) { dsCot.push(dsThaoTac[jK].c); jK++; }
+      keoCongThucKhoiTM_(sheetTM_(ssMoi, t.sheet), dsCot, t.r1, t.r2, dem);
+      i = jK;
       continue;
     }
     if (t.loai === 'TAO_SHEET') {
       if (t.ten !== TaoThangMoi.TEN_SHEET_MAPPING) throw loiTM_('VI_PHAM_INV2', 'Lõi xin tạo sheet "' + t.ten + '" — chỉ được thêm `' + TaoThangMoi.TEN_SHEET_MAPPING + '` (INV-2). Dừng.');
-      if (!ssMoi.getSheetByName(t.ten)) ssMoi.insertSheet(t.ten);
+      if (!ssMoi.getSheetByName(t.ten)) { ssMoi.insertSheet(t.ten); demTM_(dem, 'taoSheet'); }
     } else {
       var sh = sheetTM_(ssMoi, t.sheet);
       if (t.loai === 'BO_GOP') {
-        var vg = vungKep_(sh, t.r1, t.c1, t.r2, t.c2);
-        if (vg) vg.getMergedRanges().forEach(function (m) { m.breakApart(); });
+        boGopVungTM_(sh, t.r1, t.c1, t.r2, t.c2, dem);
       } else if (t.loai === 'XOA_VUNG') {
         var vx = vungKep_(sh, t.r1, t.c1, t.r2, t.c2);
-        if (vx) vx.clearContent();
+        if (vx) { vx.clearContent(); demTM_(dem, 'xoaVung'); }
       } else if (t.loai === 'XOA_DONG') {
         var n = Math.min(t.soDong, sh.getMaxRows() - t.r1 + 1);
-        if (n > 0) sh.deleteRows(t.r1, n);
+        if (n > 0) { sh.deleteRows(t.r1, n); demTM_(dem, 'xoaDong'); }
       } else if (t.loai === 'GOP_O') {
         sh.getRange(t.r1, t.c1, t.r2 - t.r1 + 1, t.c2 - t.c1 + 1).merge();
+        demTM_(dem, 'gopO');
       } else if (t.loai === 'GHI_BANG') {
         var rong = t.bang.reduce(function (m, h) { return Math.max(m, (h || []).length); }, 0);
         for (var k = 0; k < t.bang.length; k += TM_LO_DONG) {
@@ -2112,11 +2214,11 @@ function thucThiThaoTacTM_(ssMoi, dsThaoTac, hetGio) {
             return x;
           });
           sh.getRange(t.r1 + k, t.c1, lo.length, rong).setValues(lo);
+          demTM_(dem, 'ghi');
         }
       } else if (t.loai === 'CHEN_COT') {
         chenCotGiuGop_(sh, t.truocCot);
-      } else if (t.loai === 'KEO_CT') {
-        keoCongThucTM_(sh, t.c, t.r1, t.r2);
+        demTM_(dem, 'chenCot');
       } else {
         throw loiTM_('THAO_TAC_LA', 'Thao tác lạ từ lõi: ' + t.loai);
       }
@@ -2169,11 +2271,11 @@ function hanhDongTaoThangMoi_(body, batDau) {
 
     var anhCu = chupFileThangMoi_(ssCu);
     var anhMoi = chupFileThangMoi_(ssMoi);
-    var ke = TaoThangMoi.lapKeHoach(anhCu, anhMoi, {
-      // KHÔNG truyền dauPhanCach: lõi dò từ chính công thức Google trả về (sổ Việt Nam dùng `;` — gán cứng `,` là #ERROR!, 14/9).
-      // 2.7.2: nhãn DANG_KHOI_TAO_/DA_KHOI_TAO_ theo GIỜ VIỆT NAM dù dự án Apps Script đặt múi giờ nào (máy đọc nhãn này là giờ VN).
-      thangMoi: kyMoi, nguonClone: ssCu.getName(), thoiDiem: dongHoVN_()
-    });
+    // KHÔNG truyền dauPhanCach: lõi dò từ chính công thức Google trả về (sổ Việt Nam dùng `;` — gán cứng `,` là #ERROR!, 14/9).
+    // 2.7.2: nhãn DANG_KHOI_TAO_/DA_KHOI_TAO_ theo GIỜ VIỆT NAM dù dự án Apps Script đặt múi giờ nào (máy đọc nhãn này là giờ VN).
+    // YC-62: giữ `tsKe` để khi Google ngắt lệnh, lõi tính lại thao tác với CÙNG nhãn thời điểm (cờ O1 không đổi giữa hai lần tính).
+    var tsKe = { thangMoi: kyMoi, nguonClone: ssCu.getName(), thoiDiem: dongHoVN_() };
+    var ke = TaoThangMoi.lapKeHoach(anhCu, anhMoi, tsKe);
     if (!ke.chay) {
       var maDung = ke.maDung || 'FILE_CO_DU_LIEU';      // lõi nói lý do dừng: DA_KHOI_TAO · FILE_CO_DU_LIEU · B5_DANG_LAM
       return {
@@ -2191,31 +2293,69 @@ function hanhDongTaoThangMoi_(body, batDau) {
     SpreadsheetApp.flush();
 
     var viTri = ke.tuBuoc ? ke.buoc.map(function (b) { return b.ma; }).indexOf(ke.tuBuoc) : ke.buoc.length;
-    var daXong = ke.kiem.lop1.buocDaXong || '';
+    // YC-62: bối cảnh chung cho từng PHẦN VIỆC (một sheet của B3 / trọn một bước khác) — thử lại khi Google quá tải cần chụp lại
+    // sheet và tính lại thao tác, nên phải cầm cả ảnh chụp, tham số lập kế hoạch và đồng hồ.
+    var ctx = {
+      ssMoi: ssMoi, anhCu: anhCu, anhMoi: anhMoi, ts: tsKe, ke: ke, batDau: batDau, nguong: nguong, hetGio: hetGio,
+      thongBao: thongBao, daXong: ke.kiem.lop1.buocDaXong || '',
+      conGio: function (choGiay) { return (new Date().getTime() - batDau) / 1000 + choGiay < nguong; }
+    };
+    var bdt = body.buocDungTruoc != null ? String(body.buocDungTruoc) : null;
     for (var i = Math.max(0, viTri); i < ke.buoc.length; i++) {
       var b = ke.buoc[i];
-      // Lượt trước đã dừng giữa CHÍNH bước này → lượt này chạy bước đó TỚI CÙNG, không canh giờ. Không có luật này
-      // thì một bước dài hơn ngưỡng (B3 trên file nhiều sheet, nhiều ô gộp) cứ dọn dở rồi dừng mãi, máy gọi lại mãi
-      // mà cờ tiến độ không bao giờ nhích. Mỗi bước đều dọn/ghi idempotent, nên chạy tiếp phần dở là an toàn.
-      var epXong = body.buocDungTruoc != null && String(body.buocDungTruoc) === b.ma;
-      if (!epXong && hetGio()) return traDoTM_(kyMoi, daXong, batDau, nguong, b.ma, canhBao, thongBao);
-      buocDangLam = b.ma + ' · ' + b.ten;
-      if (b.mocTruoc) { ghiCoTM_(ssMoi, 5, b.mocTruoc); SpreadsheetApp.flush(); }
-      var kq = thucThiThaoTacTM_(ssMoi, b.thaoTac, (b.khongLapLai || epXong) ? function () { return false; } : hetGio);
-      if (!kq.xong) return traDoTM_(kyMoi, daXong, batDau, nguong, b.ma, canhBao, thongBao);
-      SpreadsheetApp.flush();
-      kiemCongThucVuaGhiTM_(ssMoi, b.thaoTac, b.ma);          // YC-44: #ERROR! là dừng ở ĐÚNG bước này, cờ chưa nhích
-      if (b.ma === 'B6') toLaiMapping_(ssMoi, canhBao);        // D-47: chép xong thì tô lại CÓ/chưa CÓ
-      ghiCoTM_(ssMoi, 5, b.mocSau);
-      daXong = b.mocSau;
-      SpreadsheetApp.flush();
-      thongBao.push(b.ma + ' · ' + b.ten + ' — xong');
+      // Bước có `phan` (B3): mỗi sheet là một phần việc, cờ riêng `B3:<tên sheet>` sau mỗi sheet; bước khác: một phần việc = cả bước.
+      var dsDV = [];
+      if (b.phan) {
+        var phanDau = true;
+        b.phan.forEach(function (p) {
+          if (p.daXong) return;
+          dsDV.push({ ma: b.ma, laPhan: true, ten: p.ten, nhan: b.ma + ' › ' + p.ten, maDung: p.moc, mocSau: p.moc, thaoTac: p.thaoTac,
+            sheets: [p.ten], phanDau: phanDau });
+          phanDau = false;
+        });
+      } else {
+        dsDV.push({ ma: b.ma, laPhan: false, nhan: b.ma + ' · ' + b.ten, maDung: b.ma, mocSau: b.mocSau, thaoTac: b.thaoTac,
+          sheets: sheetCuaThaoTacTM_(b.thaoTac), khongLapLai: b.khongLapLai });
+      }
+      var t0Buoc = new Date().getTime();
+      for (var u = 0; u < dsDV.length; u++) {
+        var dv = dsDV[u];
+        // Lượt trước đã dừng giữa CHÍNH phần việc này → lượt này chạy phần đó TỚI CÙNG, không canh giờ. Không có luật này
+        // thì một phần dài hơn ngưỡng cứ dọn dở rồi dừng mãi, máy gọi lại mãi mà cờ tiến độ không bao giờ nhích. Mỗi phần
+        // đều dọn/ghi idempotent, nên chạy tiếp phần dở là an toàn. Máy cũ gửi `B3` trơn → áp cho sheet ĐẦU còn lại của B3.
+        var epXong = bdt != null && (bdt === dv.maDung || (dv.laPhan && dv.phanDau && bdt === b.ma));
+        if (!epXong && hetGio()) return traDoTM_(kyMoi, ctx.daXong, batDau, nguong, dv.maDung, canhBao, thongBao);
+        buocDangLam = dv.nhan;
+        if (b.mocTruoc) { ghiCoTM_(ssMoi, 5, b.mocTruoc); SpreadsheetApp.flush(); }
+        var t0 = new Date().getTime();
+        dv.dem = demMoiTM_();
+        var kq = chayPhanViecTM_(ctx, dv, !(b.khongLapLai || epXong));
+        if (!kq.xong) return traDoTM_(kyMoi, ctx.daXong, batDau, nguong, dv.maDung, canhBao, thongBao, kq.ngatLenh);
+        if (b.ma === 'B6') toLaiMapping_(ssMoi, canhBao);        // D-47: chép xong thì tô lại CÓ/chưa CÓ
+        // Cờ sau MỖI phần, flush ngay: cờ chỉ đáng tin khi Google đã nhận cả thao tác lẫn cờ — một flush cuối bước (2.8.1) để hở
+        // đúng ca "Google ngắt ở sheet thứ năm, bốn sheet trước mất trắng tiến độ".
+        ghiCoTM_(ssMoi, 5, dv.mocSau);
+        ctx.daXong = dv.mocSau;
+        SpreadsheetApp.flush();
+        var giayDV = Math.round((new Date().getTime() - t0) / 1000);
+        var cauThu = kq.soLanThu ? ' · đã thử lại ' + kq.soLanThu + ' lần' : '';
+        if (dv.laPhan) thongBao.push(dv.nhan + ' — xong: ' + giayDV + ' giây · ' + cauDemTM_(dv.dem) + cauThu);
+        else thongBao.push(dv.nhan + ' (' + giayDV + ' giây · ' + cauDemTM_(dv.dem) + cauThu + ') — xong');
+      }
+      if (b.phan) {
+        ghiCoTM_(ssMoi, 5, b.mocSau);
+        ctx.daXong = b.mocSau;
+        SpreadsheetApp.flush();
+        thongBao.push(b.ma + ' · ' + b.ten + ' (' + Math.round((new Date().getTime() - t0Buoc) / 1000) + ' giây, ' + dsDV.length + '/' +
+          b.phan.length + ' sheet dọn ở lượt này) — xong');
+      }
     }
 
-    // B8: đọc lại file MỚI sau khi Google tính lại, tám phép tự kiểm.
+    // B8: đọc lại file MỚI sau khi Google tính lại, tám phép tự kiểm. Lệnh đọc cả sổ cũng có thể bị Google ngắt → thử lại như trên.
     buocDangLam = 'B8 · Tám phép tự kiểm';
     SpreadsheetApp.flush();
-    var kiem = TaoThangMoi.tuKiem(anhCu, chupFileThangMoi_(ssMoi), ke);
+    var anhSau = thuLaiDocTM_(ctx, buocDangLam, function () { return chupFileThangMoi_(ssMoi); });
+    var kiem = TaoThangMoi.tuKiem(anhCu, anhSau, ke);
     if (kiem.dat) {
       ghiCoTM_(ssMoi, 1, 'DA_KHOI_TAO_' + ke.nhanThoiDiem);
       SpreadsheetApp.flush();
@@ -2223,7 +2363,7 @@ function hanhDongTaoThangMoi_(body, batDau) {
     // `thongBao` là MỘT câu (máy in thẳng, kể cả khi lỗi); từng bước đã làm nằm ở `nhatKy`.
     return {
       ok: kiem.dat, loi: kiem.dat ? undefined : 'TU_KIEM_LECH', hanhDong: 'taoThangMoi', thang: kyMoi, xong: true,
-      buocDaXong: daXong, tenFileMoi: ssMoi.getName(), tenFileCu: ssCu.getName(),
+      buocDaXong: ctx.daXong, tenFileMoi: ssMoi.getName(), tenFileCu: ssCu.getName(),
       kiem: kiem.phep, canhBao: canhBao, nhatKy: thongBao,
       thongBao: kiem.dat
         ? 'ĐÃ KHỞI TẠO file tháng ' + kyMoi + ' — đủ 8/8 phép tự kiểm.'
@@ -2233,10 +2373,139 @@ function hanhDongTaoThangMoi_(body, batDau) {
       giay: (new Date().getTime() - batDau) / 1000
     };
   } catch (err) {
+    if (err && err.maKeodon === 'GOOGLE_QUA_TAI') throw err;   // câu đã đủ: phần việc, số lần thử, việc phải làm (YC-62)
     if (buocDangLam) throw loiGiuaChungTM_(err, buocDangLam, docCoTM_(ssMoi, 5));
     throw err;
   } finally {
     khoa.releaseLock();
+  }
+}
+
+// -------------------------------------------------------------------- YC-62: thử lại khi Google quá tải
+
+/**
+ * Lỗi Google ngắt MỘT lệnh Bảng tính vì quá lâu, hoặc dịch vụ Bảng tính lỗi tạm — cả câu tiếng Anh lẫn câu tiếng Việt của Google.
+ * Lỗi nghiệp vụ của tool (có `maKeodon`: CONG_THUC_HONG, THIEU_SHEET…), lỗi quyền, lỗi lập trình: KHÔNG phải — không thử lại.
+ */
+function laLoiGoogleQuaTai_(err) {
+  if (!err || err.maKeodon) return false;
+  var s = String(err.message || err);
+  return /timed out while accessing document/i.test(s) || /hết thời gian chờ khi truy cập/i.test(s) ||
+    /Service Spreadsheets failed while accessing document/i.test(s) || /Dịch vụ Bảng tính (đã )?(không thành công|gặp lỗi|thất bại) khi truy cập/i.test(s);
+}
+
+/** INV-7: câu Google kèm ID file ("…document with id <ID>." / "…tài liệu có mã <ID>.") → che ID trước khi đưa vào câu báo hay nhật ký. */
+function cheIdTrongCauTM_(s) {
+  return String(s == null ? '' : s).replace(/(document with id )\S+/gi, '$1<ID file tháng>').replace(/(tài liệu có mã )\S+/gi, '$1<ID file tháng>');
+}
+
+/** Sheet mà một danh sách thao tác chạm tới — chụp lại đúng các sheet này trước khi tính lại thao tác. */
+function sheetCuaThaoTacTM_(dsThaoTac) {
+  var ds = [];
+  (dsThaoTac || []).forEach(function (t) {
+    var ten = t.sheet || t.ten;
+    if (ten && ds.indexOf(ten) < 0) ds.push(ten);
+  });
+  return ds;
+}
+
+/** Câu "chạy tiếp từ đâu" theo cờ BUOC_DA_XONG: `B3:<tên>` → sau sheet đó (bước B3); còn lại → sau bước. */
+function cauTiepTuTM_(co) {
+  var m = /^B3:(.+)$/.exec(String(co || ''));
+  return m ? 'sau sheet `' + m[1] + '` (bước B3)' : 'sau bước ' + (co || '(chưa bước nào)');
+}
+
+/**
+ * Câu khi hết số lần thử lại, hoặc khi đang ép chạy tới cùng mà lượt này không còn giờ để chờ: Google quá tải, đã thử mấy lần, đợi
+ * khoảng 10 phút rồi bấm lại nút 3 chế độ 1, tool chạy tiếp từ sheet/bước nào, link_thang chưa khai.
+ */
+function loiQuaTaiTM_(err, nhan, soLanThu, coDangLa, hetGioCho) {
+  var e = new Error('Google quá tải — lệnh Bảng tính bị Google ngắt vì chạy quá lâu ở ' + nhan +
+    (soLanThu ? ', tool đã thử lại ' + soLanThu + ' lần' : '') + (hetGioCho ? ', lượt này không còn đủ giờ để chờ thêm' : '') +
+    ' (Google báo: ' + cheIdTrongCauTM_(err && err.message ? err.message : err) + ') → Việc phải làm: đợi khoảng 10 phút rồi bấm lại ' +
+    'nút 3 chế độ 1 với đúng bảy giá trị — tool chạy tiếp từ ' + cauTiepTuTM_(coDangLa) + '; link_thang chưa được khai.');
+  e.maKeodon = 'GOOGLE_QUA_TAI';
+  return e;
+}
+
+/**
+ * Chụp lại đúng các sheet của phần việc (và khối cờ `Mapping_san_pham`, để lõi thấy DANG_KHOI_TAO và không chấm lại R-1…R-4 trên
+ * sổ đang dọn dở) rồi để lõi LẬP LẠI kế hoạch; trả thao tác mới của đúng phần việc đó. Đây là chỗ bảo đảm "không lặp mù lệnh vừa
+ * hỏng": `deleteRows` đã chạy xong phía Google thì ảnh chụp mới không còn dòng đơn, lõi không phát `XOA_DONG` nữa.
+ */
+function tinhLaiThaoTacTM_(ctx, dv) {
+  dv.sheets.concat([TaoThangMoi.TEN_SHEET_MAPPING]).forEach(function (ten) {
+    var sh = ctx.ssMoi.getSheetByName(ten);
+    if (sh) ctx.anhMoi.sheets[ten] = chupSheetThangMoi_(sh);
+    if (sh && ctx.anhMoi.tenSheet.indexOf(ten) < 0) ctx.anhMoi.tenSheet.push(ten);
+  });
+  // Dòng cuối khối đơn của LẦN TÍNH ĐẦU cho từng sheet của phần việc → lõi nhận ra `deleteRows` đã chạy xong phía Google hay chưa
+  // (`mocXoaDong`): đã xóa thì không phát `XOA_DONG` nữa và soi ô lạc theo độ dồn — kết quả y hệt lần chạy một hơi.
+  var ts2 = {};
+  Object.keys(ctx.ts).forEach(function (k) { ts2[k] = ctx.ts[k]; });
+  ts2.khoiDonLuotTruoc = {};
+  var vct = (ctx.ke && ctx.ke.doc && ctx.ke.doc.vungCongThuc) || {};
+  dv.sheets.forEach(function (ten) { if (vct[ten] && vct[ten].dongCuoiDon >= 4) ts2.khoiDonLuotTruoc[ten] = vct[ten].dongCuoiDon; });
+  var ke2 = TaoThangMoi.lapKeHoach(ctx.anhCu, ctx.anhMoi, ts2);
+  if (!ke2.chay) throw loiTM_('NGOAI_LE', 'Tính lại thao tác sau khi Google ngắt lệnh: lõi từ chối lập kế hoạch (' + (ke2.lyDoDung || []).join(' | ') + ').');
+  var b2 = null;
+  ke2.buoc.forEach(function (b) { if (b.ma === dv.ma) b2 = b; });
+  if (!b2) throw loiTM_('NGOAI_LE', 'Tính lại thao tác: không thấy bước ' + dv.ma + ' trong kế hoạch mới (lỗi lập trình).');
+  if (!dv.laPhan) return b2.thaoTac;
+  var p2 = null;
+  (b2.phan || []).forEach(function (p) { if (p.ten === dv.ten) p2 = p; });
+  if (!p2) throw loiTM_('NGOAI_LE', 'Tính lại thao tác: bước B3 của kế hoạch mới không còn phần `' + dv.ten + '` (lỗi lập trình).');
+  return p2.thaoTac;
+}
+
+/**
+ * Chạy MỘT PHẦN VIỆC (sheet của B3 / trọn một bước) — chạy → flush → đọc lại công thức vừa ghi (YC-44); Google quá tải thì chờ rồi
+ * làm lại với thao tác TÍNH LẠI từ ảnh chụp mới (tối đa `TM_SO_LAN_THU_LAI` lần). Không còn giờ để chờ: đang canh giờ → dừng gọn
+ * (máy gọi lượt sau, lượt sau ép chạy phần này tới cùng); đang ép chạy tới cùng → ném câu quá tải (đợi 10 phút rồi bấm lại).
+ * `khongLapLai` (B5a chèn cột) không bao giờ thử lại — chèn cột hai lần là hỏng bản sao.
+ * @returns {{xong:boolean, daLam?:number, ngatLenh?:boolean, soLanThu?:number}}
+ */
+function chayPhanViecTM_(ctx, dv, canhGio) {
+  var lan = 0;
+  while (true) {
+    try {
+      if (lan > 0) dv.thaoTac = tinhLaiThaoTacTM_(ctx, dv);
+      var kq = thucThiThaoTacTM_(ctx.ssMoi, dv.thaoTac, canhGio ? ctx.hetGio : function () { return false; }, dv.dem);
+      if (!kq.xong) return { xong: false, daLam: kq.daLam };
+      SpreadsheetApp.flush();
+      kiemCongThucVuaGhiTM_(ctx.ssMoi, dv.thaoTac, dv.nhan);   // YC-44: #ERROR! là dừng ở ĐÚNG phần này, cờ chưa nhích
+      return { xong: true, soLanThu: lan };
+    } catch (e) {
+      if (dv.khongLapLai || !laLoiGoogleQuaTai_(e)) throw e;
+      lan++;
+      if (lan > TM_SO_LAN_THU_LAI) throw loiQuaTaiTM_(e, dv.nhan, lan - 1, ctx.daXong, false);
+      var cho = TM_CHO_THU_LAI_GIAY[Math.min(lan - 1, TM_CHO_THU_LAI_GIAY.length - 1)];
+      if (!ctx.conGio(cho)) {
+        if (!canhGio) throw loiQuaTaiTM_(e, dv.nhan, lan - 1, ctx.daXong, true);
+        ctx.thongBao.push(dv.nhan + ' — Google ngắt lệnh (' + cheIdTrongCauTM_(e.message) + '), lượt này không còn đủ giờ để chờ ' + cho +
+          ' giây → dừng gọn, lượt sau làm tiếp phần này từ ảnh chụp mới.');
+        return { xong: false, daLam: 0, ngatLenh: true };
+      }
+      ctx.thongBao.push(dv.nhan + ' — Google ngắt lệnh (' + cheIdTrongCauTM_(e.message) + ') → chờ ' + cho + ' giây rồi làm lại (lần ' +
+        (lan + 1) + '/' + (TM_SO_LAN_THU_LAI + 1) + '), thao tác tính lại từ ảnh chụp mới của sheet — không lặp lại mù lệnh vừa hỏng.');
+      Utilities.sleep(cho * 1000);
+    }
+  }
+}
+
+/** Một lệnh CHỈ ĐỌC (B8 chụp lại cả sổ) với thử lại khi Google quá tải; hết lần / hết giờ → câu quá tải. */
+function thuLaiDocTM_(ctx, nhan, lam) {
+  var lan = 0;
+  while (true) {
+    try { return lam(); } catch (e) {
+      if (!laLoiGoogleQuaTai_(e)) throw e;
+      lan++;
+      var cho = TM_CHO_THU_LAI_GIAY[Math.min(lan - 1, TM_CHO_THU_LAI_GIAY.length - 1)];
+      if (lan > TM_SO_LAN_THU_LAI || !ctx.conGio(cho)) throw loiQuaTaiTM_(e, nhan, lan - 1, ctx.daXong, lan <= TM_SO_LAN_THU_LAI);
+      ctx.thongBao.push(nhan + ' — Google ngắt lệnh đọc (' + cheIdTrongCauTM_(e.message) + ') → chờ ' + cho + ' giây rồi đọc lại (lần ' +
+        (lan + 1) + '/' + (TM_SO_LAN_THU_LAI + 1) + ').');
+      Utilities.sleep(cho * 1000);
+    }
   }
 }
 
@@ -2325,10 +2594,10 @@ function docCoTM_(ss, dong) {
  * → bản sao đã hỏng (điểm 4): chèn cột không chạy lại được, không để người bấm lại vô ích.
  */
 function loiGiuaChungTM_(err, buoc, co) {
-  var goc = String(err && err.message ? err.message : err);
+  var goc = cheIdTrongCauTM_(err && err.message ? err.message : err);   // INV-7: câu Google có thể mang ID file
   var viec = co === 'B5_DANG_LAM'
     ? TaoThangMoi.CAU_BAN_SAO_HONG
-    : 'Bấm lại nút 3 chế độ 1 với đúng bảy giá trị — tool chạy tiếp từ sau bước ' + (co || '(chưa bước nào)') +
+    : 'Bấm lại nút 3 chế độ 1 với đúng bảy giá trị — tool chạy tiếp từ ' + cauTiepTuTM_(co) +
       '. Lỗi lặp lại ở đúng bước này thì chụp màn hình gửi người phụ trách; link_thang chưa được khai.';
   var e = new Error('Google báo lỗi giữa chừng ở bước ' + buoc + ' (cờ BUOC_DA_XONG đang là ' + (co || '(trống)') + '): ' +
     goc + ' → Việc phải làm: ' + viec);
@@ -2336,12 +2605,16 @@ function loiGiuaChungTM_(err, buoc, co) {
   return e;
 }
 
-function traDoTM_(kyMoi, daXong, batDau, nguong, buocKe, canhBao, thongBao) {
+/**
+ * Dừng gọn trước phần việc `buocKe` (`B4`… hay `B3:<tên sheet>` — YC-62): máy gửi lại đúng chuỗi này trong `buocDungTruoc`, lượt sau ép
+ * chạy phần đó tới cùng. `ngatLenh`: dừng vì Google ngắt lệnh mà lượt này không còn giờ để chờ thử lại (không phải vì chạm ngưỡng).
+ */
+function traDoTM_(kyMoi, daXong, batDau, nguong, buocKe, canhBao, thongBao, ngatLenh) {
   var giay = Math.round((new Date().getTime() - batDau) / 1000);
-  var cau = 'Dừng gọn ở ' + giay + ' giây (ngưỡng ' + nguong + ') trước bước ' + buocKe +
-    ' — phần đã làm giữ nguyên, gọi lại để làm tiếp.';
+  var cau = (ngatLenh ? 'Google ngắt lệnh, lượt này không còn đủ giờ để chờ thử lại — dừng gọn ở ' : 'Dừng gọn ở ') + giay +
+    ' giây (ngưỡng ' + nguong + ') trước bước ' + buocKe + ' — phần đã làm giữ nguyên, gọi lại để làm tiếp.';
   thongBao.push(cau);
-  return { ok: true, hanhDong: 'taoThangMoi', thang: kyMoi, xong: false, buocDaXong: daXong, buocKe: buocKe,
+  return { ok: true, hanhDong: 'taoThangMoi', thang: kyMoi, xong: false, buocDaXong: daXong, buocKe: buocKe, ngatLenh: !!ngatLenh,
     canhBao: canhBao, nhatKy: thongBao, thongBao: cau, giay: giay };
 }
 
@@ -2560,6 +2833,6 @@ function chayBoTest() {
   return 'Tổng ' + kq.length + ' · hỏng ' + hong.length;
 }
 
-var VAN_TAY_SHELL = '0a118f5d';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_SHELL = '5d0884f8';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
 
-var BAN_DUNG = '5e3db275c5bd';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay
+var BAN_DUNG = '9ddd11b2134d';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay
