@@ -1553,6 +1553,44 @@ function lechCongThuc2000(ssMoi) {
     }, 'mốc xóa dòng theo bất kỳ cột nào thay vì cột khóa (chỉ ở lượt bấm lại)');
   });
 
+  await test('TM-W-44', 'YC-62 (c) ngoài B3 — phương án A (BA mục 3): Google ngắt lệnh xóa dòng ở B4 `Tổng nhập` → chờ 5 giây, tính lại thao tác, làm lại, 8/8; ' +
+    'nhật ký ghi B4 đã thử lại; Tổng nhập xóa dòng đúng một lần', async () => {
+    const bom = (ssMoi, ssCu, sim) => sim.datLoi({ quaHan: { kieu: 'xoaDong', sheet: 'Tổng nhập', lan: [1] } });
+    const x = await kichBan({ vo: bom });
+    dung(x.kq.ok === true && (x.kq.kiem || []).every((p) => p.dat), 'phải 8/8: ' + JSON.stringify(x.kq).slice(0, 300));
+    bang(x.sim.soLanBomQuaHan, 1, 'giả lập ném đúng một lần ở Tổng nhập');
+    bang(x.sim.cacLanNgu, [5000], 'chờ 5 giây một lần');
+    dung((x.kq.nhatKy || []).some((s) => /^B4 · .*Google ngắt lệnh .*chờ 5 giây rồi làm lại [(]lần 2[/]4[)]/.test(s)), 'dòng ngắt lệnh ở B4: ' + JSON.stringify(x.kq.nhatKy).slice(0, 500));
+    dung((x.kq.nhatKy || []).some((s) => /^B4 · .*đã thử lại 1 lần[)] — xong$/.test(s)), 'dòng B4 xong phải ghi đã thử lại 1 lần: ' + JSON.stringify(x.kq.nhatKy).slice(0, 500));
+    bang(x.sim.nhatKyGhi.filter((g) => g.kieu === 'xoaDong' && g.sheet === 'Tổng nhập').length, 1, 'Tổng nhập xóa dòng đúng một lần (lần đầu bị ném trước khi xóa)');
+    bang(soOKhac(chupBoCo(A.ssMoi), chupBoCo(x.ssMoi)), 0, 'khác bản chạy một hơi');
+    return 'B4 ngắt 1 lần → chờ 5 giây → tính lại → 8/8 · ' + await doiChungAm(async () => {
+      // Phương án B (thu thử lại về đúng B3): B4 không được thử lại → chết NGOAI_LE giữa chừng.
+      const z = await kichBan({ vo: bom, suaNguon: sua("      if (dv.khongLapLai || !laLoiGoogleQuaTai_(e)) throw e;", "      if (dv.khongLapLai || dv.ma !== 'B3' || !laLoiGoogleQuaTai_(e)) throw e;") });
+      return z.kq.ok ? [] : ['thu thử lại về B3: B4 chết ' + z.kq.loi];
+    }, 'thử lại chỉ áp cho B3 (phương án B)');
+  });
+
+  await test('TM-W-45', 'YC-62 (c) ngoài B3 — phương án A (BA mục 3): Google ngắt lệnh ĐỌC cả sổ ở B8 (tự kiểm) → chờ rồi đọc lại, 8/8, cờ DA_KHOI_TAO; ' +
+    'ngắt cả 4 lần → GOOGLE_QUA_TAI nói chạy tiếp từ sau bước B7, cờ B7 giữ, chưa đánh dấu hoàn tất', async () => {
+    // getValues của `Tổng tồn kho`: #1 chụp tháng cũ, #2 chụp vỏ tháng mới (B2), #3 chụp lại ở B8 — giữa chừng không bước nào đọc sheet này.
+    const bom = (lan) => (ssMoi, ssCu, sim) => sim.datLoi({ quaHan: { kieu: 'docGiaTri', sheet: 'Tổng tồn kho', lan } });
+    const x = await kichBan({ vo: bom([3]) });
+    dung(x.kq.ok === true && (x.kq.kiem || []).every((p) => p.dat), 'phải 8/8: ' + JSON.stringify(x.kq).slice(0, 300));
+    bang(x.sim.soLanBomQuaHan, 1, 'ném đúng một lần ở B8');
+    dung((x.kq.nhatKy || []).some((s) => /^B8 · Tám phép tự kiểm — Google ngắt lệnh đọc .*chờ 5 giây rồi đọc lại [(]lần 2[/]4[)]/.test(s)), 'dòng ngắt lệnh đọc ở B8: ' + JSON.stringify(x.kq.nhatKy).slice(-400));
+    dung(/^DA_KHOI_TAO_/.test(String(coTM(x.ssMoi, 1))), 'cờ DA_KHOI_TAO sau khi đọc lại đạt');
+    const y = await kichBan({ vo: bom([3, 4, 5, 6]) });
+    const tb = String(y.kq.thongBao || '');
+    dung(y.kq.ok === false && y.kq.loi === 'GOOGLE_QUA_TAI' && /ở B8 · Tám phép tự kiểm/.test(tb) && /đã thử lại 3 lần/.test(tb) && /chạy tiếp từ sau bước B7/.test(tb), 'hết 4 lần ở B8: ' + tb.slice(0, 300));
+    bang(coTM(y.ssMoi, 5), 'B7', 'cờ B7 giữ nguyên — bấm lại chỉ chạy tự kiểm');
+    dung(!/^DA_KHOI_TAO_/.test(String(coTM(y.ssMoi, 1))), 'chưa được đánh dấu hoàn tất');
+    return 'B8 ngắt 1 lần → đọc lại → 8/8 · ngắt 4 lần → GOOGLE_QUA_TAI, cờ B7 · ' + await doiChungAm(async () => {
+      const z = await kichBan({ vo: bom([3]), suaNguon: sua('    var anhSau = thuLaiDocTM_(ctx, buocDangLam, function () { return chupFileThangMoi_(ssMoi); });', '    var anhSau = chupFileThangMoi_(ssMoi);') });
+      return z.kq.ok ? [] : ['B8 không thử lại: ' + z.kq.loi];
+    }, 'bỏ thử lại ở lệnh đọc B8 (phương án B)');
+  });
+
   RAC_MAY.forEach((d) => { try { fs.rmSync(d, { recursive: true, force: true }); } catch (e) { /* thư mục tạm */ } });
 
   console.log('\n=== ' + soDat + ' ĐẠT · ' + soHong + ' HỎNG · tổng ' + (soDat + soHong) + ' ===');

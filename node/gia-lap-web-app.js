@@ -80,16 +80,18 @@ function khoaO(r, c) { return r + ':' + c; }
 
 /**
  * YC-62: bơm "Google ngắt lệnh" vào một lệnh Bảng tính giả. Bài test đặt `sim.loi.quaHan = { kieu, lan: […], sauKhiLam?, cau?: 'vi' }`:
- *   · `kieu`      lệnh nào — 'xoaDong' · 'boGop' · 'docCongThuc' · 'congThuc' · 'giaTri' · 'flush' · '*' (mọi lệnh có móc)
+ *   · `kieu`      lệnh nào — 'xoaDong' · 'boGop' · 'docCongThuc' · 'docGiaTri' · 'congThuc' · 'giaTri' · 'flush' · '*' (mọi lệnh có móc)
+ *   · `sheet`     (tùy chọn) chỉ lệnh trên đúng sheet này mới được đếm và ném
  *   · `lan`       số thứ tự (1, 2, …) của các lần gọi lệnh đó sẽ bị ném — các lần khác chạy bình thường
  *   · `sauKhiLam` làm xong lệnh RỒI mới ném — đúng ca nguy hiểm BA nêu: Google ĐÃ xóa dòng xong mới báo quá hạn
  *   · `cau`       'vi' → câu tiếng Việt của Google (sổ đặt ngôn ngữ Việt); mặc định câu tiếng Anh
  * Câu ném mang ID THẬT của sổ giả, như Google — mã mà để lọt ra câu báo thì bài INV-7 bắt được.
  */
-function bomQuaHan(ss, kieu, lamTruoc) {
+function bomQuaHan(ss, kieu, lamTruoc, tenSheet) {
   const sim = ss && ss.sim;
   const q = sim && sim.loi && sim.loi.quaHan;
   if (!q || (q.kieu !== kieu && q.kieu !== '*')) return;
+  if (q.sheet && q.sheet !== tenSheet) return;        // `sheet`: chỉ đếm/ném lệnh của đúng sheet đó (B4 `Tổng nhập`, B8 `Tổng tồn kho`…)
   q.dem = (q.dem || 0) + 1;
   if (!(q.lan || []).some((x) => x === q.dem)) return;
   if (q.sauKhiLam && lamTruoc) lamTruoc();
@@ -181,7 +183,7 @@ class SheetGia {
     const max = this.getMaxRows();
     if (r < 1 || n < 1 || r + n - 1 > max) throw new Error('deleteRows ngoài lưới: ' + r + '+' + n + ' > ' + max);
     // YC-62: bơm "Google ngắt lệnh" — `sauKhiLam` dựng đúng ca nguy hiểm: Google ĐÃ xóa dòng xong rồi mới báo quá hạn.
-    bomQuaHan(this.ss, 'xoaDong', () => this._xoaDongThat(r, n));
+    bomQuaHan(this.ss, 'xoaDong', () => this._xoaDongThat(r, n), this.ten);
     this._xoaDongThat(r, n);
     return this;
   }
@@ -257,6 +259,7 @@ class VungGia {
   getA1Notation() { return this.sh.ten + '!' + this.r + ':' + this.c + '+' + this.nr + 'x' + this.nc; }
 
   getValues() {
+    bomQuaHan(this.sh.ss, 'docGiaTri', null, this.sh.ten);   // YC-62: B8 chụp lại cả sổ cũng là lệnh Google ngắt được
     this._ghiNhatDoc();
     const out = [];
     this._duyet((r, c, i, j) => {
@@ -313,7 +316,7 @@ class VungGia {
       throw new Error('Bạn không thể bỏ hợp nhất khi vùng chọn giao một phần với một ô hợp nhất. (giả lập: ' + this.getA1Notation() +
         ' cắt ' + catMotPhan.length + ' cụm, vd ' + JSON.stringify(catMotPhan[0]) + ')');
     }
-    bomQuaHan(this.sh.ss, 'boGop');
+    bomQuaHan(this.sh.ss, 'boGop', null, this.sh.ten);
     this._ghiNhat('boGop');
     this.sh.gopO = this.sh.gopO.filter((g) => g.r2 < this.r || g.r1 > r2 || g.c2 < this.c || g.c1 > c2);
     return this;
@@ -359,7 +362,7 @@ class VungGia {
 
   getFormulaR1C1() { return this.sh.congThuc[khoaO(this.r, this.c)] || ''; }
   getFormulasR1C1() {
-    bomQuaHan(this.sh.ss, 'docCongThuc');
+    bomQuaHan(this.sh.ss, 'docCongThuc', null, this.sh.ten);
     this._ghiNhatDoc();
     const out = [];
     this._duyet((r, c, i, j) => { if (!out[i]) out[i] = []; out[i][j] = this.sh.congThuc[khoaO(r, c)] || ''; });
@@ -368,7 +371,7 @@ class VungGia {
 
   setValues(bang) {
     if (!Array.isArray(bang) || bang.length !== this.nr) throw new Error('setValues: số dòng không khớp vùng');
-    bomQuaHan(this.sh.ss, 'giaTri');
+    bomQuaHan(this.sh.ss, 'giaTri', null, this.sh.ten);
     this._ghiNhat('giaTri');
     this._duyet((r, c, i, j) => {
       const v = bang[i][j];
@@ -408,7 +411,7 @@ class VungGia {
     if (!Array.isArray(b) || b.length !== this.nr || b.some((h) => !Array.isArray(h) || h.length !== this.nc)) {
       throw new Error('setFormulasR1C1: cỡ bảng không khớp vùng ' + this.getA1Notation());
     }
-    bomQuaHan(this.sh.ss, 'congThuc');
+    bomQuaHan(this.sh.ss, 'congThuc', null, this.sh.ten);
     this._ghiNhat('congThuc');
     this._duyet((r, c, i, j) => {
       this.sh.congThuc[khoaO(r, c)] = b[i][j];

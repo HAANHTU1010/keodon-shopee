@@ -29,7 +29,7 @@
 const gl = require('./gia-lap-web-app');
 
 const {
-  WebAppGoogleSheet, TOI_DA_DON_MOT_LO, SO_LAN_GOI_TIEP_TOI_DA, PHIEN_BAN
+  WebAppGoogleSheet, TOI_DA_DON_MOT_LO, SO_LAN_GOI_TIEP_TOI_DA, PHIEN_BAN, thangHienTaiMay
 } = require('./gsheet-web-app');
 
 // Trong Apps Script mọi file .gs dùng chung một phạm vi toàn cục, nên `ShellAppsScript.gs` gọi thẳng
@@ -648,24 +648,28 @@ async function chay() {
   // rơi vào `JSON.parse` hỏng nên in "Web App trả về không phải JSON"; ca Web App mở không được file thì
   // in nguyên câu của Apps Script. Người vận hành đọc ba câu đó không ai đoán ra là phải đi chia sẻ file.
   {
-    const CAU = 'LỖI QUYỀN TRUY CẬP — kiểm tra: (1) Web App đã Deploy bản mới, Who has access = Anyone; ' +
-      '(2) file Google Sheet tháng 2026-09 phải do tài khoản đã deploy Web App sở hữu hoặc được chia sẻ ' +
+    // Tháng trong câu = tháng của GÓI đang gửi (`thang` trong thân POST). Hai ca 403 / trang đăng nhập nổ ngay ở lượt `ping` chốt phiên
+    // bản — gói `ping` không mang tháng nên máy in tháng theo NGÀY CHẠY (`thangHienTaiMay`, đúng luật của `thangGoi`); ca Web App không
+    // mở được file mới tới gói `ghi('2026-09')`. Tới 12/10 bài này ghim cứng "2026-09" cho cả ba ca nên đạt suốt tháng 9 rồi hỏng từ 1/10
+    // theo lịch (YC-62 mục 7 — BA chọn (a): sửa bài test theo tháng của gói, không sửa câu).
+    const CAU = (thang) => 'LỖI QUYỀN TRUY CẬP — kiểm tra: (1) Web App đã Deploy bản mới, Who has access = Anyone; ' +
+      '(2) file Google Sheet tháng ' + thang + ' phải do tài khoản đã deploy Web App sở hữu hoặc được chia sẻ ' +
       'quyền Chỉnh sửa.';
 
     console.log('\n--- YC-30 (D-46): ba ca quyền truy cập gom về một câu ---');
 
     await test('T-WA-27 ba ca (403 · trang đăng nhập HTML · Web App báo không mở được file) → ĐÚNG MỘT CÂU', async () => {
       const ca = [
-        ['HTTP 403', { ma403: true }, 403],
-        ['trang đăng nhập HTML (mã 200)', { htmlDangNhap: true }, 200],
-        ['Web App trả NGOAI_LE không mở được file', { loiMoFile: 'You do not have permission to access the requested document.' }, 200]
+        ['HTTP 403', { ma403: true }, 403, thangHienTaiMay()],
+        ['trang đăng nhập HTML (mã 200)', { htmlDangNhap: true }, 200, thangHienTaiMay()],
+        ['Web App trả NGOAI_LE không mở được file', { loiMoFile: 'You do not have permission to access the requested document.' }, 200, '2026-09']
       ];
       const thu = [];
-      for (const [ten, co, maHttp] of ca) {
+      for (const [ten, co, maHttp, thangMong] of ca) {
         const b2 = dungBoi();
         b2.sim.datLoi(co);
         const cau = await batLoi(() => b2.tao().ghi('2026-09', lenhMau(2)), ten);
-        dung(cau.indexOf(CAU) === 0, ten + ': câu phải MỞ ĐẦU đúng nguyên văn D-46, nhận: ' + cau.slice(0, 200));
+        dung(cau.indexOf(CAU(thangMong)) === 0, ten + ': câu phải MỞ ĐẦU đúng nguyên văn D-46 (tháng ' + thangMong + '), nhận: ' + cau.slice(0, 200));
         dung(cau.indexOf('Chi tiết') > 0, ten + ': phải có dòng chi tiết để người sửa còn manh mối');
         if (maHttp !== 200) {
           dung(cau.indexOf('HTTP ' + maHttp) > 0, ten + ': dòng chi tiết phải ghi mã HTTP thật, nhận: ' + cau);
