@@ -451,7 +451,7 @@ const HONG_2301 = { chuyenHuongCho: 'taothangmoi', soNac: 2, cuoi: 'khongLocatio
     dung(r2.e.message.indexOf('cờ BUOC_DA_XONG = ' + b2) > 0 && r2.e.message.indexOf('chạy tiếp từ sau ' + b2) > 0, 'b2 câu phải nêu cờ thật ' + b2 + ': ' + r2.e.message);
     X2.sim.datBuocDongHo(300);
     const lai = await taoMay(X2, gw, { nguongGiay: 20 });
-    dung(lai.kq && lai.kq.ok === true && lai.kq.kiem.length === 8 && lai.kq.kiem.every((p) => p.dat), 'bấm lại phải xong 8/8: ' + JSON.stringify(lai.kq || String(lai.e)).slice(0, 200));
+    dung(lai.kq && lai.kq.ok === true && lai.kq.kiem.length === 11 && lai.kq.kiem.every((p) => p.dat), 'bấm lại phải xong 11/11 (YC-63: K-1…K-11): ' + JSON.stringify(lai.kq || String(lai.e)).slice(0, 200));
     X2.sim.thaoGo();
     return 'b1 → DA_CHAY_XONG (' + co1 + ') · b2 → DUNG_GIUA_CHUNG ở ' + b2 + ', bấm lại ' + lai.kq.soLuot + ' lượt → 8/8';
   });

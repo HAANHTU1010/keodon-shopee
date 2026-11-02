@@ -442,7 +442,12 @@ function tinhCongThucDon(text, sheetNay, layO) {
     const ten = sh || sheetNay;
     let tong = 0;
     for (let r = Math.min(a.r, b.r); r <= Math.max(a.r, b.r); r++) {
-      for (let c = Math.min(a.c, b.c); c <= Math.max(a.c, b.c); c++) tong += soCua(layO(ten, r, c));
+      for (let c = Math.min(a.c, b.c); c <= Math.max(a.c, b.c); c++) {
+        const v = layO(ten, r, c);
+        // YC-63: như Google — ô được tham chiếu đang lỗi (#REF!, #N/A…) thì cả công thức ra lỗi đó (K-6 phải thấy được).
+        if (laLoiO(v)) throw { loiO: String(v).trim() };
+        tong += soCua(v);
+      }
     }
     return tong;
   }
@@ -490,9 +495,15 @@ function tinhCongThucDon(text, sheetNay, layO) {
     const v = bieuThuc();
     boTrang();
     return i === src.length ? v : null;
-  } catch (e) { return null; }
+  } catch (e) { return e && e.loiO ? e.loiO : null; }
 }
+function laLoiO(v) { return typeof v === 'string' && /^#(REF!|N\/A|VALUE!|DIV\/0!|NAME\?|NUM!|NULL!|ERROR!)$/.test(v.trim()); }
 const GIAN_HANG = ['Shopee mall', 'Offood', 'Importmart', 'Babyiu'];
+const S_TX = 'Tổng xuất', S_TCB = 'THU CHI B';
+/** `SUMIF(S!$X$a:$X$b;<mã>;S!$Y$c:$Y$d)` — dấu `;` hay `,`. Nhóm: 1 sheet, 2 cột tiêu chí, 3/4 dòng, 5 sheet, 6 cột tổng, 7/8 dòng. */
+const RE_SUMIF_TINH = /^\s*SUMIF\(\s*('(?:[^']|'')+'|[^\s!'(),;:$]+)!\$?([A-Z]{1,3})\$?(\d+):\$?[A-Z]{1,3}\$?(\d+)\s*[;,][^;,()]+[;,]\s*('(?:[^']|'')+'|[^\s!'(),;:$]+)!\$?([A-Z]{1,3})\$?(\d+):\$?[A-Z]{1,3}\$?(\d+)\s*\)\s*$/i;
+/** `SUMPRODUCT(($B$n:$B$m=K3)*($F$n:$G$m))` — ô tổng chi phí tháng dòng 4 của `THU CHI B` (đo sổ T10 thật). */
+const RE_SUMPRODUCT_TCB = /^SUMPRODUCT\(\(\$([A-Z]{1,3})\$(\d+):\$[A-Z]{1,3}\$(\d+)=\$?([A-Z]{1,3})\$?(\d+)\)\*\(\$([A-Z]{1,3})\$(\d+):\$([A-Z]{1,3})\$(\d+)\)\)$/i;
 
 function soCua(v) {
   if (typeof v === 'number') return isNaN(v) ? 0 : v;
@@ -570,13 +581,24 @@ function tinhLai(anh, lop) {
   let dnL = 0, dnM = 0;
   if (sDN) {
     const n = Math.max(sDN.soDong || 0, sDN.giaTri.length);
+    // YC-63: I, L, M có thể là CÔNG THỨC từng dòng (`=I-J` kéo sẵn, hay công thức hằng số tool gieo nhầm — sự cố 2/11: I = 1.945.000 ×
+    // 2.000 dòng, K-7 = 7,78 tỷ). Ảnh chụp có nguyên văn công thức thì tính như Google, mọi dòng 4→cuối (SUM(L4:L…) cộng cả dòng không có tên).
+    const cI = chiSoCot(T.DON_NGOAI.cotTienSP), cL = chiSoCot(T.DON_NGOAI.cotPhuong), cM = chiSoCot(T.DON_NGOAI.cotOanh);
+    const ctDN = (r, c) => { const f = (sDN.congThuc[r - 1] || [])[c - 1]; return f && f !== '(công thức)' ? f : null; };
+    const tinhO = (r, c, oI) => {
+      const f = ctDN(r, c);
+      if (!f) return soCua(val(sDN, r, c));
+      const v = tinhCongThucDon(f, S_DN, (ten, rr, cc) => (ten === S_DN && rr === r && cc === cI ? oI : (ten === S_DN ? val(sDN, rr, cc) : 0)));
+      return typeof v === 'number' ? v : 0;
+    };
     for (let r = 4; r <= n; r++) {
       const ten2 = val(sDN, r, chiSoCot(T.DON_NGOAI.cotTenVietTat));
+      const oI = tinhO(r, cI, null);
+      dnL += tinhO(r, cL, oI);
+      dnM += tinhO(r, cM, oI);
       if (U.laRong(ten2)) continue;
       const m = theoTen[U.chuanHoaChuoi(ten2)];
       if (m) xuat[U.chuanHoaChuoi(m.maHang)] = (xuat[U.chuanHoaChuoi(m.maHang)] || 0) + soCua(val(sDN, r, chiSoCot(T.DON_NGOAI.cotSoLuong)));
-      dnL += soCua(val(sDN, r, chiSoCot(T.DON_NGOAI.cotPhuong)));
-      dnM += soCua(val(sDN, r, chiSoCot(T.DON_NGOAI.cotOanh)));
     }
     dat(S_DN, 3, chiSoCot('L'), dnL);
     dat(S_DN, 3, chiSoCot('M'), dnM);
@@ -603,6 +625,43 @@ function tinhLai(anh, lop) {
     dat(S_NHAP, 2, chiSoCot('I'), I2);
   }
 
+  // 4b) YC-63: `Tổng xuất` mang công thức SUMIF (ảnh chụp có NGUYÊN VĂN công thức) → lượng xuất tính THEO ĐÚNG VÙNG của từng ô, như Google:
+  //     vùng bị co thì đơn nằm dưới đáy vùng KHÔNG được trừ tồn (thiếu thầm), ô `#REF!` thì lỗi lan tới `Tổng tồn kho`!K1 → `Lợi nhuận`
+  //     D6/D8. Tới 2.8.2 bộ tính gom thẳng từ sheet gian hàng nên co vùng / #REF! không bao giờ lộ ra ở K-6. Không có công thức đọc được
+  //     (vỏ Excel cũ, ảnh chụp chỉ đánh dấu "(công thức)") → giữ cách gom ở bước 2–3.
+  const sTX = ss(S_TX);
+  let loiTX = null;
+  if (sTX) {
+    const xuatTX = {};
+    let soCT = 0;
+    const n = Math.min(Math.max(sTX.soDong || 0, sTX.congThuc.length), 2000);
+    const khoaCua = (ten) => (U.chuanHoaChuoi(ten) === U.chuanHoaChuoi(S_DN) ? T.DON_NGOAI.cotTenVietTat : 'D');
+    for (let r = 4; r <= n; r++) {
+      const ma = U.chuanHoaChuoi(val(sTX, r, chiSoCot('E')) != null ? val(sTX, r, chiSoCot('E')) : gt(sTX, r, chiSoCot('E')));
+      for (const ch of T.COT_TONG_XUAT) {
+        const f = (sTX.congThuc[r - 1] || [])[chiSoCot(ch) - 1];
+        if (!f || f === '(công thức)') continue;
+        if (/#REF!/i.test(f)) { loiTX = '#REF!'; soCT++; continue; }
+        const m = RE_SUMIF_TINH.exec(f);
+        if (!m) continue;
+        soCT++;
+        const ten = m[1].charAt(0) === "'" ? m[1].slice(1, -1).replace(/''/g, "'") : m[1];
+        const sG = ss(Object.keys(anh.sheets).filter(t => U.chuanHoaChuoi(t) === U.chuanHoaChuoi(ten))[0]);
+        if (!sG || !ma) continue;
+        const cKhoa = chiSoCot(khoaCua(ten)), cTong = chiSoCot(m[6]), a = +m[3], b = +m[4], lech = +m[7] - a;
+        let tong = 0;
+        for (let i = a; i <= b; i++) {
+          const ten2 = val(sG, i, cKhoa);
+          if (U.laRong(ten2)) continue;
+          const sp = theoTen[U.chuanHoaChuoi(ten2)];
+          if (sp && U.chuanHoaChuoi(sp.maHang) === ma) tong += soCua(val(sG, i + lech, cTong));
+        }
+        xuatTX[ma] = (xuatTX[ma] || 0) + tong;
+      }
+    }
+    if (soCT) Object.keys(xuat).concat(Object.keys(xuatTX)).forEach(k => { xuat[k] = xuatTX[k] || 0; });
+  }
+
   // 5) `Tổng tồn kho`: I = SUMIF(Tổng nhập), J = SUMIF(Tổng xuất), H = I−J, K = H×G, K1 = ΣK.
   let K1 = 0;
   dm.ds.forEach(m => {
@@ -614,7 +673,27 @@ function tinhLai(anh, lop) {
     dat(S_TON, m.dong, chiSoCot('K'), K);
     K1 += K;
   });
-  dat(S_TON, 1, chiSoCot('K'), K1);
+  dat(S_TON, 1, chiSoCot('K'), loiTX || K1);
+
+  // 6b) YC-63: `THU CHI B` dòng 4 — `SUMPRODUCT(($B$n:$B$m=K3)*($F$n:$G$m))` theo ĐÚNG dòng bắt đầu đang nằm trong công thức (K-10).
+  const sTCB = ss(S_TCB);
+  if (sTCB) {
+    const h4 = sTCB.congThuc[3] || [];
+    for (let c = 1; c <= h4.length; c++) {
+      const f = h4[c - 1];
+      if (!f || f === '(công thức)') continue;
+      const m = RE_SUMPRODUCT_TCB.exec(String(f).replace(/\s/g, ''));
+      if (!m) continue;
+      const tieuChi = String(val(sTCB, +m[5], chiSoCot(m[4])) == null ? '' : val(sTCB, +m[5], chiSoCot(m[4]))).trim().toLowerCase();
+      const cTC = chiSoCot(m[1]), a = +m[2], b = +m[3], lech = +m[7] - a, c1 = chiSoCot(m[6]), c2 = chiSoCot(m[8]);
+      let tong = 0;
+      for (let r = a; r <= b; r++) {
+        if (String(val(sTCB, r, cTC) == null ? '' : val(sTCB, r, cTC)).trim().toLowerCase() !== tieuChi) continue;
+        for (let cc = c1; cc <= c2; cc++) tong += soCua(val(sTCB, r + lech, cc));
+      }
+      dat(S_TCB, 4, c, tong);
+    }
+  }
 
   // 6) `Chi Phí Hàng Ngày` (khuôn tháng 9): E2.. = SUMIF(B3:B…, tiêu đề dòng 1, D3:D…).
   const sCP = ss(S_CP);

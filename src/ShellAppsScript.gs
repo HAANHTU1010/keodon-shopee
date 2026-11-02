@@ -60,7 +60,7 @@
  * Số bản của vỏ Google — bằng `PHIEN_BAN` trong `node/gsheet-web-app.js` và `version` của package.json khi phát hành.
  * Mọi phản hồi đã qua cửa bí mật kèm bản thật này ở trường `banWebApp`.
  */
-var PHIEN_BAN = '2.8.2';
+var PHIEN_BAN = '2.8.3';
 
 /**
  * YC-42: bản MÁY thấp nhất Web App này còn phục vụ gói ghi (`ghi`, `xuLy`, `taoThangMoi`). Dưới mốc → từ chối
@@ -1865,14 +1865,14 @@ function hanhDongXuLy_(body, batDau) {
 //
 // Nút 3 chế độ 1 gọi hành động này với hai file do MÁY chỉ định (ID trong thân POST, không đọc bảng link nào):
 // file tháng CŨ (chỉ đọc) và file tháng MỚI (chủ dự án tự "Tạo bản sao", đổi tên — D-45). Mọi nghiệp vụ nằm ở
-// lõi `TaoThangMoi.gs` (`lapKeHoach` → danh sách thao tác, `tuKiem` → K-1…K-8); phần dưới đây chỉ là VỎ GOOGLE:
+// lõi `TaoThangMoi.gs` (`lapKeHoach` → danh sách thao tác, `tuKiem` → K-1…K-11); phần dưới đây chỉ là VỎ GOOGLE:
 // chụp ảnh hai file, chạy thao tác trên file mới, canh giờ, ghi cờ tiến độ, tô lại Mapping, tự kiểm.
 //
 // Ràng buộc (Phụ lục A.10) được giữ ở ĐÂY, không trông vào lõi:
 //   · vỏ không nhận file cũ để ghi — hàm thực thi chỉ cầm `ssMoi`
 //   · `TAO_SHEET` chỉ nhận `Mapping_san_pham`; tên khác là ném lỗi (INV-2)
 //   · hai ID trùng nhau → dừng trước khi mở
-//   · chỉ khi đủ 8 phép K mới ghi `DA_KHOI_TAO_`
+//   · chỉ khi đủ mọi phép K (K-1…K-11 từ 2.8.3) mới ghi `DA_KHOI_TAO_`
 
 /** Ngưỡng dừng gọn (Phụ lục A.7.3): 4 phút 30, quota Google 6 phút. */
 var TM_NGUONG_GIAY = 270;
@@ -1887,9 +1887,13 @@ var TM_LO_DONG = 200;
  */
 var TM_SO_LAN_THU_LAI = 3;
 var TM_CHO_THU_LAI_GIAY = [5, 15, 30];
-/** Sheet cần chụp ảnh — không chụp `Thông tin shop ` (INV-10), không chụp sổ chạy liên tục. */
-var TM_SHEET_CHUP = ['Tổng tồn kho', 'Tổng nhập', 'Shopee mall', 'Offood', 'Importmart', 'Babyiu', 'TikTok Shop',
-  'Tiktok', 'Đơn ngoài', 'Chi Phí Hàng Ngày', 'Lợi nhuận', 'Mapping_san_pham', 'Mapping sản phẩm'];
+/**
+ * Sheet cần chụp ảnh đủ (giá trị + công thức + ô gộp) — không chụp `Thông tin shop ` (INV-10).
+ * YC-63 (2.8.3): thêm `Tổng xuất` (ghi lại vùng SUMIF $4:$2003 sau B3, K-11) và `THU CHI B` (sổ quỹ chạy liên tục: CHỈ ĐỌC cột A để tìm
+ * dòng bắt đầu tháng mới và đọc công thức dòng 4 — tool chỉ ghi vài ô tổng chi phí ở dòng 4, không dọn ô nào).
+ */
+var TM_SHEET_CHUP = ['Tổng tồn kho', 'Tổng nhập', 'Tổng xuất', 'Shopee mall', 'Offood', 'Importmart', 'Babyiu', 'TikTok Shop',
+  'Tiktok', 'Đơn ngoài', 'Chi Phí Hàng Ngày', 'THU CHI B', 'Lợi nhuận', 'Mapping_san_pham', 'Mapping sản phẩm'];
 
 function loiTM_(ma, cau) {
   var e = new Error(cau);
@@ -1910,14 +1914,26 @@ function kyThangMoi_(thang, nam, nhan) {
  * công thức + một lượt đọc ô gộp (quota). `giaTri` = ô gõ tay (ô công thức → null); `giaTriTinh` = giá trị Google
  * đã tính. Công thức A1 bỏ dấu `=` đầu.
  */
-function chupFileThangMoi_(ss) {
+function chupFileThangMoi_(ss, docCongThucKhac) {
   var anh = { ten: ss.getName(), tenSheet: [], sheets: {} };
+  if (docCongThucKhac) anh.congThucKhac = {};
   ss.getSheets().forEach(function (sh) {
     var ten = sh.getName();
     anh.tenSheet.push(ten);
     if (TM_SHEET_CHUP.indexOf(ten) >= 0) anh.sheets[ten] = chupSheetThangMoi_(sh);
+    // YC-63 việc 2b: công thức (CHỈ công thức, một lệnh đọc) của mọi sheet còn lại của VỎ để lõi soát tham chiếu sẽ vỡ khi xóa dòng.
+    // INV-10: `Thông tin shop ` không đọc một ô nào.
+    else if (docCongThucKhac && !TaoThangMoi.laThongTinShop(ten)) anh.congThucKhac[ten] = chupCongThucTM_(sh);
   });
   return anh;
+}
+
+/** Công thức A1 (bỏ dấu `=`) của cả vùng dữ liệu một sheet; ô thường = null. */
+function chupCongThucTM_(sh) {
+  var nr = Math.max(sh.getLastRow(), 1), nc = Math.max(sh.getLastColumn(), 1);
+  return sh.getRange(1, 1, nr, nc).getFormulas().map(function (h) {
+    return h.map(function (f) { return f ? String(f).replace(/^=/, '') : null; });
+  });
 }
 
 function chupSheetThangMoi_(sh) {
@@ -2270,7 +2286,7 @@ function hanhDongTaoThangMoi_(body, batDau) {
     kiemTenFileKhopThang_(ssMoi, kyMoi, canhBao, 'tháng mới [6/7]');
 
     var anhCu = chupFileThangMoi_(ssCu);
-    var anhMoi = chupFileThangMoi_(ssMoi);
+    var anhMoi = chupFileThangMoi_(ssMoi, true);
     // KHÔNG truyền dauPhanCach: lõi dò từ chính công thức Google trả về (sổ Việt Nam dùng `;` — gán cứng `,` là #ERROR!, 14/9).
     // 2.7.2: nhãn DANG_KHOI_TAO_/DA_KHOI_TAO_ theo GIỜ VIỆT NAM dù dự án Apps Script đặt múi giờ nào (máy đọc nhãn này là giờ VN).
     // YC-62: giữ `tsKe` để khi Google ngắt lệnh, lõi tính lại thao tác với CÙNG nhãn thời điểm (cờ O1 không đổi giữa hai lần tính).
@@ -2351,8 +2367,8 @@ function hanhDongTaoThangMoi_(body, batDau) {
       }
     }
 
-    // B8: đọc lại file MỚI sau khi Google tính lại, tám phép tự kiểm. Lệnh đọc cả sổ cũng có thể bị Google ngắt → thử lại như trên.
-    buocDangLam = 'B8 · Tám phép tự kiểm';
+    // B8: đọc lại file MỚI sau khi Google tính lại, mười một phép tự kiểm. Lệnh đọc cả sổ cũng có thể bị Google ngắt → thử lại như trên.
+    buocDangLam = 'B8 · Tự kiểm K-1…K-11';
     SpreadsheetApp.flush();
     var anhSau = thuLaiDocTM_(ctx, buocDangLam, function () { return chupFileThangMoi_(ssMoi); });
     var kiem = TaoThangMoi.tuKiem(anhCu, anhSau, ke);
@@ -2360,14 +2376,24 @@ function hanhDongTaoThangMoi_(body, batDau) {
       ghiCoTM_(ssMoi, 1, 'DA_KHOI_TAO_' + ke.nhanThoiDiem);
       SpreadsheetApp.flush();
     }
+    // YC-63 — TƯƠNG THÍCH máy < 2.8.3: máy đó đếm cứng `kiem.length === 8` mới khai link. Chỉ khi ĐỦ 11/11 đạt (cờ DA_KHOI_TAO đã ghi ở trên)
+    // mới trả mảng 8 phép gốc cho máy cũ, ba phép mới ghi vào nhật ký; lệch bất kỳ phép nào thì trả đủ như mọi máy — máy cũ vẫn từ chối khai link.
+    var banMayGui = String(body.banMay || body.phienBanMongDoi || '').trim();
+    var kiemTra = kiem.phep;
+    if (kiem.dat && /^\d+(\.\d+)+$/.test(banMayGui) && !banDuTu_(banMayGui, '2.8.3')) {
+      kiemTra = kiem.phep.filter(function (p) { return /^K-[1-8]$/.test(p.ma); });
+      thongBao.push('Tự kiểm thêm (YC-63, máy bản ' + banMayGui + ' chỉ hiện 8 phép — bấm nút 2 để thấy đủ): ' + kiem.phep.filter(function (p) {
+        return !/^K-[1-8]$/.test(p.ma);
+      }).map(function (p) { return p.ma + ' ĐẠT ' + p.chiTiet; }).join(' · '));
+    }
     // `thongBao` là MỘT câu (máy in thẳng, kể cả khi lỗi); từng bước đã làm nằm ở `nhatKy`.
     return {
       ok: kiem.dat, loi: kiem.dat ? undefined : 'TU_KIEM_LECH', hanhDong: 'taoThangMoi', thang: kyMoi, xong: true,
       buocDaXong: ctx.daXong, tenFileMoi: ssMoi.getName(), tenFileCu: ssCu.getName(),
-      kiem: kiem.phep, canhBao: canhBao, nhatKy: thongBao,
+      kiem: kiemTra, canhBao: canhBao, nhatKy: thongBao,
       thongBao: kiem.dat
-        ? 'ĐÃ KHỞI TẠO file tháng ' + kyMoi + ' — đủ 8/8 phép tự kiểm.'
-        : 'TỰ KIỂM LỆCH ' + kiem.soLech + '/8 phép — GIỮ cờ DANG_KHOI_TAO, KHÔNG đánh dấu hoàn tất: ' +
+        ? 'ĐÃ KHỞI TẠO file tháng ' + kyMoi + ' — đủ ' + kiem.phep.length + '/' + kiem.phep.length + ' phép tự kiểm.'
+        : 'TỰ KIỂM LỆCH ' + kiem.soLech + '/' + kiem.phep.length + ' phép — GIỮ cờ DANG_KHOI_TAO, KHÔNG đánh dấu hoàn tất: ' +
           kiem.phep.filter(function (p) { return !p.dat; }).map(function (p) { return p.ma + ' (' + p.chiTiet + ')'; }).join(' · ') +
           '. Báo người phụ trách kiểm file tháng mới trước khi dùng.',
       giay: (new Date().getTime() - batDau) / 1000
@@ -2833,6 +2859,6 @@ function chayBoTest() {
   return 'Tổng ' + kq.length + ' · hỏng ' + hong.length;
 }
 
-var VAN_TAY_SHELL = '5d0884f8';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_SHELL = '20e6ada9';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
 
-var BAN_DUNG = '9ddd11b2134d';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay
+var BAN_DUNG = 'ae3f08a9c672';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay

@@ -370,7 +370,7 @@ async function chayNghiemThu() {
   kq.kiem.phep.forEach(p => console.log(`| ${p.ma} | ${p.ten} | ${p.chiTiet} | ${p.dat ? 'ĐẠT' : 'LỆCH'} |`));
 
   const hong = phep.filter(p => !p.dat);
-  console.log(`\n=> ${phep.length - hong.length}/${phep.length} chỉ tiêu ĐẠT · ${kq.kiem.phep.filter(p => p.dat).length}/8 phép tự kiểm ĐẠT`);
+  console.log(`\n=> ${phep.length - hong.length}/${phep.length} chỉ tiêu ĐẠT · ${kq.kiem.phep.filter(p => p.dat).length}/${kq.kiem.phep.length} phép tự kiểm ĐẠT`);
   return { phep, hongN: hong.length, kq, demSinh, demThat, demVo };
 }
 

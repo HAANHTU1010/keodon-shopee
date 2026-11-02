@@ -46,7 +46,7 @@ const { URL } = require('url');
  * Bản của VỎ MÁY — bằng `version` trong package.json và `var PHIEN_BAN` trong `src/ShellAppsScript.gs` khi phát hành
  * (T-DT-23 canh). Gửi lên Google trong trường `banMay` của mọi gói.
  */
-const PHIEN_BAN = '2.8.2';
+const PHIEN_BAN = '2.8.3';
 
 /**
  * YC-42: bản Web App THẤP NHẤT máy này còn dùng được. Web App dưới mốc → CHẶN trước lô đầu tiên, câu nói rõ bên nào cũ và
@@ -158,7 +158,7 @@ function moTaDuongDi(ds) {
  * hành động lạ, ngoại lệ) vẫn là LỖI ném ra như mọi hành động khác.
  */
 const MA_TU_CHOI_TAO_THANG = ['DA_KHOI_TAO', 'FILE_CO_DU_LIEU', 'B5_DANG_LAM', 'TU_KIEM_LECH', 'TRUNG_FILE',
-  'THAM_SO_SAI', 'SAI_THANG_FILE', 'DANG_BAN', 'THIEU_SHEET', 'KHUON_TIKTOK_LA'];
+  'THAM_SO_SAI', 'SAI_THANG_FILE', 'DANG_BAN', 'THIEU_SHEET', 'KHUON_TIKTOK_LA', 'TONG_XUAT_LA_DANG', 'THAM_CHIEU_SE_VO'];
 
 /**
  * Việc phải làm cho từng mã của `taoThangMoi`. Viết cho người bấm nút 3, không cho người đọc mã: câu nào cũng
@@ -188,6 +188,13 @@ const GOI_Y_TAO_THANG = {
   // Đợt 4 P-9: dọn `TikTok Shop` theo khuôn đoán sai là gieo công thức vào cột của người — tool dừng khi chưa ghi gì.
   KHUON_TIKTOK_LA: ' → Tiêu đề dòng 2 của sheet `TikTok Shop` không khớp khuôn nào tool biết, nên tool KHÔNG dọn sổ này — chưa ghi ô ' +
     'nào, link_thang CHƯA được khai. Đừng tự sửa tiêu đề: chụp màn hình dòng 1–3 của sheet đó gửi người phụ trách.',
+  // YC-63 (2.8.3): hai mã KIỂM TRƯỚC khi ghi ô nào — xóa dòng ở sheet gian hàng sẽ co/làm vỡ công thức của sheet khác.
+  TONG_XUAT_LA_DANG: ' → Sheet `Tổng xuất` có ô ở cột I..N không đúng dạng SUMIF tool ghi lại được (kê ở trên). Tool CHƯA ghi ô nào, ' +
+    'link_thang CHƯA được khai. Sửa tay đúng các ô đó trên bản sao tháng mới (vùng từ dòng 4 tới dòng 2003, cùng một sheet gian hàng ' +
+    'khớp tiêu đề dòng 3), rồi bấm lại nút 3 chế độ 1 với đúng bảy giá trị.',
+  THAM_CHIEU_SE_VO: ' → Có ô công thức ở sheet khác trỏ vào vùng sẽ bị xóa khi dọn đơn tháng cũ (kê ở trên) — chạy tiếp là các ô đó ' +
+    'thành #REF!. Tool CHƯA ghi ô nào, link_thang CHƯA được khai. Sửa tay các ô đó cho vùng chạy tới dòng 2003 trên bản sao tháng mới, ' +
+    'rồi bấm lại nút 3 chế độ 1 với đúng bảy giá trị.',
   VI_PHAM_INV2: ' → Lỗi lập trình (lõi xin tạo sheet lạ) — tool đã dừng. Gửi nhật ký cho người phụ trách.',
   THAO_TAC_LA: ' → Lỗi lập trình (máy và Web App lệch bản lõi) — tool đã dừng. Gửi nhật ký cho người phụ trách.'
 };

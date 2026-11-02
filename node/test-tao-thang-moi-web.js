@@ -224,9 +224,9 @@ function lechCongThuc2000(ssMoi) {
   console.log('--- cặp A (D-45): DEMO tháng 9 khuôn mới → BẢN SAO làm tháng 10 ---');
   const A = await kichBan({});
 
-  await test('TM-W-01', 'chạy trọn: 8/8 phép K đạt, cờ DA_KHOI_TAO_, tháng 2026-10, nguồn là TÊN file (không phải ID), B7', async () => {
+  await test('TM-W-01', 'chạy trọn: 11/11 phép K đạt (K-9…K-11 từ YC-63), cờ DA_KHOI_TAO_, tháng 2026-10, nguồn là TÊN file (không phải ID), B7', async () => {
     dung(A.kq.ok === true && A.kq.xong === true, 'phải xong: ' + JSON.stringify(A.kq).slice(0, 400));
-    bang((A.kq.kiem || []).filter((p) => p.dat).length, 8, '8 phép K');
+    bang((A.kq.kiem || []).filter((p) => p.dat).length, 11, '11 phép K (YC-63: thêm K-9…K-11)');
     dung(/^DA_KHOI_TAO_2026-10-01 09:00$/.test(coTM(A.ssMoi, 1)), 'O1: ' + coTM(A.ssMoi, 1));
     bang(coTM(A.ssMoi, 2), '2026-10');
     bang(coTM(A.ssMoi, 3), MAU.T9.ten, 'NGUON_CLONE ghi TÊN file tháng cũ');
@@ -596,7 +596,11 @@ function lechCongThuc2000(ssMoi) {
   const B = await kichBan({ mau: 'T8', kyMoi: '2026-09', vo: donTay });
 
   await test('TM-W-18', 'cặp tháng 8 → 9: TM-01…TM-12 (76 dòng đầu kỳ, K-2 lệch < 1 đ, dòng 5 = 9…1, gộp D4:L4, E6:E16 cứng, 5 công thức D, 2.000 dòng công thức)', async () => {
-    dung(B.kq.ok === true, 'phải xong: ' + JSON.stringify(B.kq).slice(0, 400));
+    // YC-63: vỏ tháng 9 "dọn tay" của cặp B GIỮ công thức `=I-J` ở CẢ `Đơn ngoài`!L5:L6 lẫn M5:M6 (dòng đơn tháng 8 đã xóa giá trị)
+    // → vỏ coi đó là dòng trống, kéo cả L lẫn M tới 2003 → mỗi đơn tính doanh số hai lần. K-9 phải bắt ĐÚNG và CHỈ lỗi đó; mọi phép khác đạt.
+    const lechB = (B.kq.kiem || []).filter((p) => !p.dat);
+    dung(B.kq.xong === true && B.kq.loi === 'TU_KIEM_LECH' && lechB.length === 1 && lechB[0].ma === 'K-9' && /CÙNG mang công thức/.test(lechB[0].chiTiet),
+      'cặp B phải chạy hết các bước và CHỈ K-9 lệch (L và M cùng =I-J): ' + JSON.stringify(lechB).slice(0, 400));
     const k = {}; B.kq.kiem.forEach((p) => { k[p.ma] = p; });
     const n = B.ssMoi.getSheetByName('Tổng nhập');
     let dauKy = 0, coNgay = 0;
@@ -750,7 +754,7 @@ function lechCongThuc2000(ssMoi) {
     };
     const X = dungMay({ buocMs: 450 });
     const { kq, goiDi } = await chayMay(gw, X);
-    dung(kq.ok === true && kq.kiem.length === 8 && kq.kiem.every((p) => p.dat), 'phải xong 8/8: ' + JSON.stringify(kq).slice(0, 300));
+    dung(kq.ok === true && kq.kiem.length === 11 && kq.kiem.every((p) => p.dat), 'phải xong 11/11: ' + JSON.stringify(kq).slice(0, 300));
     const tt = goiDi.filter((g) => g.goi && g.goi.hanhDong === 'taoThangMoi');
     dung(goiDi[0].goi.hanhDong === 'ping', 'lượt đầu phải là ping chốt phiên bản');
     dung(tt.length >= 2 && kq.soLuot === tt.length, 'bước dài hơn ngưỡng phải gọi lại ≥ 2 lượt, được ' + tt.length);
@@ -807,7 +811,7 @@ function lechCongThuc2000(ssMoi) {
     dung(/^DANG_KHOI_TAO_/.test(coTM(X.ssMoi, 1)), 'O1: ' + coTM(X.ssMoi, 1));
     dung(/K-7 LỆCH/.test(r.ra) && /\[TU_KIEM_LECH\]/.test(r.ra) && /KHÔNG khai link/.test(r.ra), 'màn hình thiếu K-7 / mã / việc phải làm: ' + r.ra.slice(-400));
     return await doiChungAm(async () => {
-      const Sai = napBanSua('nut-3-thang-moi.js', [['    if (!du8) {', '    if (false) {']]);
+      const Sai = napBanSua('nut-3-thang-moi.js', [['    if (!duKiem) {', '    if (false) {']]);
       const Y = dungMay({ sauTinh });
       const t = fs.readFileSync(Y.tep);
       await bamNut3(Y, { mod: Sai });
@@ -1062,7 +1066,7 @@ function lechCongThuc2000(ssMoi) {
     };
     const x = await kichBan({ suaNguon: CHET_B4 });
     dung(x.kq.ok === false && x.kq.loi === 'NGOAI_LE', 'phải chết giữa chừng ở B4: ' + JSON.stringify(x.kq).slice(0, 160));
-    bang(coTM(x.ssMoi, 5), 'B3', 'cờ lúc chết');
+    bang(coTM(x.ssMoi, 5), 'B3b', 'cờ lúc chết (YC-63: bước ngay trước B4 nay là B3b)');
     dung(oDuLieu(x.ssMoi.getSheetByName('Shopee mall'), 4, 15).length === 0, 'B3 phải đã dọn sạch gian hàng — bài này đo đúng khoảnh khắc nguy hiểm');
     bang(chamK8(x), [], 'cột tháng cũ `Lợi nhuận` lúc chết');
     // ĐỐI CHỨNG ÂM — thứ tự 2.6.1: không có B2b, đóng băng mãi tới B5b (sau khi dọn) → chết ở B4 là mất số tháng cũ.
@@ -1199,7 +1203,7 @@ function lechCongThuc2000(ssMoi) {
     bang(hong.kq.loi, 'CONG_THUC_HONG', 'mã lỗi');
     const tb = hong.kq.thongBao || '';
     dung(/bước B4/.test(tb) && /Tổng nhập!I4 — Google đang giữ: =iferror\(H4\*G4,""\)/.test(tb) && /#ERROR!/.test(tb) && /DỪNG TẠI CHỖ/.test(tb), 'câu phải nêu B4 + ô + công thức: ' + tb.slice(0, 300));
-    bang(coTM(hong.ssMoi, 5), 'B3', 'cờ BUOC_DA_XONG dừng ở B3 (B4 chưa được đánh dấu xong)');
+    bang(coTM(hong.ssMoi, 5), 'B3b', 'cờ BUOC_DA_XONG dừng ở B3b — bước ngay trước B4 từ YC-63 (B4 chưa được đánh dấu xong)');
     bang(hong.ssMoi.getSheetByName('Lợi nhuận').getRange(5, 4).getValue(), hong.truocMoi['Lợi nhuận'].gt['5:4'], '`Lợi nhuận`!D5 chưa bị chèn cột');
     // (3) ĐỐI CHỨNG ÂM: cấy chuỗi sai + BỎ phép đọc lại → lỗi chỉ lộ ở tự kiểm cuối
     const boKiem = sua('      kiemCongThucVuaGhiTM_(ctx.ssMoi, dv.thaoTac, dv.nhan);', '');   // mốc 2.8.2: phép đọc lại nằm trong chayPhanViecTM_
@@ -1578,11 +1582,11 @@ function lechCongThuc2000(ssMoi) {
     const x = await kichBan({ vo: bom([3]) });
     dung(x.kq.ok === true && (x.kq.kiem || []).every((p) => p.dat), 'phải 8/8: ' + JSON.stringify(x.kq).slice(0, 300));
     bang(x.sim.soLanBomQuaHan, 1, 'ném đúng một lần ở B8');
-    dung((x.kq.nhatKy || []).some((s) => /^B8 · Tám phép tự kiểm — Google ngắt lệnh đọc .*chờ 5 giây rồi đọc lại [(]lần 2[/]4[)]/.test(s)), 'dòng ngắt lệnh đọc ở B8: ' + JSON.stringify(x.kq.nhatKy).slice(-400));
+    dung((x.kq.nhatKy || []).some((s) => /^B8 · Tự kiểm K-1…K-11 — Google ngắt lệnh đọc .*chờ 5 giây rồi đọc lại [(]lần 2[/]4[)]/.test(s)), 'dòng ngắt lệnh đọc ở B8: ' + JSON.stringify(x.kq.nhatKy).slice(-400));
     dung(/^DA_KHOI_TAO_/.test(String(coTM(x.ssMoi, 1))), 'cờ DA_KHOI_TAO sau khi đọc lại đạt');
     const y = await kichBan({ vo: bom([3, 4, 5, 6]) });
     const tb = String(y.kq.thongBao || '');
-    dung(y.kq.ok === false && y.kq.loi === 'GOOGLE_QUA_TAI' && /ở B8 · Tám phép tự kiểm/.test(tb) && /đã thử lại 3 lần/.test(tb) && /chạy tiếp từ sau bước B7/.test(tb), 'hết 4 lần ở B8: ' + tb.slice(0, 300));
+    dung(y.kq.ok === false && y.kq.loi === 'GOOGLE_QUA_TAI' && /ở B8 · Tự kiểm K-1…K-11/.test(tb) && /đã thử lại 3 lần/.test(tb) && /chạy tiếp từ sau bước B7/.test(tb), 'hết 4 lần ở B8: ' + tb.slice(0, 300));
     bang(coTM(y.ssMoi, 5), 'B7', 'cờ B7 giữ nguyên — bấm lại chỉ chạy tự kiểm');
     dung(!/^DA_KHOI_TAO_/.test(String(coTM(y.ssMoi, 1))), 'chưa được đánh dấu hoàn tất');
     return 'B8 ngắt 1 lần → đọc lại → 8/8 · ngắt 4 lần → GOOGLE_QUA_TAI, cờ B7 · ' + await doiChungAm(async () => {

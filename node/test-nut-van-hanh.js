@@ -1056,16 +1056,18 @@ test('N-39 nút 3 chế độ 2 GHI ĐÈ khóa đã có: JSON sau chỉ MỘT kh
     dc1 + ' · ' + dc2 + ' · ' + dc3;
 });
 
-test('N-40 nút 3 chế độ 1: chỉ khi Web App báo xong ĐỦ 8/8 phép K mới ghi link — tự kiểm lệch, từ chối, 7/8, lỗi mạng đều giữ cấu hình y nguyên', async () => {
+test('N-40 nút 3 chế độ 1: chỉ khi Web App báo xong ĐỦ K-1…K-8 và MỌI phép trả về đều đạt (11 phép từ 2.8.3) mới ghi link — tự kiểm lệch, từ chối, 7/8, lỗi mạng đều giữ cấu hình y nguyên', async () => {
   const TL1 = ['9', '2026', ' ' + LK('T9'), '10', '2026', LK('T10'), '1', 'c'];
   const CA = [
     ['TU_KIEM_LECH', 3, () => ({ ok: false, loi: 'TU_KIEM_LECH', thongBao: 'TỰ KIỂM LỆCH 1/8 phép — K-7 (999000).', goiY: ' → giữ cờ', kiem: KIEM8(['K-7']) }), /K-7 LỆCH/],
     ['FILE_CO_DU_LIEU', 3, () => ({ ok: false, loi: 'FILE_CO_DU_LIEU', thongBao: 'KHÔNG KHỞI TẠO — Phép R-2 …', goiY: ' → tạo bản sao mới',
       lop2: [{ ma: 'R-2', ten: 'Sheet gian hàng không có đơn mới', dat: false, chiTiet: 'Shopee mall 2 ô' }] }), /R-2 CÓ DỮ LIỆU/],
-    ['ok nhưng 7/8', 3, () => ({ ok: true, thongBao: 'ĐÃ KHỞI TẠO', kiem: KIEM8(['K-3']) }), /không thấy đủ 8\/8/],
-    ['ok nhưng không có kiem', 3, () => ({ ok: true, thongBao: 'ĐÃ KHỞI TẠO' }), /không thấy đủ 8\/8/],
-    ['ok với kiem RỖNG', 3, () => ({ ok: true, thongBao: 'ĐÃ KHỞI TẠO', kiem: [] }), /không thấy đủ 8\/8/],
-    ['ok với 7 phép đều đạt', 3, () => ({ ok: true, thongBao: 'ĐÃ KHỞI TẠO', kiem: KIEM8([]).slice(0, 7) }), /không thấy đủ 8\/8/],
+    ['ok nhưng 7/8', 3, () => ({ ok: true, thongBao: 'ĐÃ KHỞI TẠO', kiem: KIEM8(['K-3']) }), /không thấy đủ mọi phép tự kiểm ĐẠT/],
+    ['ok nhưng không có kiem', 3, () => ({ ok: true, thongBao: 'ĐÃ KHỞI TẠO' }), /không thấy đủ mọi phép tự kiểm ĐẠT/],
+    ['ok với kiem RỖNG', 3, () => ({ ok: true, thongBao: 'ĐÃ KHỞI TẠO', kiem: [] }), /không thấy đủ mọi phép tự kiểm ĐẠT/],
+    // YC-63: Google 2.8.3 trả 11 phép — một phép MỚI lệch (K-10) mà cờ ok vẫn bật là không được khai link.
+    ['ok với 11 phép, K-10 lệch', 3, () => ({ ok: true, thongBao: 'ĐÃ KHỞI TẠO', kiem: KIEM8([]).concat([{ ma: 'K-9', ten: 'phép K-9', dat: true, chiTiet: 'khớp' }, { ma: 'K-10', ten: 'phép K-10', dat: false, chiTiet: 'D17=18194000' }, { ma: 'K-11', ten: 'phép K-11', dat: true, chiTiet: 'khớp' }]) }), /không thấy đủ mọi phép tự kiểm ĐẠT/],
+    ['ok với 7 phép đều đạt', 3, () => ({ ok: true, thongBao: 'ĐÃ KHỞI TẠO', kiem: KIEM8([]).slice(0, 7) }), /không thấy đủ mọi phép tự kiểm ĐẠT/],
     ['R-5 danh sách sheet lệch', 3, () => ({ ok: false, loi: 'FILE_CO_DU_LIEU', thongBao: 'KHÔNG KHỞI TẠO — Phép R-5 …', goiY: ' → …',
       lop2: [{ ma: 'R-5', ten: 'Đủ sheet, đúng tên, đúng thứ tự', dat: false, chiTiet: 'thiếu Offood' }] }), /R-5 SAI DANH SÁCH SHEET/],
     ['lỗi quyền / mạng', 4, () => { throw new Error('LỖI QUYỀN TRUY CẬP — kiểm tra: …'); }, /KHÔNG TẠO ĐƯỢC THÁNG 2026-10\./]
@@ -1089,23 +1091,24 @@ test('N-40 nút 3 chế độ 1: chỉ khi Web App báo xong ĐỦ 8/8 phép K m
   dung(goi.length === 1 && JSON.stringify(goi[0]) === JSON.stringify({ thangCu: 9, namCu: 2026, linkCu: LK('T9'), thangMoi: 10, namMoi: 2026, linkMoi: LK('T10') }),
     'tham số gửi Web App sai: ' + JSON.stringify(goi[0] || null).replace(/https:[^"]*/g, '<link>'));
 
-  const banBoQuaK = nut3Sua([['    if (!du8) {', '    if (false) {']]);
+  const banBoQuaK = nut3Sua([['    if (!duKiem) {', '    if (false) {']]);
   const dc1 = await doiChungAm('ghi link du tu kiem lech', async () => {
     const x = dungVh3();
     const t0 = tho(x.tep);
     await chay3(x, TL1, { mod: banBoQuaK, them: { WebApp: webGia(CA[0][2]) } });
     if (!cungByte(tho(x.tep), t0)) throw new Error('K-7 lệch mà link_thang đã được ghi');
   });
-  const banTinOk = nut3Sua([['    const du8 = kq.ok === true && Array.isArray(kq.kiem) && kq.kiem.length === 8 && kq.kiem.every((p) => p && p.dat === true);',
-    '    const du8 = kq.ok === true;']]);
+  const banTinOk = nut3Sua([['    const duKiem = kq.ok === true && Array.isArray(kq.kiem) && kq.kiem.every((p) => p && p.dat === true) &&\n      KIEM_GOC.every((ma) => kq.kiem.some((p) => p && p.ma === ma));',
+    '    const duKiem = kq.ok === true;']]);
   const dc2 = await doiChungAm('chi tin co ok cua Web App', async () => {
     const x = dungVh3();
     const t0 = tho(x.tep);
     await chay3(x, TL1, { mod: banTinOk, them: { WebApp: webGia(CA[2][2]) } });
     if (!cungByte(tho(x.tep), t0)) throw new Error('Web App báo ok với 7/8 phép mà link_thang đã được ghi');
   });
-  const banBoDem8 = nut3Sua([['Array.isArray(kq.kiem) && kq.kiem.length === 8 && kq.kiem.every(', 'Array.isArray(kq.kiem) && kq.kiem.every(']]);
-  const dc3 = await doiChungAm('bo phep dem du 8 phep', async () => {
+  // YC-63: luật đếm nay là "có đủ mã K-1…K-8" (Google 2.8.3 trả 11 phép) — bỏ phép đó thì mảng rỗng cũng lọt.
+  const banBoDem8 = nut3Sua([[' &&\n      KIEM_GOC.every((ma) => kq.kiem.some((p) => p && p.ma === ma));', ';']]);
+  const dc3 = await doiChungAm('bo phep doi du ma K-1..K-8', async () => {
     const x = dungVh3();
     const t0 = tho(x.tep);
     await chay3(x, TL1, { mod: banBoDem8, them: { WebApp: webGia(() => ({ ok: true, thongBao: 'ĐÃ KHỞI TẠO', kiem: [] })) } });

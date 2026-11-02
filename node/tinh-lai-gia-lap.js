@@ -25,13 +25,15 @@ function anhTuBangTinh(ss) {
     const nr = sh.getLastRow(), nc = sh.getLastColumn();
     const giaTri = [], congThuc = [], mang = [], giaTriTinh = [];
     for (let r = 0; r < nr; r++) { giaTri.push([]); congThuc.push([]); mang.push([]); giaTriTinh.push([]); }
-    // Chỉ `Lợi nhuận` cần NGUYÊN VĂN công thức (bộ tính đọc cột D). Sheet khác chỉ cần biết "ô này là công thức" —
-    // đổi R1C1 → A1 cho ~40.000 ô ở mỗi lần flush là thứ làm bài chậm gấp mười.
-    const canVanBan = sh.ten === 'Lợi nhuận';
+    // Chỉ `Lợi nhuận` (cột D), `Tổng xuất` (SUMIF theo vùng — YC-63) và dòng 1–4 `THU CHI B` (ô tổng chi phí — YC-63) cần NGUYÊN VĂN
+    // công thức. Sheet khác chỉ cần biết "ô này là công thức" — đổi R1C1 → A1 cho ~40.000 ô ở mỗi lần flush là thứ làm bài chậm gấp mười.
+    // `Đơn ngoài` cột I, L, M (YC-63): bộ tính cộng L3/M3 theo đúng công thức từng dòng — gieo nhầm công thức hằng số là K-7 phải thấy.
+    const canVanBan = (r, c) => sh.ten === 'Lợi nhuận' || sh.ten === 'Tổng xuất' || (sh.ten === 'THU CHI B' && r <= 4) ||
+      (sh.ten === 'Đơn ngoài' && (c === 9 || c === 12 || c === 13));
     Object.keys(sh.congThuc).forEach((k) => {
       if (!sh.congThuc[k]) return;
       const [r, c] = k.split(':').map(Number);
-      congThuc[r - 1][c - 1] = canVanBan ? r1c1SangA1(sh.congThuc[k], r, c).slice(1) : '(công thức)';
+      congThuc[r - 1][c - 1] = canVanBan(r, c) ? r1c1SangA1(sh.congThuc[k], r, c).slice(1) : '(công thức)';
     });
     Object.keys(sh.giaTri).forEach((k) => {
       const [r, c] = k.split(':').map(Number);

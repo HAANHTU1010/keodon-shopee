@@ -6,7 +6,7 @@
  * lại TỪ ĐẦU [1/7], tối đa ba lượt rồi thoát. In lại bảy giá trị đã hiểu, hỏi `Dung chua? (c/k)`, rồi:
  *   · CHẾ ĐỘ 2 — chỉ ghi `link_thang["<năm mới>-<tháng mới>"]` vào `CAU_HINH_VAN_HANH.json` (ghi đè nếu đã có).
  *     Không gọi mạng: máy khác đã chuyển sổ xong, máy này chỉ cần biết link.
- *   · CHẾ ĐỘ 1 — gọi Web App `taoThangMoi` (`WebAppGoogleSheet.taoThangMoi`), CHỈ KHI đủ 8/8 phép tự kiểm mới ghi
+ *   · CHẾ ĐỘ 1 — gọi Web App `taoThangMoi` (`WebAppGoogleSheet.taoThangMoi`), CHỈ KHI đủ mọi phép tự kiểm (K-1…K-11 từ 2.8.3) mới ghi
  *     `link_thang` như chế độ 2. Web App từ chối, tự kiểm lệch, lỗi quyền, mất mạng → in nguyên nhân, KHÔNG ghi link.
  *
  * Ba luật không thương lượng ở file này:
@@ -15,7 +15,7 @@
  *      file cấu hình (có thể trúng chuỗi bí mật) nên KHÔNG BAO GIỜ in `e.message` của `JSON.parse`.
  *   2. Sửa `CAU_HINH_VAN_HANH.json` bằng FILE TẠM RỒI ĐỔI TÊN (README 6.4, bài học 09/9): đọc lại bản tạm, so mọi
  *      khóa khác y nguyên, rồi mới `renameSync` đè lên. Đứt giữa chừng thì file thật còn nguyên bản cũ.
- *   3. Không ghi `link_thang` khi chưa chắc: chế độ 1 tự đếm lại 8/8 phép `kiem` ngay trên máy, không tin riêng cờ
+ *   3. Không ghi `link_thang` khi chưa chắc: chế độ 1 tự đếm lại mọi phép `kiem` (đủ K-1…K-8, tất cả ĐẠT) ngay trên máy, không tin riêng cờ
  *      `ok` của Web App.
  *
  * `/tra-loi` (chỉ để chạy thử): nút bấm đặt biến môi trường `TM_TRA_LOI` = các câu trả lời nối bằng `|`, tiêu thụ
@@ -393,7 +393,7 @@ async function chay(tc) {
       inRa('    [5/7] Năm mới     : ' + gt.namMoi + '   → kỳ ' + gt.kyMoi);
       inRa('    [6/7] Link mới    : link Google Sheet hợp lệ' + (gt.idMoi === gt.idCu ? ', TRÙNG file với [3/7]' : ', khác file [3/7]'));
       inRa('    [7/7] Chế độ      : ' + (gt.cheDo === 1
-        ? '1 — tạo/chuyển sổ sang tháng mới trên Google; đủ 8/8 phép tự kiểm mới ghi link'
+        ? '1 — tạo/chuyển sổ sang tháng mới trên Google; đủ mọi phép tự kiểm (K-1…K-11) mới ghi link'
         : '2 — chỉ khai link tháng mới vào CAU_HINH_VAN_HANH.json, không đụng dữ liệu'));
       inRa('------------------------------------------------------------');
       // Đề bài: link tháng cũ đối chiếu với link_thang[kỳ cũ] — khác → cảnh báo, KHÔNG chặn. So theo MÃ FILE, không so
@@ -530,20 +530,24 @@ async function chay(tc) {
       kq.kiem.forEach((p) => inRa('  ' + p.ma + ' ' + (p.dat ? 'ĐẠT ' : 'LỆCH') + '  ' + p.ten + ' — ' + p.chiTiet, p.dat ? null : 'do'));
     }
 
-    // Luật 3: tự đếm lại 8/8 trên máy — cờ `ok` của Web App một mình không đủ để khai link cho nút 4 ghi đơn vào.
-    const du8 = kq.ok === true && Array.isArray(kq.kiem) && kq.kiem.length === 8 && kq.kiem.every((p) => p && p.dat === true);
-    if (!du8) {
+    // Luật 3: tự đếm lại trên máy — cờ `ok` của Web App một mình không đủ để khai link cho nút 4 ghi đơn vào. Phải có ĐỦ mã K-1…K-8
+    // (Google 2.8.3 trả thêm K-9…K-11 — YC-63) và MỌI phép trả về đều ĐẠT; thiếu một mã gốc hay một phép lệch là không khai.
+    const KIEM_GOC = ['K-1', 'K-2', 'K-3', 'K-4', 'K-5', 'K-6', 'K-7', 'K-8'];
+    const duKiem = kq.ok === true && Array.isArray(kq.kiem) && kq.kiem.every((p) => p && p.dat === true) &&
+      KIEM_GOC.every((ma) => kq.kiem.some((p) => p && p.ma === ma));
+    const soKiem = Array.isArray(kq.kiem) ? kq.kiem.length : 0;
+    if (!duKiem) {
       if (kq.ok === true) {
-        inRa('KHÔNG KHAI LINK: Web App báo xong nhưng máy không thấy đủ 8/8 phép tự kiểm ĐẠT.', 'do');
+        inRa('KHÔNG KHAI LINK: Web App báo xong nhưng máy không thấy đủ mọi phép tự kiểm ĐẠT (K-1…K-' + Math.max(8, soKiem) + ').', 'do');
       } else {
         inRa('KHÔNG TẠO ĐƯỢC THÁNG ' + gt.kyMoi + ' [' + (kq.loi || '?') + ']: ' + (kq.thongBao || '') + (kq.goiY || ''), 'do');
       }
       inRa('link_thang trong CAU_HINH_VAN_HANH.json KHÔNG đổi.');
       return 3;
     }
-    inRa(kq.thongBao || ('ĐÃ KHỞI TẠO file tháng ' + gt.kyMoi + ' — đủ 8/8 phép tự kiểm.'), 'xanh');
+    inRa(kq.thongBao || ('ĐÃ KHỞI TẠO file tháng ' + gt.kyMoi + ' — đủ ' + soKiem + '/' + soKiem + ' phép tự kiểm.'), 'xanh');
     try { ghiLinkThang(cfgTep, gt.kyMoi, gt.linkMoi); } catch (e) {
-      inRa('Google ĐÃ tạo xong tháng ' + gt.kyMoi + ' (8/8) nhưng máy KHÔNG ghi được link: ' + e.message +
+      inRa('Google ĐÃ tạo xong tháng ' + gt.kyMoi + ' (' + soKiem + '/' + soKiem + ') nhưng máy KHÔNG ghi được link: ' + e.message +
         ' Rồi bấm lại nút 3, chọn CHẾ ĐỘ 2 với đúng link [6/7] — ĐỪNG chọn lại chế độ 1.', 'do');
       return 5;
     }

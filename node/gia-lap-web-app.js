@@ -104,6 +104,37 @@ function bomQuaHan(ss, kieu, lamTruoc, tenSheet) {
     : 'Service Spreadsheets timed out while accessing document with id ' + id + '.');
 }
 
+/**
+ * Luật Google khi sheet `ten` bị xóa `n` dòng từ dòng `r` (khối `r..r+n-1`), áp cho công thức A1 (không `=`) của MỘT SHEET KHÁC:
+ *   · ô đơn: trên khối → giữ · dưới khối → lùi `n` · TRONG khối → cả tham chiếu `<sheet>!ô` thành `#REF!`;
+ *   · vùng `a:b`: nằm trọn trong khối → `#REF!` · cắt qua khối → co lại (đầu trong khối thành `r`, đáy trong khối thành `r-1`,
+ *     đáy dưới khối lùi `n`) — `'Importmart'!$M$4:$M$2000` xóa 30 dòng từ dòng 4 thành `$M$4:$M$1970`.
+ * Giữ nguyên dấu `$`. Chuỗi trong nháy kép không đụng.
+ */
+function doiA1KhiXoaDong(text, ten, r, n) {
+  const het = r + n - 1, tenChuan = String(ten).toLowerCase();
+  const re = /('(?:[^']|'')+'|[^\s!'(),;:$"&+*/<>=^{}-]+)!(\$?)([A-Z]{1,3})(\$?)(\d+)(?::(\$?)([A-Z]{1,3})(\$?)(\d+))?/g;
+  return String(text).split('"').map((doan, i) => {
+    if (i % 2) return doan;                       // phần nằm trong nháy kép
+    return doan.replace(re, (tat, sh, d1, c1, d2, r1, d3, c2, d4, r2) => {
+      const tenSh = sh.charAt(0) === "'" ? sh.slice(1, -1).replace(/''/g, "'") : sh;
+      if (tenSh.toLowerCase() !== tenChuan) return tat;
+      if (r2 == null) {
+        const x = +r1;
+        if (x < r) return tat;
+        if (x > het) return sh + '!' + d1 + c1 + d2 + (x - n);
+        return '#REF!';
+      }
+      const a = Math.min(+r1, +r2), b = Math.max(+r1, +r2);
+      if (b < r) return tat;
+      if (a >= r && b <= het) return '#REF!';
+      const a2 = a < r ? a : (a > het ? a - n : r);
+      const b2 = b > het ? b - n : r - 1;
+      return sh + '!' + d1 + c1 + d2 + a2 + ':' + d3 + c2 + d4 + b2;
+    });
+  }).join('"');
+}
+
 /** Một sheet giả: lưu giá trị, công thức R1C1, định dạng số, nền, ô gộp — và ghi lại MỌI lệnh chạm vào. */
 class SheetGia {
   constructor(ten, ss) {
@@ -176,8 +207,10 @@ class SheetGia {
   }
   /**
    * Như Google: xóa hẳn `n` dòng từ `r`, dòng dưới dồn lên, lưới co lại. Công thức R1C1 dồn theo ô nên tham
-   * chiếu TƯƠNG ĐỐI giữ nguyên nghĩa. KHÁC Google (cố ý, như vỏ Excel): tham chiếu TUYỆT ĐỐI trỏ qua vùng bị
-   * xóa không được co lại — số đo ở đây là cận trên.
+   * chiếu TƯƠNG ĐỐI giữ nguyên nghĩa. Tham chiếu TUYỆT ĐỐI trong CHÍNH sheet này trỏ qua vùng bị xóa không được co lại
+   * (cố ý, như vỏ Excel — tool ghi đè dòng tổng ngay sau đó).
+   * YC-63 (2.8.3): tham chiếu từ SHEET KHÁC trỏ vào sheet này thì CO / `#REF!` đúng như Google (`_doiThamChieuKhiXoaDong`) — tới 2.8.2
+   * giả lập bỏ qua nên không bài nào thấy `Tổng xuất`!I..N co dần mỗi tháng rồi vỡ (sự cố sổ T11 ngày 2/11).
    */
   deleteRows(r, n) {
     const max = this.getMaxRows();
@@ -198,7 +231,22 @@ class SheetGia {
       return b < a ? null : { r1: a, c1: g.c1, r2: b, c2: g.c2 };
     }).filter((g) => g && !(g.r1 === g.r2 && g.c1 === g.c2));
     this.soDongToiDa = max - n;
+    if (this.ss && typeof this.ss.getSheets === 'function') {
+      this.ss.getSheets().forEach((sh) => { if (sh !== this && sh._doiThamChieuKhiXoaDong) sh._doiThamChieuKhiXoaDong(this.ten, r, n); });
+    }
     this._ghiNhatSheet('xoaDong', r, 1, n, 0);
+  }
+  /** Sheet `tenNguon` vừa bị xóa `n` dòng từ `r` → dời/co mọi tham chiếu của sheet NÀY trỏ sang đó (luật Google, `doiA1KhiXoaDong`). */
+  _doiThamChieuKhiXoaDong(tenNguon, r, n) {
+    const can = ["'" + tenNguon.replace(/'/g, "''") + "'!", tenNguon + '!'];
+    Object.keys(this.congThuc).forEach((k) => {
+      const f = this.congThuc[k];
+      if (!f || !can.some((x) => f.indexOf(x) >= 0)) return;
+      const [rr, cc] = k.split(':').map(Number);
+      const a1 = r1c1SangA1(f, rr, cc).replace(/^=/, '');
+      const moi = doiA1KhiXoaDong(a1, tenNguon, r, n);
+      if (moi !== a1) this.congThuc[k] = a1SangR1C1(moi, rr, cc);
+    });
   }
   /** Như Google: chèn một cột trống trước cột `c`, mọi cột từ `c` dịch phải; cụm gộp cắt qua `c` nở thêm một cột. */
   insertColumnBefore(c) {
@@ -1092,7 +1140,7 @@ function napLoiMay() { return napGs(FILE_LOI_MAY, {}); }
 module.exports = {
   taoGiaLap, napGs, napLoiMay, catCauMang,
   dungSheetGianHang, dungSheetDanhMuc, dungSheetMapping, dungKhungThieu,
-  BangTinhGia, SheetGia,
+  BangTinhGia, SheetGia, doiA1KhiXoaDong,
   URL_GIA, TIEU_DE_GIAN_HANG, FILE_VO_GOOGLE, FILE_LOI_MAY,
   HTML_DANG_NHAP, HTML_QUA_GIO, HTML_500, HTML_403
 };
