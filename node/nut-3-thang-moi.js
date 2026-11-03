@@ -6,7 +6,7 @@
  * lại TỪ ĐẦU [1/7], tối đa ba lượt rồi thoát. In lại bảy giá trị đã hiểu, hỏi `Dung chua? (c/k)`, rồi:
  *   · CHẾ ĐỘ 2 — chỉ ghi `link_thang["<năm mới>-<tháng mới>"]` vào `CAU_HINH_VAN_HANH.json` (ghi đè nếu đã có).
  *     Không gọi mạng: máy khác đã chuyển sổ xong, máy này chỉ cần biết link.
- *   · CHẾ ĐỘ 1 — gọi Web App `taoThangMoi` (`WebAppGoogleSheet.taoThangMoi`), CHỈ KHI đủ mọi phép tự kiểm (K-1…K-11 từ 2.8.3) mới ghi
+ *   · CHẾ ĐỘ 1 — gọi Web App `taoThangMoi` (`WebAppGoogleSheet.taoThangMoi`), CHỈ KHI đủ mọi phép tự kiểm (K-1…K-13 từ 2.8.3) mới ghi
  *     `link_thang` như chế độ 2. Web App từ chối, tự kiểm lệch, lỗi quyền, mất mạng → in nguyên nhân, KHÔNG ghi link.
  *
  * Ba luật không thương lượng ở file này:
@@ -393,7 +393,7 @@ async function chay(tc) {
       inRa('    [5/7] Năm mới     : ' + gt.namMoi + '   → kỳ ' + gt.kyMoi);
       inRa('    [6/7] Link mới    : link Google Sheet hợp lệ' + (gt.idMoi === gt.idCu ? ', TRÙNG file với [3/7]' : ', khác file [3/7]'));
       inRa('    [7/7] Chế độ      : ' + (gt.cheDo === 1
-        ? '1 — tạo/chuyển sổ sang tháng mới trên Google; đủ mọi phép tự kiểm (K-1…K-11) mới ghi link'
+        ? '1 — tạo/chuyển sổ sang tháng mới trên Google; đủ mọi phép tự kiểm (K-1…K-13) mới ghi link'
         : '2 — chỉ khai link tháng mới vào CAU_HINH_VAN_HANH.json, không đụng dữ liệu'));
       inRa('------------------------------------------------------------');
       // Đề bài: link tháng cũ đối chiếu với link_thang[kỳ cũ] — khác → cảnh báo, KHÔNG chặn. So theo MÃ FILE, không so

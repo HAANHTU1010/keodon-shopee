@@ -281,17 +281,24 @@ dòng đó là sinh ra ca mất đơn mà không ai biết — file đã đi kh�
 - **Tạo tháng: đóng băng số phụ thuộc TRƯỚC, phá hủy SAU.** Bước `B2b` ghi cột tháng cũ `Lợi nhuận` thành số cứng trước khi
   dọn bất kỳ sheet nào; chết giữa chừng sau khi dọn thì số tháng cũ trong bản sao vẫn còn (TM-W-27). Mọi ngoại lệ sau khi
   bắt đầu ghi nói bước + cờ + việc phải làm (`loiGiuaChungTM_`); cờ `B5_DANG_LAM` là bản sao hỏng, tool bảo làm bản sao mới.
-- **Tạo tháng: mẫu công thức CHỈ lấy ở vùng dòng TRỐNG (YC-63, 2.8.3).** Dòng đơn chứa công thức người gõ khi nhập đơn
-  (`Đơn ngoài`!I `=75000*25+70000`, L `=I-J`) — lấy làm "cột công thức" hay mẫu gieo là kéo nó cho 2.000 dòng (sự cố sổ T11 2/11:
-  K-7 = 7,78 tỷ, doanh số đơn ngoài tính hai lần). `cotCoCongThuc`/`mauCongThuc` nhận dòng đầu vùng trống (`dongDauVungTrong`).
-  Sheet gian hàng/`Tổng nhập` mà vùng trống không có công thức (sổ T10: `TikTok Shop`) → dạng CHIẾM ĐA SỐ của dòng đơn, phải tính
-  trên chính dòng (`mauDaSoDongDon`); `Đơn ngoài` không bao giờ đi đường đó. K-9 chặn L và M cùng mang công thức.
+- **Tạo tháng: KHUÔN CÔNG THỨC CHUẨN (2.9.0, chủ dự án chốt 3/11).** Tool KHÔNG chép/đoán công thức từ sổ tháng cũ nữa — đoán là kéo
+  lỗi tháng trước sang tháng sau (sự cố 2/11: ô hằng số `=75000*25+70000` trong dòng đơn thành mẫu cho 2.000 dòng; sổ T11 thật còn cùng
+  một cột tra danh mục mà đáy 434/435/457/514/714). Bảng khuôn nằm trong `TaoThangMoi.gs` (`khuonSheetDon`, `khuonDonNgoai`,
+  `khuonTongNhap`, `khuonTonKho`, `thaoTacTongXuat`); lệnh `GHI_KHUON` ghi đè CẢ cột 4 → 2003 (`Tổng tồn kho`/`Tổng xuất`: theo dòng danh
+  mục), ô có giá trị gõ tay để yên. Luật khuôn: công thức TỪNG DÒNG bọc `IFERROR(…;"")`, vùng tra tới `$2003`; công thức TỔNG (SUM/SUMIF)
+  tới `$2003` nhưng KHÔNG bọc IFERROR (bọc là giấu `#REF!`, K-6 hết bắt được). `Đơn ngoài` I và L là cột gõ tay → khuôn xóa công thức.
+  Sheet NGOÀI khuôn (`THU CHI`, `Trang tính1`, `Lazada`, `Doanh thu thuế`, `Thông tin shop `…) giữ nguyên văn bản sao. `Lợi nhuận`,
+  `THU CHI B`, `Mapping` giữ cách xử lý riêng. K-13 chấm từng ô khuôn (~75.000 ô/tháng). Muốn đổi công thức chuẩn: sửa bảng khuôn
+  (cả hai vỏ dùng chung), KHÔNG sửa tay trên sổ rồi mong tool chép theo.
+- **Chèn dòng cuối lưới làm Google GIÃN vùng (2.9.0).** `insertRowsAfter` (nới lưới tới 2003) giãn mọi vùng bắt đầu trong lưới mà đáy
+  vượt lưới — tool ghi `SUM(H4:H2000)` trước rồi mới nới nên sổ T11 thật ra `SUM(H4:H2688)`, `TikTok Shop` 3439, `Tổng nhập`!I2 3096,
+  `Tổng tồn kho`!I 3020. Nay ô tổng ghi SAU lệnh khuôn (lệnh đó nới lưới trước khi ghi); K-12 chấm mọi ô tổng tới đúng 2003. Giả lập
+  bắt chước luật này (`gianA1KhiChenDong`) — thiếu nó thì không bài nào thấy.
 - **`deleteRows` CO tham chiếu từ sheet khác (YC-63).** Google co `Tổng xuất`!I..N `SUMIF(<gian>!$M$4:$M$2000;…)` đúng bằng số
-  dòng xóa mỗi tháng → thiếu thầm, rồi `#REF!` khi vùng nằm trọn trong khối xóa. Bước `B3b` ghi lại mọi ô về `$4:$2003` (công thức
-  lấy từ ảnh chụp TRƯỚC khi dọn; lượt chạy tiếp lấy ô cùng vị trí ở sổ cũ); trước B1 lõi soát mọi sheet không bị dọn
-  (`kiemThamChieuSeVo`, mã `THAM_CHIEU_SE_VO` / `TONG_XUAT_LA_DANG`). Giả lập nay co/`#REF!` y như Google (`doiA1KhiXoaDong`),
-  bộ tính `tinhLai` tính `Tổng xuất` theo đúng vùng công thức và lan lỗi. `Tổng nhập` (B4) cũng xóa dòng: `Tổng tồn kho`!I trỏ
-  `'Tổng nhập'!$E$4:$E$2000` co dần ~80 dòng/tháng — chưa ghi lại, chỉ có phép soát trước B1.
+  dòng xóa mỗi tháng → thiếu thầm, rồi `#REF!` khi vùng nằm trọn trong khối xóa. `B3b` ghi khuôn `Tổng xuất` SAU khi dọn, `B4b` ghi khuôn
+  `Tổng tồn kho` SAU B4 (khuôn không cần công thức của vỏ nên lượt chạy tiếp vẫn đúng); trước B1 lõi soát mọi sheet không bị dọn
+  (`kiemThamChieuSeVo`, mã `THAM_CHIEU_SE_VO`). Giả lập co/`#REF!` y như Google (`doiA1KhiXoaDong`); bộ tính `tinhLai` tính `Tổng xuất`
+  theo đúng vùng công thức, hiểu `IFERROR`, và lan lỗi.
 - **`THU CHI B` là sổ quỹ chạy liên tục (YC-63).** Không dọn ô nào, không đụng H4/I4/J4; `B3b` chỉ đổi dòng bắt đầu `$X$n:` của ô
   tổng chi phí dòng 4 thành dòng cuối có ngày ở cột A + 1 (K-10: `Lợi nhuận` dòng chi phí trỏ `THU CHI B` = 0).
 - **Công thức tool TỰ DỰNG phải khớp dấu phân cách của sổ — nên đừng tự dựng (YC-44).** `setValues('=…')` và `getFormulas()`
@@ -424,7 +431,7 @@ kho: chiều đi là `bat/` → `03_VAN_HANH/`, và `DG-06` bắt mọi khác bi
 |---|---|
 | `1_CAI_DAT_LAN_DAU.bat` | 6 bước kiểm: Node, mã nguồn, thư viện, cấu hình, gọi thử Web App, kết luận |
 | `2_CAP_NHAT.bat` | tải bản mã mới nhất từ GitHub. **Không bao giờ ghi đè `CAU_HINH_VAN_HANH.json`** — chỉ THÊM khóa còn thiếu. Sao lưu bản đang chạy vào `Cấu hình\_ban_cu_<yyyyMMdd_HHmm>` (giữ 3) và in đường lùi. `2_CAP_NHAT.bat /lui` chép ngược bản sao lưu gần nhất CŨ HƠN bản đang chạy (bấm lại là lùi thêm một bản; hết bản cũ hơn → mã 11), không đụng cấu hình (N-45) |
-| `3_TAO_FILE_THANG_MOI.bat` | hỏi 7 trường. Chế độ 1: chuyển sổ trên Google (`taoThangMoi`), đủ mọi phép K (K-1…K-11 từ 2.8.3) mới khai `link_thang`. Chế độ 2: chỉ khai `link_thang`, không gọi mạng. File `.bat` chỉ tìm cấu hình/mã/Node rồi gọi `node/nut-3-thang-moi.js` |
+| `3_TAO_FILE_THANG_MOI.bat` | hỏi 7 trường. Chế độ 1: chuyển sổ trên Google (`taoThangMoi`), đủ mọi phép K (K-1…K-13 từ 2.8.3) mới khai `link_thang`. Chế độ 2: chỉ khai `link_thang`, không gọi mạng. File `.bat` chỉ tìm cấu hình/mã/Node rồi gọi `node/nut-3-thang-moi.js` |
 | `4_CHAY_TOOL.bat` | nút dùng hằng ngày |
 
 Nút 2 không tự ghi đè chính nó — Windows khóa file `.bat` đang chạy. Nó in một dòng nhắc thay vì chép. Hệ quả: sửa

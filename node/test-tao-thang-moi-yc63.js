@@ -68,10 +68,8 @@ function sua(...cap) {
   }
   return (s) => { for (let i = 0; i < cap.length; i += 2) s = s.split(cap[i]).join(cap[i + 1]); return s; };
 }
-/** Mã 2.8.2 của việc 1 (cột kéo + mẫu gieo đo từ dòng 4, gồm cả dòng đơn). */
-const MA_CU_VIEC_1 = () => sua(
-  '    var dsCot = cotCoCongThuc([{ ss: ss, tuDong: dCuoi + 1 }, { ss: ssCu, tuDong: tuDongCu }], cCuoi);', '    var dsCot = cotCoCongThuc([ss, ssCu], cCuoi);',
-  '        var m = mauCongThuc(ss, chu, dCuoi + 1) || mauCongThuc(ssCu, chu, tuDongCu);', '        var m = mauCongThuc(ss, chu) || mauCongThuc(ssCu, chu);');
+/** 2.9.0: bỏ hẳn lệnh ghi khuôn ở vỏ Google — công thức của vỏ (bản sao tháng cũ) giữ nguyên như chưa có khuôn. */
+const BO_KHUON = () => sua("    if (t.loai === 'GHI_KHUON') {\n      ghiKhuonTM_(sheetTM_(ssMoi, t.sheet), t, dem);", "    if (t.loai === 'GHI_KHUON') {\n      void ghiKhuonTM_;");
 /** Mã 2.8.2 của việc 2: không có bước ghi lại vùng `Tổng xuất`. */
 const MA_CU_TONG_XUAT = () => sua('    var ttB3b = tx.thaoTac.concat(tcb.thaoTac);', '    var ttB3b = tcb.thaoTac;');
 /** Mã 2.8.2 của việc 3: không đổi dòng bắt đầu `THU CHI B`. */
@@ -261,7 +259,7 @@ function loiNhuanTroThuChiB(ss) {
 // ====================================================================================================
 
 (async function chay() {
-  console.log('=== YC-63 (2.8.3): nút 3 chế độ 1 sau sự cố sổ 2026-11 ===\n');
+  console.log('=== YC-63 (2.8.3) + KHUÔN CÔNG THỨC CHUẨN (2.9.0): nút 3 chế độ 1 ===\n');
   if (!fs.existsSync(FILE_T9)) { console.log('HỎNG  thiếu file dữ liệu thật: ' + FILE_T9); process.exit(1); }
   await napMau();
 
@@ -279,13 +277,13 @@ function loiNhuanTroThuChiB(ss) {
     'F,G,M,N,O; I4:I2003 rỗng; L không công thức; M đủ 2.000 ô; L3 = M3 = 0; K-9 ĐẠT; 11/11', async () => {
     const vo = (m, c) => { donNgoaiNhuT10(m); donNgoaiNhuT10(c); };
     const X = await kichBan({ vo });
-    dung(X.kq.ok === true && X.kq.kiem.length === 11, 'phải 11/11: ' + moTaKiem(X.kq) + ' ' + String(X.kq.thongBao).slice(0, 300));
+    dung(X.kq.ok === true && X.kq.kiem.length === 13, 'phải 13/13: ' + moTaKiem(X.kq) + ' ' + String(X.kq.thongBao).slice(0, 300));
     const dn = X.ssMoi.getSheetByName('Đơn ngoài');
     bang(demCT(dn, C('I')), 0, 'I4:I2003 không được có công thức');
     bang(Object.keys(dn.giaTri).filter((k) => { const [r, c] = k.split(':').map(Number); return c === C('I') && r >= 4 && dn.giaTri[k] !== '' && dn.giaTri[k] != null; }).length, 0, 'I4:I2003 không được có giá trị');
     bang(demCT(dn, C('L')), 0, 'L (PHƯƠNG) không được mang công thức ở dòng trống');
     bang(['F', 'G', 'M', 'N', 'O'].map((ch) => demCT(dn, C(ch))), [2000, 2000, 2000, 2000, 2000], 'F,G,M,N,O đủ 2.000 ô');
-    bang(A1(dn, 4, C('M')), 'I4-J4', 'M4');
+    bang(A1(dn, 4, C('M')), 'IFERROR(I4-J4,"")', 'M4 (khuôn chuẩn)');
     const k9 = X.kq.kiem.filter((p) => p.ma === 'K-9')[0];
     dung(k9 && k9.dat, 'K-9 phải ĐẠT: ' + JSON.stringify(k9));
     // Nghiệm thu 3 (phần đơn ngoài): user gõ một đơn ngoài OANH vào tháng mới → doanh số tính MỘT lần.
@@ -295,32 +293,33 @@ function loiNhuanTroThuChiB(ss) {
     const tienM = A1(dn, 4, C('M')) ? tinhCongThucDon(A1(dn, 4, C('M')), 'Đơn ngoài', giaTriO) : (dn.giaTri['4:' + C('M')] || 0);
     bang(tienL + tienM, 180000, 'đơn ngoài 200.000 − 20.000 chỉ được tính MỘT lần (L + M)');
     xong(X);
-    return 'cột kéo F,G,M,N,O · I/L trống · M4 =I4-J4 · đơn thử L+M = 180.000 (một lần) · ' + await doiChungAm(async () => {
-      const Z = await kichBan({ vo, suaNguon: MA_CU_VIEC_1() });
-      const ra = kiemLech(Z.kq).filter((p) => p.ma === 'K-9').map((p) => 'mã 2.8.2: K-9 ' + p.chiTiet);
+    return 'khuôn F,G,M,N,O · I/L trống · M4 =IFERROR(I4-J4,"") · đơn thử L+M = 180.000 (một lần) · ' + await doiChungAm(async () => {
+      const Z = await kichBan({ vo, suaNguon: BO_KHUON() });
+      const ra = kiemLech(Z.kq).filter((p) => p.ma === 'K-9' || p.ma === 'K-13').map((p) => 'không ghi khuôn: ' + p.ma + ' ' + p.chiTiet);
       const dz = Z.ssMoi.getSheetByName('Đơn ngoài');
       if (demCT(dz, C('I'))) ra.push('I mang ' + demCT(dz, C('I')) + ' ô công thức (I4 =' + A1(dz, 4, C('I')) + ')');
       xong(Z);
       return ra;
-    }, 'mã 2.8.2 đo cột/mẫu từ dòng 4 (gồm dòng đơn)');
+    }, 'không ghi khuôn (công thức gõ tay trong dòng đơn của bản sao ở lại)');
   });
 
-  await test('YC63-02', 'việc 1 — `TikTok Shop` KHÔNG có công thức ở dòng trống (như sổ T10) và L4 là hằng số gõ tay → gieo dạng CHIẾM ĐA SỐ của dòng đơn ' +
-    '(tính trên chính dòng), cảnh báo; E/F/L/O/P đủ 2.000 ô; L4 = H4-I4-J4-K4', async () => {
+  await test('YC63-02', 'việc 1 + khuôn 2.9.0 — `TikTok Shop` KHÔNG có công thức ở dòng trống (như sổ T10), L4 là hằng số gõ tay → khuôn chuẩn ghi ' +
+    'E/F/L/O/P đủ 2.000 ô, L4 = IFERROR(H4-I4-J4-K4,""), không còn hằng số', async () => {
     const vo = (m, c) => { tiktokShopNhuT10(m); tiktokShopNhuT10(c); };
     const X = await kichBan({ vo });
-    dung(X.kq.ok === true, 'phải 11/11: ' + moTaKiem(X.kq) + ' ' + String(X.kq.thongBao).slice(0, 300));
+    dung(X.kq.ok === true, 'phải 13/13: ' + moTaKiem(X.kq) + ' ' + String(X.kq.thongBao).slice(0, 300));
     const ts = X.ssMoi.getSheetByName('TikTok Shop');
     bang(['E', 'F', 'L', 'O', 'P'].map((ch) => demCT(ts, C(ch))), [2000, 2000, 2000, 2000, 2000], 'E,F,L,O,P đủ 2.000 ô');
-    bang(A1(ts, 4, C('L')), 'H4-I4-J4-K4', 'L4 phải là dạng đa số, không phải hằng số gõ tay');
-    dung((X.kq.canhBao || []).some((s) => /Sheet `TikTok Shop`: cột .*CHIẾM ĐA SỐ/.test(s)), 'phải cảnh báo đã gieo theo dạng đa số: ' + JSON.stringify(X.kq.canhBao).slice(0, 300));
+    bang(A1(ts, 4, C('L')), 'IFERROR(H4-I4-J4-K4,"")', 'L4 đúng khuôn, không phải hằng số gõ tay');
     xong(X);
-    return 'L4 =H4-I4-J4-K4 · 5 cột × 2.000 ô · có cảnh báo · ' + await doiChungAm(async () => {
-      const Z = await kichBan({ vo, suaNguon: sua('        var m = mauCongThuc(ss, chu, dCuoi + 1) || mauCongThuc(ssCu, chu, tuDongCu);', '        var m = mauCongThuc(ss, chu) || mauCongThuc(ssCu, chu);') });
-      const l4 = A1(Z.ssMoi.getSheetByName('TikTok Shop'), 4, C('L'));
+    return 'L4 =IFERROR(H4-I4-J4-K4,"") · 5 cột × 2.000 ô · ' + await doiChungAm(async () => {
+      const Z = await kichBan({ vo, suaNguon: BO_KHUON() });
+      const ts2 = Z.ssMoi.getSheetByName('TikTok Shop');
+      const ra = kiemLech(Z.kq).filter((p) => p.ma === 'K-13').map((p) => 'không khuôn: K-13 ' + p.chiTiet);
+      if (demCT(ts2, C('L')) !== 2000) ra.push('L chỉ còn ' + demCT(ts2, C('L')) + ' ô công thức');
       xong(Z);
-      return l4 !== 'H4-I4-J4-K4' ? ['mã 2.8.2 gieo L từ ô công thức đầu tiên của dòng đơn: L4 =' + l4 + ' kéo cho 2.000 dòng'] : [];
-    }, 'mã 2.8.2 lấy mẫu ở ô công thức đầu tiên từ dòng 4');
+      return ra;
+    }, 'không ghi khuôn');
   });
 
   // ---------------------------------------------------------------- VIỆC 2
@@ -328,7 +327,7 @@ function loiNhuanTroThuChiB(ss) {
     '$4:$2003, không #REF!, K-6/K-11 ĐẠT, `Tổng tồn kho`!K1 là số', async () => {
     const vo = (m, c) => { [m, c].forEach((s) => { importmartToi10(s); tongXuatKToi(s, 8); }); };
     const X = await kichBan({ vo });
-    dung(X.kq.ok === true, 'phải 11/11: ' + moTaKiem(X.kq));
+    dung(X.kq.ok === true, 'phải 13/13: ' + moTaKiem(X.kq));
     const tx = X.ssMoi.getSheetByName('Tổng xuất');
     const sai = [];
     Object.keys(tx.congThuc).forEach((k) => {
@@ -353,7 +352,7 @@ function loiNhuanTroThuChiB(ss) {
     '`Tổng xuất` trừ tồn; đơn ngoài tính một lần', async () => {
     const vo = (m, c) => { [m, c].forEach((s) => importmartToi10(s)); };
     const X = await kichBan({ vo });
-    dung(X.kq.ok === true, 'phải 11/11: ' + moTaKiem(X.kq));
+    dung(X.kq.ok === true, 'phải 13/13: ' + moTaKiem(X.kq));
     const thuDon = (Y) => {
       const im = Y.ssMoi.getSheetByName('Importmart'), x = maDau(Y.ssMoi);
       [[4, 2], [1500, 3]].forEach(([r, sl]) => { datGT(im, r, C('A'), new Date(2026, 9, 2)); datGT(im, r, C('D'), x.ten); datGT(im, r, C('G'), sl); datGT(im, r, C('H'), 100000 * sl); });
@@ -396,40 +395,39 @@ function loiNhuanTroThuChiB(ss) {
     }, 'bỏ phép kiểm trước B1');
   });
 
-  await test('YC63-06', 'việc 2a: ô `Tổng xuất`!K5 lạ dạng (trỏ `Offood` dưới tiêu đề Importmart) → DỪNG trước B1, mã TONG_XUAT_LA_DANG, sổ mới không đổi ô nào', async () => {
+  await test('YC63-06', 'việc 2a + khuôn 2.9.0: ô `Tổng xuất`!K5 lạ dạng (trỏ `Offood` dưới tiêu đề Importmart) → khuôn ghi đè đúng SUMIF tới `Importmart` $4:$2003, 13/13 (2.8.3 dừng TONG_XUAT_LA_DANG bắt sửa tay)', async () => {
     const vo = (m, c) => { [m, c].forEach((s) => datCT(s.getSheetByName('Tổng xuất'), 5, C('K'), "SUMIF(Offood!$M$4:$M$70,'Tổng xuất'!$E5,Offood!$G$4:$G$70)")); };
     const X = await kichBan({ vo });
-    bang([X.kq.ok, X.kq.loi], [false, 'TONG_XUAT_LA_DANG'], 'mã dừng');
-    dung(/K5 =SUMIF\(Offood/.test(X.kq.thongBao) && /không khớp sheet `Offood`/.test(X.kq.thongBao), 'câu dừng nêu ô + lý do: ' + X.kq.thongBao.slice(0, 300));
-    bang(oKhac(X.truocMoi, chup(X.ssMoi)).slice(0, 3), [], 'sổ mới không đổi ô nào');
+    dung(X.kq.ok === true, 'phải 13/13: ' + X.kq.loi + ' ' + moTaKiem(X.kq));
+    const k5 = A1(X.ssMoi.getSheetByName('Tổng xuất'), 5, C('K'));
+    bang(k5, 'SUMIF(Importmart!$M$4:$M$2003,$E5,Importmart!$G$4:$G$2003)', 'K5 đúng khuôn');
     xong(X);
-    return X.kq.thongBao.slice(0, 160) + '… · ' + await doiChungAm(async () => {
-      const Z = await kichBan({ vo, suaNguon: sua('    if (tx.soLa && conBuoc(\'B3b\')) {', '    if (false) {') });
-      const ra = kiemLech(Z.kq).filter((p) => p.ma === 'K-11').map((p) => 'bỏ phép dừng: K-11 ' + p.chiTiet);
+    return 'K5 =' + k5 + ' · ' + await doiChungAm(async () => {
+      const Z = await kichBan({ vo, suaNguon: MA_CU_TONG_XUAT() });
+      const ra = kiemLech(Z.kq).filter((p) => p.ma === 'K-11').map((p) => 'không ghi khuôn Tổng xuất: K-11 ' + p.chiTiet);
       xong(Z);
       return ra;
-    }, 'bỏ phép dừng ô lạ dạng');
+    }, 'không ghi khuôn `Tổng xuất`');
   });
 
-  await test('YC63-07', 'việc 2 — lượt CHẠY TIẾP: Google chết ở B3b SAU khi B3 đã xóa dòng (`Tổng xuất`!K đã #REF!) → bấm lại lấy công thức ô cùng vị trí ' +
-    'ở sổ tháng cũ, 11/11, mọi ô $4:$2003', async () => {
-    const vo = (m, c, sim) => { [m, c].forEach((s) => { importmartToi10(s); tongXuatKToi(s, 8); }); sim.datLoi({ quaHan: { kieu: 'giaTri', sheet: 'Tổng xuất', lan: [1], cau: 'khac' } }); };
+  await test('YC63-07', 'việc 2 — lượt CHẠY TIẾP: Google chết ở B3b SAU khi B3 đã xóa dòng (`Tổng xuất`!K đã #REF!) → bấm lại: khuôn không cần ' +
+    'công thức của vỏ, 13/13, mọi ô $4:$2003', async () => {
+    const vo = (m, c, sim) => { [m, c].forEach((s) => { importmartToi10(s); tongXuatKToi(s, 8); }); sim.datLoi({ quaHan: { kieu: 'congThuc', sheet: 'Tổng xuất', lan: [1], cau: 'khac' } }); };
     const X = await kichBan({ vo });
     dung(X.kq.ok === false && coTM(X.ssMoi, 5) === 'B3', 'lượt 1 phải chết ở B3b, cờ B3: ' + X.kq.loi + ' cờ ' + coTM(X.ssMoi, 5));
     dung(/#REF!/.test(A1(X.ssMoi.getSheetByName('Tổng xuất'), 4, C('K'))), 'sau lượt 1, K4 phải đã #REF! (Google co khi xóa dòng)');
     const Y = await kichBan({ lai: X });
     dung(Y.kq.ok === true, 'bấm lại phải 11/11: ' + Y.kq.loi + ' ' + moTaKiem(Y.kq) + String(Y.kq.thongBao).slice(0, 300));
     const k4 = A1(Y.ssMoi.getSheetByName('Tổng xuất'), 4, C('K'));
-    bang(k4.replace(/,'Tổng xuất'!\$E4,/, ';'), 'SUMIF(Importmart!$M$4:$M$2003;Importmart!$G$4:$G$2003)', 'K4 sau khi bấm lại');
+    bang(k4, 'SUMIF(Importmart!$M$4:$M$2003,$E4,Importmart!$G$4:$G$2003)', 'K4 sau khi bấm lại');
     xong(Y);
     return 'lượt 1 chết ở B3b (cờ B3, K4 #REF!) → bấm lại: K4 =' + k4 + ' · ' + await doiChungAm(async () => {
-      const Z = await kichBan({ vo, suaNguon: sua('    var tx = thaoTacTongXuat(sheet(anhMoi, SHEET_TONG_XUAT), sheet(anhCu, SHEET_TONG_XUAT), !!kiem.chayTiep);',
-        '    var tx = thaoTacTongXuat(sheet(anhMoi, SHEET_TONG_XUAT), sheet(anhCu, SHEET_TONG_XUAT), false);') });
+      const Z = await kichBan({ vo, suaNguon: MA_CU_TONG_XUAT() });
       const W = await kichBan({ lai: Z });
-      const ra = W.kq.ok ? [] : ['không lấy từ sổ cũ: bấm lại dừng ' + W.kq.loi];
+      const ra = kiemLech(W.kq).filter((p) => p.ma === 'K-11' || p.ma === 'K-6').map((p) => 'không ghi khuôn: bấm lại vẫn ' + p.ma + ' ' + p.chiTiet);
       xong(W);
       return ra;
-    }, 'lượt chạy tiếp không được lấy công thức ở sổ cũ');
+    }, 'không ghi khuôn `Tổng xuất` ở lượt chạy tiếp');
   });
 
   // ---------------------------------------------------------------- VIỆC 3
@@ -437,7 +435,7 @@ function loiNhuanTroThuChiB(ss) {
     'H4/I4/J4 (J4 cố ý cùng dạng) KHÔNG đụng; Q4 lạ dạng không sửa + cảnh báo; mọi ô khác y nguyên; K-10 ĐẠT', async () => {
     const vo = (m, c) => { [m, c].forEach((s) => { themThuChiB(s); loiNhuanTroThuChiB(s); }); };
     const X = await kichBan({ vo });
-    dung(X.kq.ok === true && X.kq.kiem.length === 11, 'phải 11/11: ' + moTaKiem(X.kq) + ' ' + String(X.kq.thongBao).slice(0, 300));
+    dung(X.kq.ok === true && X.kq.kiem.length === 13, 'phải 13/13: ' + moTaKiem(X.kq) + ' ' + String(X.kq.thongBao).slice(0, 300));
     const sh = X.ssMoi.getSheetByName('THU CHI B');
     for (let i = 0; i < 6; i++) {
       const c = C('K') + i, ch = String.fromCharCode(64 + c);
@@ -464,7 +462,7 @@ function loiNhuanTroThuChiB(ss) {
 
   await test('YC63-09', 'việc 3c: sổ KHÔNG có `THU CHI B` mà có `Chi Phí Hàng Ngày` → luồng cũ `thaoTacChiPhi` (dọn dữ liệu), K-10 "không áp dụng"', async () => {
     const X = await kichBan({});
-    dung(X.kq.ok === true, 'phải 11/11: ' + moTaKiem(X.kq));
+    dung(X.kq.ok === true, 'phải 13/13: ' + moTaKiem(X.kq));
     const cp = X.ssMoi.getSheetByName('Chi Phí Hàng Ngày');
     const conDuLieu = Object.keys(cp.giaTri).filter((k) => { const [r, c] = k.split(':').map(Number); return r >= 3 && c <= 4 && !cp.congThuc[k] && cp.giaTri[k] !== '' && cp.giaTri[k] != null; });
     bang(conDuLieu.length, 0, '`Chi Phí Hàng Ngày` dòng dữ liệu phải được dọn');
@@ -480,19 +478,104 @@ function loiNhuanTroThuChiB(ss) {
     const X = await kichBan({ body: { banMay: '2.8.2', phienBanMongDoi: '2.8.3' } });
     dung(mayCu(X.kq), 'máy 2.8.2 phải khai được link khi đủ 11/11: ' + JSON.stringify((X.kq.kiem || []).map((p) => p.ma)));
     dung(/^DA_KHOI_TAO_/.test(String(coTM(X.ssMoi, 1))), 'cờ DA_KHOI_TAO');
-    dung((X.kq.nhatKy || []).some((s) => /^Tự kiểm thêm .*K-9 ĐẠT .*K-10 ĐẠT .*K-11 ĐẠT /.test(s)), 'nhật ký phải nêu K-9…K-11 đã đạt');
+    dung((X.kq.nhatKy || []).some((s) => /^Tự kiểm thêm .*K-9 ĐẠT .*K-10 ĐẠT .*K-11 ĐẠT .*K-12 ĐẠT .*K-13 ĐẠT /.test(s)), 'nhật ký phải nêu K-9…K-13 đã đạt');
     xong(X);
-    // `Đơn ngoài` có công thức ở CẢ L lẫn M dưới khối đơn → K-9 lệch → máy cũ phải thấy bảng đủ và không khai link.
-    const haiCot = (m, c) => [m, c].forEach((s) => { const dn = s.getSheetByName('Đơn ngoài'); for (let r = 4; r <= 15; r++) datCT(dn, r, C('L'), 'I' + r + '-J' + r); });
-    const Y = await kichBan({ vo: haiCot, body: { banMay: '2.8.2', phienBanMongDoi: '2.8.3' } });
-    dung(Y.kq.ok === false && Y.kq.kiem.length === 11 && !mayCu(Y.kq), 'lệch K-9: máy cũ không được khai link, bảng đủ 11: ' + Y.kq.loi + ' ' + (Y.kq.kiem || []).length);
+    // `THU CHI B`!K4 có hai vùng bắt đầu ở hai dòng khác nhau (tool không sửa) mà `Lợi nhuận`!D14 trỏ vào → K-10 lệch → máy cũ thấy bảng đủ, không khai link.
+    const lechK10 = (m, c) => [m, c].forEach((s) => { const sh = themThuChiB(s); loiNhuanTroThuChiB(s); datCT(sh, 4, C('K'), 'SUMPRODUCT(($B$13:$B$1004=K3)*($F$12:$G$1004))'); });
+    const Y = await kichBan({ vo: lechK10, body: { banMay: '2.8.2', phienBanMongDoi: '2.8.3' } });
+    dung(Y.kq.ok === false && Y.kq.kiem.length === 13 && !mayCu(Y.kq), 'lệch K-10: máy cũ không được khai link, bảng đủ 13: ' + Y.kq.loi + ' ' + (Y.kq.kiem || []).length + ' ' + moTaKiem(Y.kq));
     xong(Y);
-    return 'đủ 11/11 → máy cũ thấy 8/8 + nhật ký K-9…K-11 · K-9 lệch → ' + Y.kq.loi + ', 11 phép · ' + await doiChungAm(async () => {
+    return 'đủ 13/13 → máy cũ thấy 8/8 + nhật ký K-9…K-13 · K-10 lệch → ' + Y.kq.loi + ', 13 phép · ' + await doiChungAm(async () => {
       const Z = await kichBan({ body: { banMay: '2.8.2', phienBanMongDoi: '2.8.3' }, suaNguon: sua("    if (kiem.dat && /^\\d+(\\.\\d+)+$/.test(banMayGui) && !banDuTu_(banMayGui, '2.8.3')) {", '    if (false) {') });
       const ra = mayCu(Z.kq) ? [] : ['không có lớp tương thích: máy 2.8.2 nhận ' + Z.kq.kiem.length + ' phép → "KHÔNG KHAI LINK" dù sổ đã DA_KHOI_TAO'];
       xong(Z);
       return ra;
     }, 'bỏ lớp tương thích máy cũ');
+  });
+
+  // ---------------------------------------------------------------- 2.9.0: KHUÔN CÔNG THỨC CHUẨN (chủ dự án 3/11)
+  /** Dựng đúng kiểu lệch đo trên sổ T11 thật: đáy vùng tra 434/435/457/514/714, cột Mã hàng không IFERROR, ô tổng giãn 2688/3020. */
+  const lechNhuT11 = (s) => {
+    const sm = s.getSheetByName('Shopee mall'), tn = s.getSheetByName('Tổng nhập'), tk = s.getSheetByName('Tổng tồn kho');
+    for (let r = 25; r <= 60; r++) {
+      datCT(sm, r, C('M'), "INDEX('Tổng tồn kho'!$C$3:$G$435, MATCH($D" + r + ",'Tổng tồn kho'!$D$3:$D$435,0),3)");
+      datCT(sm, r, C('E'), "IFERROR(INDEX('Tổng tồn kho'!$C$3:$G$457, MATCH($D" + r + ",'Tổng tồn kho'!$D$3:$D$457,0),1),\"\")");
+      datCT(sm, r, C('L'), 'H' + r + '-I' + r + '-J' + r + '-K' + r);
+    }
+    for (let r = 95; r <= 120; r++) datCT(tn, r, C('G'), "IFERROR(INDEX('Tổng tồn kho'!$C$3:$G$434,MATCH('Tổng nhập'!$D" + r + ",'Tổng tồn kho'!$D$3:$D$434,0),5),\"\")");
+    datCT(sm, 3, C('H'), 'SUM(H4:H2688)');
+    datCT(tk, 5, C('I'), "SUMIF('Tổng nhập'!$E$4:$E$3020,'Tổng tồn kho'!E5,'Tổng nhập'!$H$4:$H$3020)");
+  };
+
+  await test('KC-01', 'khuôn 2.9.0: vỏ mang công thức lệch như sổ T11 thật (đáy 434/435/457, Mã hàng không IFERROR, I tồn kho 3020) → mọi ô khuôn ' +
+    'đúng công thức chuẩn, K-13 ĐẠT; 13/13', async () => {
+    const X = await kichBan({ vo: (m, c) => { lechNhuT11(m); lechNhuT11(c); } });
+    dung(X.kq.ok === true && X.kq.kiem.length === 13, 'phải 13/13: ' + X.kq.loi + ' ' + moTaKiem(X.kq));
+    const sm = X.ssMoi.getSheetByName('Shopee mall'), tn = X.ssMoi.getSheetByName('Tổng nhập'), tk = X.ssMoi.getSheetByName('Tổng tồn kho');
+    bang(A1(sm, 30, C('M')), "IFERROR(INDEX('Tổng tồn kho'!$C$3:$G$2003,MATCH($D30,'Tổng tồn kho'!$D$3:$D$2003,0),3),\"\")", 'Shopee mall M30');
+    bang(A1(sm, 2003, C('N')), "IFERROR(INDEX('Tổng tồn kho'!$E$3:$H$2003,MATCH(M2003,'Tổng tồn kho'!$E$3:$E$2003,0),4),\"\")", 'Shopee mall N2003');
+    bang(A1(tn, 100, C('G')), "IFERROR(INDEX('Tổng tồn kho'!$C$3:$G$2003,MATCH($D100,'Tổng tồn kho'!$D$3:$D$2003,0),5),\"\")", 'Tổng nhập G100');
+    bang(A1(tk, 5, C('I')), "SUMIF('Tổng nhập'!$E$4:$E$2003,$E5,'Tổng nhập'!$H$4:$H$2003)", 'Tổng tồn kho I5');
+    bang(A1(sm, 3, C('H')), 'SUM(H4:H2003)', 'Shopee mall H3');
+    const k13 = X.kq.kiem.filter((p) => p.ma === 'K-13')[0];
+    xong(X);
+    return 'K-13 ' + k13.chiTiet + ' · ' + await doiChungAm(async () => {
+      const Z = await kichBan({ vo: (m, c) => { lechNhuT11(m); lechNhuT11(c); }, suaNguon: BO_KHUON() });
+      const ra = kiemLech(Z.kq).filter((p) => p.ma === 'K-13').map((p) => 'không ghi khuôn: K-13 ' + p.chiTiet);
+      xong(Z);
+      return ra;
+    }, 'không ghi khuôn (công thức lệch của bản sao ở lại)');
+  });
+
+  await test('KC-02', 'khuôn 2.9.0: ô TỔNG ghi SAU khi nới lưới → không bị Google giãn (sổ T11: `Shopee mall`!H3 = SUM(H4:H2688)); mọi ô tổng tới đúng 2003, ' +
+    'K-12 ĐẠT', async () => {
+    const X = await kichBan({});
+    dung(X.kq.ok === true, 'phải 13/13: ' + X.kq.loi + ' ' + moTaKiem(X.kq));
+    const tong = [['Shopee mall', 3, 'H'], ['TikTok Shop', 3, 'L'], ['Đơn ngoài', 3, 'M'], ['Tổng nhập', 2, 'I'], ['Tổng tồn kho', 1, 'K'], ['Tổng xuất', 2, 'O']]
+      .map(([t, r, ch]) => t + '!' + ch + r + '=' + A1(X.ssMoi.getSheetByName(t), r, C(ch)));
+    bang(tong.filter((x) => !/2003\)$/.test(x)), [], 'ô tổng tới 2003');
+    xong(X);
+    return tong.slice(0, 3).join(' · ') + ' · ' + await doiChungAm(async () => {
+      // Mã 2.8.3: ghi ô tổng TRƯỚC lệnh kéo/khuôn (lệnh đó nới lưới) → Google giãn đáy.
+      const Z = await kichBan({ suaNguon: sua(
+        '    // tới 2003) và đáy = `DONG_KEO_CT` — xem `oTongDayChuan`.\n    tt = tt.concat(oTongDayChuan(ten, boCuc.cotTong, 3));', '    // (đối chứng âm)',
+        '    tt.push(opKhuon(ten, 4, DONG_KEO_CT, khuonSheetDon(boCuc)));', '    tt = tt.concat(oTongDayChuan(ten, boCuc.cotTong, 3));\n    tt.push(opKhuon(ten, 4, DONG_KEO_CT, khuonSheetDon(boCuc)));') });
+      const ra = kiemLech(Z.kq).filter((p) => p.ma === 'K-12').map((p) => 'ghi tổng trước khi nới lưới: K-12 ' + p.chiTiet);
+      xong(Z);
+      return ra;
+    }, 'ghi ô tổng trước lệnh nới lưới (như 2.8.3)');
+  });
+
+  await test('KC-03', 'khuôn 2.9.0: sheet NGOÀI khuôn (`THU CHI`, `Lazada`, `Lịch Làm Việc`, `bảng giá sophie`, `Doanh thu thuế`, `Thông tin shop `, `Tiktok` vỏ rỗng) ' +
+    'giữ nguyên văn từng ô', async () => {
+    const NGOAI = ['THU CHI', 'Lazada', 'Lịch Làm Việc', 'bảng giá sophie', 'Doanh thu thuế', 'Thông tin shop ', 'Tiktok'];
+    const X = await kichBan({});
+    dung(X.kq.ok === true, 'phải 13/13: ' + X.kq.loi + ' ' + moTaKiem(X.kq));
+    const co = NGOAI.filter((t) => X.ssMoi.getSheetByName(t));
+    bang(oKhac(chup(X.ssCu, co), chup(X.ssMoi, co)).slice(0, 3), [], 'sheet ngoài khuôn không đổi ô nào');
+    xong(X);
+    return co.length + ' sheet ngoài khuôn y nguyên · ' + await doiChungAm(async () => {
+      const Z = await kichBan({ suaNguon: sua("    var ttB3b = tx.thaoTac.concat(tcb.thaoTac);", "    var ttB3b = tx.thaoTac.concat(tcb.thaoTac, [{ loai: 'GHI_O', sheet: 'Lazada', r: 5, c: 3, gt: 'x' }]);") });
+      const ra = oKhac(chup(Z.ssCu, co), chup(Z.ssMoi, co));
+      xong(Z);
+      return ra;
+    }, 'tool lỡ ghi một ô vào sheet ngoài khuôn');
+  });
+
+  await test('KC-04', 'khuôn 2.9.0: `Tổng nhập` khối đầu kỳ mang khuôn C/E/F/G/I (không còn chép giá vốn gõ tay `=7286400/240` của dòng nhập hàng tháng cũ), ' +
+    'K-1/K-2 ĐẠT', async () => {
+    const giaVonTay = (s) => { const tn = s.getSheetByName('Tổng nhập'); datCT(tn, 4, C('G'), '7286400/240'); datCT(tn, 4, C('I'), '5*5'); };
+    const X = await kichBan({ vo: (m, c) => { giaVonTay(m); giaVonTay(c); } });
+    dung(X.kq.ok === true, 'phải 13/13: ' + X.kq.loi + ' ' + moTaKiem(X.kq));
+    const tn = X.ssMoi.getSheetByName('Tổng nhập');
+    bang([A1(tn, 4, C('G')), A1(tn, 4, C('I'))], ["IFERROR(INDEX('Tổng tồn kho'!$C$3:$G$2003,MATCH($D4,'Tổng tồn kho'!$D$3:$D$2003,0),5),\"\")", 'IFERROR(H4*G4,"")'], 'G4, I4');
+    xong(X);
+    return 'G4/I4 đúng khuôn · ' + await doiChungAm(async () => {
+      const Z = await kichBan({ vo: (m, c) => { giaVonTay(m); giaVonTay(c); }, suaNguon: BO_KHUON() });
+      const ra = kiemLech(Z.kq).filter((p) => p.ma === 'K-13').map((p) => 'không ghi khuôn: K-13 ' + p.chiTiet);
+      xong(Z);
+      return ra;
+    }, 'không ghi khuôn');
   });
 
   console.log('\n=== ' + soDat + ' ĐẠT · ' + soHong + ' HỎNG · tổng ' + (soDat + soHong) + ' ===');

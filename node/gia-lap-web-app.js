@@ -135,6 +135,28 @@ function doiA1KhiXoaDong(text, ten, r, n) {
   }).join('"');
 }
 
+/**
+ * Luật Google khi sheet `ten` được chèn `n` dòng ngay sau dòng `R`, áp cho công thức A1 (không `=`) nằm ở sheet `sheetCuaCongThuc`:
+ * vùng trỏ vào `ten` (có tiền tố `<ten>!`, hoặc không tiền tố nếu công thức nằm ngay trên `ten`) mà bắt đầu ≤ R < đáy → đáy + n;
+ * vùng nằm trọn dưới R → dời cả hai đầu + n. Vùng trên R giữ nguyên. Giữ dấu `$`; chuỗi trong nháy kép không đụng.
+ */
+function gianA1KhiChenDong(text, ten, sheetCuaCongThuc, R, n) {
+  const tenChuan = String(ten).toLowerCase(), cung = String(sheetCuaCongThuc).toLowerCase() === tenChuan;
+  const re = /(('(?:[^']|'')+'|[^\s!'(),;:$"&+*/<>=^{}-]+)!)?(\$?)([A-Z]{1,3})(\$?)(\d+):(\$?)([A-Z]{1,3})(\$?)(\d+)/g;
+  return String(text).split('"').map((doan, i) => {
+    if (i % 2) return doan;
+    return doan.replace(re, (tat, tienTo, sh, d1, c1, d2, r1, d3, c2, d4, r2) => {
+      const trungSheet = sh ? (sh.charAt(0) === "'" ? sh.slice(1, -1).replace(/''/g, "'") : sh).toLowerCase() === tenChuan : cung;
+      if (!trungSheet) return tat;
+      let a = +r1, b = +r2;
+      if (a > b) [a, b] = [b, a];
+      if (a <= R && b > R) b += n;
+      else if (a > R) { a += n; b += n; } else return tat;
+      return (tienTo || '') + d1 + c1 + d2 + a + ':' + d3 + c2 + d4 + b;
+    });
+  }).join('"');
+}
+
 /** Một sheet giả: lưu giá trị, công thức R1C1, định dạng số, nền, ô gộp — và ghi lại MỌI lệnh chạm vào. */
 class SheetGia {
   constructor(ten, ss) {
@@ -185,9 +207,33 @@ class SheetGia {
     const max = this.getMaxRows();
     if (sauDong !== max) throw new Error('Giả lập chỉ hỗ trợ chèn dòng ở CUỐI lưới (sau dòng ' + max + '), nhận ' + sauDong);
     this.soDongToiDa = max + soDong;
+    // 2.8.4: như Google — chèn dòng sau dòng cuối lưới làm GIÃN mọi vùng (ở mọi sheet, kể cả chính sheet này) bắt đầu trong lưới mà đáy vượt
+    // quá lưới: `SUM(H4:H2000)` ghi khi lưới còn 1.315 dòng, nới lưới tới 2003 (chèn 688 dòng) → `SUM(H4:H2688)` (đo sổ T11 thật 3/11).
+    if (this.ss && typeof this.ss.getSheets === 'function') {
+      this.ss.getSheets().forEach((sh) => { if (sh._gianThamChieuKhiChenDong) sh._gianThamChieuKhiChenDong(this.ten, sauDong, soDong); });
+    }
     const sim = this.ss && this.ss.sim;
     if (sim) sim.nhatKyGhi.push({ stt: sim.nhatKyGhi.length + 1, sheet: this.ten, kieu: 'chenDong', dong1: sauDong + 1, cot1: 1, soDong: soDong, soCot: 0, cot: [] });
     return this;
+  }
+  /** Sheet `tenNguon` vừa được chèn `n` dòng sau dòng `R` → giãn/dời tham chiếu VÙNG của sheet NÀY trỏ sang đó (`gianA1KhiChenDong`). */
+  _gianThamChieuKhiChenDong(tenNguon, R, n) {
+    const cungSheet = tenNguon === this.ten;
+    const can = ["'" + tenNguon.replace(/'/g, "''") + "'!", tenNguon + '!'];
+    Object.keys(this.congThuc).forEach((k) => {
+      const f = this.congThuc[k];
+      if (!f) return;
+      const [rr, cc] = k.split(':').map(Number);
+      if (cungSheet) {
+        // lọc nhanh: công thức R1C1 có dòng (tuyệt đối hay tương đối) nào vượt R mới đáng đổi sang A1
+        let vuot = false;
+        for (const m of f.matchAll(/R(\[(-?\d+)\]|(\d+))/g)) { const d = m[3] != null ? +m[3] : rr + Number(m[2]); if (d > R) { vuot = true; break; } }
+        if (!vuot) return;
+      } else if (!can.some((x) => f.indexOf(x) >= 0)) return;
+      const a1 = r1c1SangA1(f, rr, cc).replace(/^=/, '');
+      const moi = gianA1KhiChenDong(a1, tenNguon, this.ten, R, n);
+      if (moi !== a1) this.congThuc[k] = a1SangR1C1(moi, rr, cc);
+    });
   }
   /** Dời mọi kho ô theo hàm đổi khóa (`null` = bỏ ô). */
   _doiKho(doi) {
@@ -343,7 +389,7 @@ class VungGia {
     this._duyet((r, c, i, j) => {
       const f = b[i][j];
       if (f) { this.sh.congThuc[khoaO(r, c)] = a1SangR1C1(String(f).replace(/^=/, ''), r, c); delete this.sh.giaTri[khoaO(r, c)]; }
-      else delete this.sh.congThuc[khoaO(r, c)];
+      else { delete this.sh.congThuc[khoaO(r, c)]; delete this.sh.giaTri[khoaO(r, c)]; }   // như Google: ghi '' là xóa sạch ô
     });
     return this;
   }
@@ -463,7 +509,7 @@ class VungGia {
     this._ghiNhat('congThuc');
     this._duyet((r, c, i, j) => {
       this.sh.congThuc[khoaO(r, c)] = b[i][j];
-      if (b[i][j]) delete this.sh.giaTri[khoaO(r, c)];
+      delete this.sh.giaTri[khoaO(r, c)];   // 2.9.0: như Google — ghi công thức (kể cả '' để xóa) thì giá trị cũ của ô không còn
     });
     return this;
   }
@@ -1140,7 +1186,7 @@ function napLoiMay() { return napGs(FILE_LOI_MAY, {}); }
 module.exports = {
   taoGiaLap, napGs, napLoiMay, catCauMang,
   dungSheetGianHang, dungSheetDanhMuc, dungSheetMapping, dungKhungThieu,
-  BangTinhGia, SheetGia, doiA1KhiXoaDong,
+  BangTinhGia, SheetGia, doiA1KhiXoaDong, gianA1KhiChenDong,
   URL_GIA, TIEU_DE_GIAN_HANG, FILE_VO_GOOGLE, FILE_LOI_MAY,
   HTML_DANG_NHAP, HTML_QUA_GIO, HTML_500, HTML_403
 };

@@ -193,7 +193,7 @@ function vn(n) { return Number(n).toLocaleString('vi-VN', { maximumFractionDigit
 
 /**
  * Chỉ tiêu TM-10 theo D-57 / YC-39.3. Ba vế, đều là số đo:
- *  (a) `H3:L3` đúng `SUM(x4:x2000)` và không còn dòng đơn nào từ `A4`;
+ *  (a) `H3:L3` đúng `SUM(x4:x2003)` (2.9.0: đáy 2003) và không còn dòng đơn nào từ `A4`;
  *  (b) mỗi cột E, F, L, M, N: ĐÚNG `SO_DONG_CT` ô công thức, dòng đầu 4, dòng cuối `DONG_CUOI_CT` — tức liền
  *      một dải, không khe hở (2.000 ô trong 2.000 dòng thì không thể có ô trống);
  *  (c) in kèm số của vỏ TRƯỚC khi chạy và của bản tay (nếu còn file) để đối chiếu, KHÔNG dùng để chấm.
@@ -204,7 +204,7 @@ function kiemN10(anhSau, demTruoc, demSau, demThat, vungCongThuc) {
   for (const ten of GIAN_HANG) {
     const tong = ['H', 'I', 'J', 'K', 'L'].filter(ch => {
       const t = docCT(anhSau, ten, 3, ch);
-      return t && t.replace(/\s/g, '').toUpperCase() === `SUM(${ch}4:${ch}2000)`;
+      return t && t.replace(/\s/g, '').toUpperCase() === `SUM(${ch}4:${ch}2003)`;
     });
     const conDon = lop.TaoThangMoi.quetDuLieu(anhSau.sheets[ten], 4, 1, 2000, chiSoCot('O')).soO;
     const dCuoi = ((vungCongThuc || {})[ten] || {}).dongCuoiDon || 0;
@@ -331,7 +331,7 @@ async function chayNghiemThu() {
 
   // TM-10 (VIẾT LẠI) — vùng công thức từng dòng của 4 sheet gian hàng
   const kq10 = kiemN10(anhSau, demVo, demSinh, demThat, kq.ke.doc.vungCongThuc);
-  them('TM-10', 'Sheet gian hàng: `H3:L3` là `SUM(x4:x2000)` · không còn đơn từ `A4` · mỗi cột E/F/L/M/N ' +
+  them('TM-10', 'Sheet gian hàng: `H3:L3` là `SUM(x4:x2003)` · không còn đơn từ `A4` · mỗi cột E/F/L/M/N ' +
     `đúng ${SO_DONG_CT} ô công thức liền dải dòng 4 → ${DONG_CUOI_CT} (D-57)`,
     kq10.dat, kq10.chiTiet);
 

@@ -60,7 +60,7 @@
  * Số bản của vỏ Google — bằng `PHIEN_BAN` trong `node/gsheet-web-app.js` và `version` của package.json khi phát hành.
  * Mọi phản hồi đã qua cửa bí mật kèm bản thật này ở trường `banWebApp`.
  */
-var PHIEN_BAN = '2.8.3';
+var PHIEN_BAN = '2.9.0';
 
 /**
  * YC-42: bản MÁY thấp nhất Web App này còn phục vụ gói ghi (`ghi`, `xuLy`, `taoThangMoi`). Dưới mốc → từ chối
@@ -1865,14 +1865,14 @@ function hanhDongXuLy_(body, batDau) {
 //
 // Nút 3 chế độ 1 gọi hành động này với hai file do MÁY chỉ định (ID trong thân POST, không đọc bảng link nào):
 // file tháng CŨ (chỉ đọc) và file tháng MỚI (chủ dự án tự "Tạo bản sao", đổi tên — D-45). Mọi nghiệp vụ nằm ở
-// lõi `TaoThangMoi.gs` (`lapKeHoach` → danh sách thao tác, `tuKiem` → K-1…K-11); phần dưới đây chỉ là VỎ GOOGLE:
+// lõi `TaoThangMoi.gs` (`lapKeHoach` → danh sách thao tác, `tuKiem` → K-1…K-13); phần dưới đây chỉ là VỎ GOOGLE:
 // chụp ảnh hai file, chạy thao tác trên file mới, canh giờ, ghi cờ tiến độ, tô lại Mapping, tự kiểm.
 //
 // Ràng buộc (Phụ lục A.10) được giữ ở ĐÂY, không trông vào lõi:
 //   · vỏ không nhận file cũ để ghi — hàm thực thi chỉ cầm `ssMoi`
 //   · `TAO_SHEET` chỉ nhận `Mapping_san_pham`; tên khác là ném lỗi (INV-2)
 //   · hai ID trùng nhau → dừng trước khi mở
-//   · chỉ khi đủ mọi phép K (K-1…K-11 từ 2.8.3) mới ghi `DA_KHOI_TAO_`
+//   · chỉ khi đủ mọi phép K (K-1…K-13 từ 2.8.3–2.9.0) mới ghi `DA_KHOI_TAO_`
 
 /** Ngưỡng dừng gọn (Phụ lục A.7.3): 4 phút 30, quota Google 6 phút. */
 var TM_NGUONG_GIAY = 270;
@@ -2086,6 +2086,70 @@ function keoCongThucKhoiTM_(sh, dsCot, r1, r2, dem) {
   return soO;
 }
 
+/**
+ * 2.9.0 — công thức A1 (không `=`) đặt tại ô (r, c) → R1C1 TƯƠNG ĐỐI (`R[1]C[-2]`, `R3C4`) để ghi CÙNG MỘT chuỗi cho cả cột bằng
+ * `setFormulasR1C1` — y như kéo chuột. Bỏ qua chuỗi trong nháy kép và tên sheet trong nháy đơn; không đụng tên hàm (`LOG10(`).
+ */
+function a1SangR1C1TM_(text, r, c) {
+  var src = String(text), n = src.length, out = '', i = 0;
+  var chiSo = function (chu) { var x = 0; for (var k = 0; k < chu.length; k++) x = x * 26 + (chu.charCodeAt(k) - 64); return x; };
+  while (i < n) {
+    var ch = src.charAt(i);
+    if (ch === '"' || ch === "'") { var j = src.indexOf(ch, i + 1); if (j < 0) j = n - 1; out += src.slice(i, j + 1); i = j + 1; continue; }
+    var m = /^(\$?)([A-Z]{1,3})(\$?)(\d+)/.exec(src.slice(i));
+    var truoc = out.charAt(out.length - 1);
+    if (m && !/[A-Za-z0-9_.]/.test(truoc) && !/[A-Za-z0-9_(]/.test(src.charAt(i + m[0].length))) {
+      var cot = chiSo(m[2]), dong = +m[4];
+      out += (m[3] ? 'R' + dong : (dong === r ? 'R' : 'R[' + (dong - r) + ']')) + (m[1] ? 'C' + cot : (cot === c ? 'C' : 'C[' + (cot - c) + ']'));
+      i += m[0].length;
+      continue;
+    }
+    out += ch; i++;
+  }
+  return '=' + out;
+}
+
+/**
+ * 2.9.0 — `GHI_KHUON`: ghi KHUÔN CÔNG THỨC CHUẨN cho cả cột `r1..r2` (lõi `opKhuon`). Nới lưới MỘT lần trước (Google không tự nới; và ghi
+ * trước rồi mới nới là Google GIÃN vùng — bài học ô tổng 2688 của sổ T11). Đọc giá trị + công thức của cả khối MỘT lượt để bỏ qua ô có GIÁ
+ * TRỊ gõ tay; ô còn lại (trống hay đang mang công thức bất kỳ) nhận đúng công thức khuôn (`text` null → xóa công thức). Mỗi cột một chuỗi
+ * R1C1; các dòng liền nhau cùng tập cột phải ghi gom thành một hình chữ nhật cho mỗi dải cột kề nhau (như `keoCongThucKhoiTM_`).
+ * @returns {number} số ô đã ghi
+ */
+function ghiKhuonTM_(sh, t, dem) {
+  var mr = sh.getMaxRows();
+  if (mr < t.r2) { sh.insertRowsAfter(mr, t.r2 - mr); demTM_(dem, 'noiLuoi'); }
+  var cot = t.cot.slice().sort(function (a, b) { return a.c - b.c; });
+  var n = t.r2 - t.r1 + 1, cMin = cot[0].c, cMax = cot[cot.length - 1].c;
+  var vung = sh.getRange(t.r1, cMin, n, cMax - cMin + 1);
+  var gt = vung.getValues(), cta = vung.getFormulasR1C1();
+  demTM_(dem, 'doc', 2);
+  var r1c1 = {};
+  cot.forEach(function (x) { r1c1[x.c] = x.text == null ? '' : a1SangR1C1TM_(x.text, t.r1, x.c); });
+  var laGoTay = function (i, c) { var k = c - cMin; return !cta[i][k] && gt[i][k] !== '' && gt[i][k] != null; };
+  var khoaDong = function (i) { return cot.filter(function (x) { return !laGoTay(i, x.c); }).map(function (x) { return x.c; }).join(','); };
+  var soO = 0, i = 0;
+  while (i < n) {
+    var khoa = khoaDong(i);
+    if (!khoa) { i++; continue; }
+    var j = i;
+    while (j + 1 < n && khoaDong(j + 1) === khoa) j++;
+    var ds = khoa.split(',').map(Number), d1 = 0;
+    while (d1 < ds.length) {
+      var d2 = d1;
+      while (d2 + 1 < ds.length && ds[d2 + 1] === ds[d2] + 1) d2++;
+      var bang = [];
+      for (var r = i; r <= j; r++) { var h = []; for (var q = d1; q <= d2; q++) h.push(r1c1[ds[q]]); bang.push(h); }
+      sh.getRange(t.r1 + i, ds[d1], bang.length, d2 - d1 + 1).setFormulasR1C1(bang);
+      demTM_(dem, 'khuon');
+      soO += bang.length * (d2 - d1 + 1);
+      d1 = d2 + 1;
+    }
+    i = j + 1;
+  }
+  return soO;
+}
+
 /** Bộ đếm lệnh Google của một phần việc (YC-62): `{ tong, theoLoai }` — in vào nhật ký để đo được trên Google thật. */
 function demMoiTM_() { return { tong: 0, theoLoai: {} }; }
 function demTM_(dem, loai, so) {
@@ -2097,7 +2161,7 @@ function demTM_(dem, loai, so) {
 function cauDemTM_(dem) {
   if (!dem) return '';
   var TEN = { doc: 'đọc', ghi: 'ghi', goGop: 'gỡ gộp', xoaDong: 'xóa dòng', xoaVung: 'xóa vùng', keo: 'kéo công thức', noiLuoi: 'nới lưới',
-    gopO: 'gộp ô', chenCot: 'chèn cột', taoSheet: 'tạo sheet' };
+    gopO: 'gộp ô', chenCot: 'chèn cột', taoSheet: 'tạo sheet', khuon: 'ghi khuôn' };
   var ds = Object.keys(dem.theoLoai).map(function (k) { return (TEN[k] || k) + ' ' + dem.theoLoai[k]; });
   return dem.tong + ' lệnh' + (ds.length ? ' (' + ds.join(', ') + ')' : '');
 }
@@ -2203,6 +2267,11 @@ function thucThiThaoTacTM_(ssMoi, dsThaoTac, hetGio, dem) {
         dsThaoTac[jK].r1 === t.r1 && dsThaoTac[jK].r2 === t.r2) { dsCot.push(dsThaoTac[jK].c); jK++; }
       keoCongThucKhoiTM_(sheetTM_(ssMoi, t.sheet), dsCot, t.r1, t.r2, dem);
       i = jK;
+      continue;
+    }
+    if (t.loai === 'GHI_KHUON') {
+      ghiKhuonTM_(sheetTM_(ssMoi, t.sheet), t, dem);
+      i++;
       continue;
     }
     if (t.loai === 'TAO_SHEET') {
@@ -2368,7 +2437,7 @@ function hanhDongTaoThangMoi_(body, batDau) {
     }
 
     // B8: đọc lại file MỚI sau khi Google tính lại, mười một phép tự kiểm. Lệnh đọc cả sổ cũng có thể bị Google ngắt → thử lại như trên.
-    buocDangLam = 'B8 · Tự kiểm K-1…K-11';
+    buocDangLam = 'B8 · Tự kiểm K-1…K-13';
     SpreadsheetApp.flush();
     var anhSau = thuLaiDocTM_(ctx, buocDangLam, function () { return chupFileThangMoi_(ssMoi); });
     var kiem = TaoThangMoi.tuKiem(anhCu, anhSau, ke);
@@ -2580,7 +2649,13 @@ function docThangCoTM_(ss) {
  */
 function kiemCongThucVuaGhiTM_(ssMoi, dsThaoTac, buoc) {
   var theoSheet = {};
-  dsThaoTac.forEach(function (t) { if (t.loai === 'GHI_CT') (theoSheet[t.sheet] = theoSheet[t.sheet] || []).push(t); });
+  dsThaoTac.forEach(function (t) {
+    if (t.loai === 'GHI_CT') (theoSheet[t.sheet] = theoSheet[t.sheet] || []).push(t);
+    // 2.9.0: lệnh khuôn — soát dòng ĐẦU của vùng (cùng một chuỗi R1C1 cho cả cột: dòng đầu lỗi cú pháp là cả cột lỗi).
+    if (t.loai === 'GHI_KHUON') t.cot.forEach(function (x) {
+      if (x.text != null) (theoSheet[t.sheet] = theoSheet[t.sheet] || []).push({ r: t.r1, c: x.c, text: Utils.dichCongThuc(x.text, t.r1, t.r1) });
+    });
+  });
   var hong = [];
   Object.keys(theoSheet).forEach(function (ten) {
     var ds = theoSheet[ten], sh = sheetTM_(ssMoi, ten);
@@ -2859,6 +2934,6 @@ function chayBoTest() {
   return 'Tổng ' + kq.length + ' · hỏng ' + hong.length;
 }
 
-var VAN_TAY_SHELL = '20e6ada9';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_SHELL = '455bd130';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
 
-var BAN_DUNG = 'ae3f08a9c672';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay
+var BAN_DUNG = '41479cd14bfd';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay

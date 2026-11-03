@@ -216,6 +216,7 @@ class VoThangMoi {
         }
         case 'CHEN_COT': chenCot(this.ws(t.sheet), t.truocCot); break;
         case 'KEO_CT': keoCongThuc(this.ws(t.sheet), t.c, t.r1, t.r2); break;
+        case 'GHI_KHUON': ghiKhuon(this.ws(t.sheet), t); break;
         default: throw new Error('Thao tác lạ: ' + t.loai);
       }
     }
@@ -403,6 +404,23 @@ function keoCongThuc(ws, c, r1, r2) {
   return dem;
 }
 
+/**
+ * 2.9.0 — `GHI_KHUON`: mọi ô `r1..r2` của từng cột khuôn nhận công thức chuẩn (dịch dòng như kéo chuột từ dòng `r1`); ô có GIÁ TRỊ gõ tay để
+ * yên; `text` null → xóa công thức (cột phải trống công thức). Cùng luật với vỏ Google `ghiKhuonTM_`.
+ */
+function ghiKhuon(ws, t) {
+  let dem = 0;
+  for (let r = t.r1; r <= t.r2; r++) {
+    for (const x of t.cot) {
+      const cell = ws.getCell(r, x.c);
+      if (!congThucCua(cell) && cell.value != null && cell.value !== '') continue;
+      cell.value = x.text == null ? null : { formula: dichCT(x.text, t.r1, r) };
+      dem++;
+    }
+  }
+  return dem;
+}
+
 // ---------------------------------------------------------------- TÍNH LẠI (BẪY 2)
 
 const S_TON = 'Tổng tồn kho', S_NHAP = 'Tổng nhập', S_LN = 'Lợi nhuận', S_DN = 'Đơn ngoài', S_TIK = 'Tiktok';
@@ -458,6 +476,31 @@ function tinhCongThucDon(text, sheetNay, layO) {
     if (src[i] === '+') { i++; return nhanTu(); }
     const so = /^\d+(\.\d+)?/.exec(src.slice(i));
     if (so && !/^[A-Z]/.test(src.slice(i))) { i += so[0].length; return +so[0]; }
+    // 2.9.0: IFERROR(x; y) — khuôn chuẩn bọc công thức từng dòng. x lỗi (ô #REF!/#N/A, không tính được) → y (chuỗi "" coi là 0).
+    const loiNeu = /^IFERROR\(/i.exec(src.slice(i));
+    if (loiNeu) {
+      i += loiNeu[0].length;
+      const dau = i;
+      let v = null;
+      try { v = bieuThuc(); } catch (e) { v = null; }
+      if (v == null) {                       // bỏ qua phần còn lại của đối số 1 tới dấu phân cách ngoài ngoặc
+        let d = 0;
+        for (i = dau; i < src.length; i++) {
+          const c = src[i];
+          if (c === '"') { i = src.indexOf('"', i + 1); continue; }
+          if (c === '(') d++; else if (c === ')') d--; else if ((c === ',' || c === ';') && d === 0) break;
+        }
+      }
+      boTrang();
+      if (src[i] !== ',' && src[i] !== ';') hong();
+      i++; boTrang();
+      let y = 0;
+      if (src[i] === '"') i = src.indexOf('"', i + 1) + 1; else y = bieuThuc();
+      boTrang();
+      if (src[i] !== ')') hong();
+      i++;
+      return v == null ? y : v;
+    }
     const ham = /^(SUM)\(/i.exec(src.slice(i));
     if (ham) {
       i += ham[0].length;
