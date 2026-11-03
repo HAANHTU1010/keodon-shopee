@@ -60,7 +60,7 @@
  * Số bản của vỏ Google — bằng `PHIEN_BAN` trong `node/gsheet-web-app.js` và `version` của package.json khi phát hành.
  * Mọi phản hồi đã qua cửa bí mật kèm bản thật này ở trường `banWebApp`.
  */
-var PHIEN_BAN = '2.9.0';
+var PHIEN_BAN = '2.9.1';
 
 /**
  * YC-42: bản MÁY thấp nhất Web App này còn phục vụ gói ghi (`ghi`, `xuLy`, `taoThangMoi`). Dưới mốc → từ chối
@@ -2112,10 +2112,12 @@ function a1SangR1C1TM_(text, r, c) {
 /**
  * 2.9.0 — `GHI_KHUON`: ghi KHUÔN CÔNG THỨC CHUẨN cho cả cột `r1..r2` (lõi `opKhuon`). Nới lưới MỘT lần trước (Google không tự nới; và ghi
  * trước rồi mới nới là Google GIÃN vùng — bài học ô tổng 2688 của sổ T11). Đọc giá trị + công thức của cả khối MỘT lượt để bỏ qua ô có GIÁ
- * TRỊ gõ tay; ô còn lại (trống hay đang mang công thức bất kỳ) nhận đúng công thức khuôn (`text` null → xóa công thức). Mỗi cột một chuỗi
+ * TRỊ gõ tay; ô còn lại (trống hay đang mang công thức bất kỳ) nhận đúng công thức khuôn (`text` null → `clearContent()`, 2.9.1). Mỗi cột một chuỗi
  * R1C1; các dòng liền nhau cùng tập cột phải ghi gom thành một hình chữ nhật cho mỗi dải cột kề nhau (như `keoCongThucKhoiTM_`).
  * @returns {number} số ô đã ghi
  */
+function laChuLoiTM_(v) { return typeof v === 'string' && /^#(REF!|N\/A|VALUE!|DIV\/0!|NAME\?|NUM!|NULL!|ERROR!)$/.test(v.trim()); }
+
 function ghiKhuonTM_(sh, t, dem) {
   var mr = sh.getMaxRows();
   if (mr < t.r2) { sh.insertRowsAfter(mr, t.r2 - mr); demTM_(dem, 'noiLuoi'); }
@@ -2126,7 +2128,9 @@ function ghiKhuonTM_(sh, t, dem) {
   demTM_(dem, 'doc', 2);
   var r1c1 = {};
   cot.forEach(function (x) { r1c1[x.c] = x.text == null ? '' : a1SangR1C1TM_(x.text, t.r1, x.c); });
-  var laGoTay = function (i, c) { var k = c - cMin; return !cta[i][k] && gt[i][k] !== '' && gt[i][k] != null; };
+  // 2.9.1: ô mang CHỮ lỗi (`#ERROR!`…) mà không công thức KHÔNG phải dữ liệu gõ tay — đó là dấu vết của lệnh ghi '' hỏng (bản 2.9.0, Google 3/11);
+  // bấm lại nút 3 thì khuôn phải dọn được nó, không được để yên như dữ liệu.
+  var laGoTay = function (i, c) { var k = c - cMin, v = gt[i][k]; return !cta[i][k] && v !== '' && v != null && !laChuLoiTM_(v); };
   var khoaDong = function (i) { return cot.filter(function (x) { return !laGoTay(i, x.c); }).map(function (x) { return x.c; }).join(','); };
   var soO = 0, i = 0;
   while (i < n) {
@@ -2137,12 +2141,19 @@ function ghiKhuonTM_(sh, t, dem) {
     var ds = khoa.split(',').map(Number), d1 = 0;
     while (d1 < ds.length) {
       var d2 = d1;
-      while (d2 + 1 < ds.length && ds[d2 + 1] === ds[d2] + 1) d2++;
-      var bang = [];
-      for (var r = i; r <= j; r++) { var h = []; for (var q = d1; q <= d2; q++) h.push(r1c1[ds[q]]); bang.push(h); }
-      sh.getRange(t.r1 + i, ds[d1], bang.length, d2 - d1 + 1).setFormulasR1C1(bang);
+      // 2.9.1: một dải là cột KỀ nhau và CÙNG loại (cùng có công thức / cùng trống-khuôn). Cột trống-khuôn xóa bằng `clearContent()` —
+      // KHÔNG BAO GIỜ đưa '' vào `setFormulasR1C1`: Google thật để lại chữ `#ERROR!` ở mọi ô đó (đo 3/11, `Đơn ngoài`!I và L).
+      var trong = r1c1[ds[d1]] === '';
+      while (d2 + 1 < ds.length && ds[d2 + 1] === ds[d2] + 1 && (r1c1[ds[d2 + 1]] === '') === trong) d2++;
+      var vungGhi = sh.getRange(t.r1 + i, ds[d1], j - i + 1, d2 - d1 + 1);
+      if (trong) vungGhi.clearContent();
+      else {
+        var bang = [];
+        for (var r = i; r <= j; r++) { var h = []; for (var q = d1; q <= d2; q++) h.push(r1c1[ds[q]]); bang.push(h); }
+        vungGhi.setFormulasR1C1(bang);
+      }
       demTM_(dem, 'khuon');
-      soO += bang.length * (d2 - d1 + 1);
+      soO += (j - i + 1) * (d2 - d1 + 1);
       d1 = d2 + 1;
     }
     i = j + 1;
@@ -2653,7 +2664,8 @@ function kiemCongThucVuaGhiTM_(ssMoi, dsThaoTac, buoc) {
     if (t.loai === 'GHI_CT') (theoSheet[t.sheet] = theoSheet[t.sheet] || []).push(t);
     // 2.9.0: lệnh khuôn — soát dòng ĐẦU của vùng (cùng một chuỗi R1C1 cho cả cột: dòng đầu lỗi cú pháp là cả cột lỗi).
     if (t.loai === 'GHI_KHUON') t.cot.forEach(function (x) {
-      if (x.text != null) (theoSheet[t.sheet] = theoSheet[t.sheet] || []).push({ r: t.r1, c: x.c, text: Utils.dichCongThuc(x.text, t.r1, t.r1) });
+      // 2.9.1: cột trống-khuôn cũng soát — ô vừa xóa mà hiện `#ERROR!` là lệnh xóa hỏng (bản 2.9.0 ghi '' → Google để chữ #ERROR!, 3/11).
+      (theoSheet[t.sheet] = theoSheet[t.sheet] || []).push({ r: t.r1, c: x.c, text: x.text == null ? null : Utils.dichCongThuc(x.text, t.r1, t.r1) });
     });
   });
   var hong = [];
@@ -2667,7 +2679,8 @@ function kiemCongThucVuaGhiTM_(ssMoi, dsThaoTac, buoc) {
       if (String(hien[t.r - r1][t.c - c1]).trim() !== '#ERROR!') return;
       var ct = '';
       try { ct = sh.getRange(t.r, t.c).getFormula(); } catch (e) { ct = '(không đọc được)'; }
-      hong.push(ten + '!' + chuCotTM_(t.c) + t.r + ' — Google đang giữ: ' + ct + ' — tool đã ghi: =' + t.text);
+      hong.push(ten + '!' + chuCotTM_(t.c) + t.r + ' — Google đang giữ: ' + (ct || '(không công thức)') + ' — tool đã ghi: ' +
+        (t.text == null ? '(xóa trống — cột trống theo khuôn)' : '=' + t.text));
     });
   });
   if (!hong.length) return;
@@ -2934,6 +2947,6 @@ function chayBoTest() {
   return 'Tổng ' + kq.length + ' · hỏng ' + hong.length;
 }
 
-var VAN_TAY_SHELL = '455bd130';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_SHELL = '1d5a7fee';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
 
-var BAN_DUNG = '41479cd14bfd';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay
+var BAN_DUNG = '7dcd34753be7';   // dấu vân tay CẢ BẢN DỰNG — MÁY sinh, đừng sửa tay

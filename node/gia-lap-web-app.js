@@ -508,8 +508,17 @@ class VungGia {
     bomQuaHan(this.sh.ss, 'congThuc', null, this.sh.ten);
     this._ghiNhat('congThuc');
     this._duyet((r, c, i, j) => {
-      this.sh.congThuc[khoaO(r, c)] = b[i][j];
-      delete this.sh.giaTri[khoaO(r, c)];   // 2.9.0: như Google — ghi công thức (kể cả '' để xóa) thì giá trị cũ của ô không còn
+      const f = b[i][j];
+      if (f == null || f === '') {
+        // 2.9.1 — ĐO TRÊN GOOGLE THẬT 3/11 (sổ thử T12): `setFormulasR1C1` nhận '' KHÔNG xóa ô mà để lại GIÁ TRỊ chữ `#ERROR!` (không công
+        // thức; bản xuất .xlsx: `<c t="str"><v>#ERROR!</v></c>`) ở mọi ô '' — cả `Đơn ngoài`!I và L 2.000 dòng. Bản 2.9.0 của giả lập coi
+        // '' là xóa sạch nên test xanh mà Google hỏng. Muốn xóa ô thì dùng `clearContent()`.
+        delete this.sh.congThuc[khoaO(r, c)];
+        this.sh.giaTri[khoaO(r, c)] = '#ERROR!';
+        return;
+      }
+      this.sh.congThuc[khoaO(r, c)] = f;
+      delete this.sh.giaTri[khoaO(r, c)];   // 2.9.0: như Google — ghi công thức thì giá trị cũ của ô không còn
     });
     return this;
   }

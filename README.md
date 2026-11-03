@@ -294,6 +294,11 @@ dòng đó là sinh ra ca mất đơn mà không ai biết — file đã đi kh�
   vượt lưới — tool ghi `SUM(H4:H2000)` trước rồi mới nới nên sổ T11 thật ra `SUM(H4:H2688)`, `TikTok Shop` 3439, `Tổng nhập`!I2 3096,
   `Tổng tồn kho`!I 3020. Nay ô tổng ghi SAU lệnh khuôn (lệnh đó nới lưới trước khi ghi); K-12 chấm mọi ô tổng tới đúng 2003. Giả lập
   bắt chước luật này (`gianA1KhiChenDong`) — thiếu nó thì không bài nào thấy.
+- **`setFormulasR1C1` nhận `''` KHÔNG xóa ô (2.9.1, đo trên Google thật 3/11).** Google để lại CHỮ `#ERROR!` (không công thức) ở mọi ô
+  `''`. Bản 2.9.0 xóa cột trống-khuôn (`Đơn ngoài`!I, L) bằng cách đó → 4.000 ô `#ERROR!`, `L3` = `SUM(L4:L2003)` ra `#ERROR!`, lần chạy thử
+  T11 → T12 dừng `CONG_THUC_HONG` ở B3 › Đơn ngoài (đúng chỗ, sổ T11 không bị đụng, link chưa khai). Giả lập 2.9.0 coi `''` là xóa sạch nên
+  mọi bài xanh. Nay: muốn xóa ô thì `clearContent()`; giả lập ghi `''` ra `#ERROR!` như Google (YC63-11); ô chữ lỗi không công thức không
+  bao giờ được coi là dữ liệu gõ tay (khuôn dọn được khi bấm lại, K-13 chấm nó — YC63-13).
 - **`deleteRows` CO tham chiếu từ sheet khác (YC-63).** Google co `Tổng xuất`!I..N `SUMIF(<gian>!$M$4:$M$2000;…)` đúng bằng số
   dòng xóa mỗi tháng → thiếu thầm, rồi `#REF!` khi vùng nằm trọn trong khối xóa. `B3b` ghi khuôn `Tổng xuất` SAU khi dọn, `B4b` ghi khuôn
   `Tổng tồn kho` SAU B4 (khuôn không cần công thức của vỏ nên lượt chạy tiếp vẫn đúng); trước B1 lõi soát mọi sheet không bị dọn

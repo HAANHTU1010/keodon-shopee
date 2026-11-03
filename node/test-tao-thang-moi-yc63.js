@@ -578,6 +578,63 @@ function loiNhuanTroThuChiB(ss) {
     }, 'không ghi khuôn');
   });
 
+  // ------------------------------------------------------------------ 2.9.1 — sự cố chạy thử thật T11 → T12 (3/11)
+  // Google thật: `setFormulasR1C1` nhận '' để lại CHỮ `#ERROR!` (không công thức) ở `Đơn ngoài`!I và L 2.000 dòng → L3 = SUM(L4:L2003) ra
+  // #ERROR!, nút 3 dừng CONG_THUC_HONG ở B3 › Đơn ngoài. Giả lập 2.9.0 coi '' là xóa sạch nên 15/15 xanh.
+  const GHI_RONG_NHU_290 = () => sua('      if (trong) vungGhi.clearContent();', "      if (trong) vungGhi.setFormulasR1C1(Array.apply(null, Array(j - i + 1)).map(function () { return Array.apply(null, Array(d2 - d1 + 1)).map(function () { return ''; }); }));");
+  const IL = (sh) => { const ra = []; for (let r = 4; r <= 2003; r++) [C('I'), C('L')].forEach((c) => { const k = r + ':' + c; if (sh.congThuc[k] || (sh.giaTri[k] != null && sh.giaTri[k] !== '')) ra.push(k); }); return ra; };
+
+  await test('YC63-11', '2.9.1 — giả lập đúng Google đo 3/11: `setFormulasR1C1` nhận \'\' để lại chữ `#ERROR!`, không công thức; `clearContent` xóa sạch', async () => {
+    const sim = gl.taoGiaLap({});
+    const sh = sim.khaiThang('2026-09', 'THÁNG-9-2026-KINH-DOANH').insertSheet('X');
+    sh.getRange(1, 1, 1, 2).setFormulasR1C1([['=1+1', '']]);
+    bang([sh.congThuc['1:1'], sh.congThuc['1:2'] || null, sh.giaTri['1:2']], ['=1+1', null, '#ERROR!'], "ghi '' qua setFormulasR1C1");
+    sh.getRange(1, 1, 1, 2).clearContent();
+    bang([sh.congThuc['1:1'] || null, sh.giaTri['1:2'] == null], [null, true], 'clearContent');
+    sim.thaoGo();
+    return "'' → #ERROR! (như Google), clearContent → trống";
+  });
+
+  await test('YC63-12', '2.9.1 — cột trống-khuôn `Đơn ngoài`!I, L xóa bằng clearContent: I4:L2003 không công thức, không chữ #ERROR!; L3 = 0; 13/13', async () => {
+    const X = await kichBan({});
+    dung(X.kq.ok === true && X.kq.kiem.length === 13, 'phải 13/13: ' + X.kq.loi + ' ' + moTaKiem(X.kq) + ' ' + String(X.kq.thongBao || '').slice(0, 200));
+    const dn = X.ssMoi.getSheetByName('Đơn ngoài');
+    bang(IL(dn).slice(0, 3), [], 'I/L 4..2003 phải trống');
+    xong(X);
+    return 'I, L trống 2.000 dòng · ' + await doiChungAm(async () => {
+      const Z = await kichBan({ suaNguon: GHI_RONG_NHU_290() });
+      const ra = Z.kq.ok ? [] : [Z.kq.loi + ' ' + String(Z.kq.thongBao).slice(0, 140)];
+      xong(Z);
+      return ra;
+    }, "ghi '' như 2.9.0 (Google để #ERROR!)");
+  });
+
+  await test('YC63-13', '2.9.1 — BẤM LẠI đúng như chủ dự án sẽ làm: lượt 1 mã 2.9.0 chết CONG_THUC_HONG ở B3 › Đơn ngoài (I, L 2.000 ô chữ #ERROR!, cờ ' +
+    'B3:TikTok Shop) → lượt 2 mã 2.9.1 chạy TIẾP trên đúng sổ đó: khuôn dọn sạch chữ #ERROR! (không coi là gõ tay), 13/13', async () => {
+    const Y = await kichBan({ suaNguon: GHI_RONG_NHU_290() });
+    dung(!Y.kq.ok && Y.kq.loi === 'CONG_THUC_HONG', 'lượt 1 (mã 2.9.0) phải chết CONG_THUC_HONG: ' + Y.kq.loi);
+    const coB3 = coTM(Y.ssMoi, 5);
+    const dangDo = { moi: Y.ssMoi, cu: Y.ssCu };
+    const chep = (nguon, dich) => nguon.getSheets().forEach((sh) => {
+      const n = dich.getSheetByName(sh.ten) || dich.themSheet(sh.ten);
+      ['giaTri', 'congThuc', 'dinhDang', 'nen', 'dam'].forEach((k) => { n[k] = Object.assign({}, sh[k]); });
+      n.gopO = sh.gopO.map((g) => Object.assign({}, g)); n.soDongToiDa = sh.soDongToiDa;
+    });
+    const tiepTuc = (m, c) => { chep(dangDo.moi, m); chep(dangDo.cu, c); };
+    const X = await kichBan({ vo: tiepTuc });
+    xong(Y);
+    dung(X.kq.ok === true && X.kq.kiem.length === 13, 'lượt 2 phải 13/13: ' + X.kq.loi + ' ' + moTaKiem(X.kq) + ' ' + String(X.kq.thongBao || '').slice(0, 200));
+    bang(IL(X.ssMoi.getSheetByName('Đơn ngoài')).slice(0, 3), [], 'I/L 4..2003 phải trống');
+    xong(X);
+    return 'lượt 1 cờ ' + coB3 + ' → lượt 2 13/13, chữ #ERROR! dọn sạch · ' + await doiChungAm(async () => {
+      // lượt 2 mà khuôn coi chữ #ERROR! là gõ tay (như 2.9.0) → để yên; phải bị bắt (soát sau ghi / K-9 / K-13), không được 13/13
+      const Z = await kichBan({ vo: tiepTuc, suaNguon: sua(' && !laChuLoiTM_(v); };', '; };') });
+      const ra = Z.kq.ok ? kiemLech(Z.kq).map((p) => p.ma + ' ' + p.chiTiet) : [Z.kq.loi + ' ' + String(Z.kq.thongBao).slice(0, 160)];
+      xong(Z);
+      return ra;
+    }, 'lượt 2 coi chữ #ERROR! là dữ liệu gõ tay');
+  });
+
   console.log('\n=== ' + soDat + ' ĐẠT · ' + soHong + ' HỎNG · tổng ' + (soDat + soHong) + ' ===');
   if (soHong) { hong.forEach((h) => console.log('  ' + h)); process.exit(1); }
 })().catch((e) => { console.log('LỖI: ' + (e && e.stack)); process.exit(1); });

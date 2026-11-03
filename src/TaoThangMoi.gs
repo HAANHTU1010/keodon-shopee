@@ -1848,7 +1848,7 @@ var TaoThangMoi = (function () {
     them('K-12', 'Ô tổng tool ghi có vùng tới đúng dòng ' + DONG_KEO_CT, dat12 === dsTong.length,
       dat12 === dsTong.length ? dat12 + '/' + dsTong.length + ' ô tổng đều tới dòng ' + DONG_KEO_CT : (dsTong.length - dat12) + ' ô lệch: ' + lech12.join(' · '));
 
-    // K-13 (2.9.0) — mọi ô trong KHUÔN CHUẨN mang đúng công thức chuẩn (cột trống-khuôn thì không còn công thức nào). Ô có giá trị gõ tay được
+    // K-13 (2.9.0) — mọi ô trong KHUÔN CHUẨN mang đúng công thức chuẩn (cột trống-khuôn thì không còn công thức nào, 2.9.1: cũng không còn chữ lỗi). Ô có giá trị gõ tay được
     // tool để yên nên không chấm. So sau khi bỏ khoảng trắng, chữ hoa/thường và dấu phân cách `;`/`,` (Google trả theo cài đặt vùng của sổ).
     var lech13 = [], soLech13 = 0, soO13 = 0;
     (ke.doc.khuon || []).forEach(function (op) {
@@ -1856,12 +1856,14 @@ var TaoThangMoi = (function () {
       op.cot.forEach(function (x) {
         for (var r = op.r1; r <= op.r2; r++) {
           var f = ss ? ct(ss, r, x.c) : null;
-          if (f == null && ss && !Utils.laRong(o(ss, r, x.c))) continue;      // giá trị gõ tay: tool để yên
+          var v13 = ss ? o(ss, r, x.c) : null;
+          // giá trị gõ tay: tool để yên. 2.9.1: CHỮ lỗi không công thức (`#ERROR!` do lệnh xóa hỏng — Google 3/11) KHÔNG phải gõ tay → chấm như ô khuôn.
+          if (f == null && ss && !Utils.laRong(v13) && !laLoi(v13)) continue;
           soO13++;
           var mong = x.text == null ? null : chuanCongThuc(Utils.dichCongThuc(x.text, op.r1, r));
           if ((f == null ? null : chuanCongThuc(f)) === mong) continue;
           soLech13++;
-          if (lech13.length < 5) lech13.push(op.sheet + '!' + L(x.c) + r + (f == null ? ' (trống)' : ' =' + String(f).slice(0, 60)));
+          if (lech13.length < 5) lech13.push(op.sheet + '!' + L(x.c) + r + (f == null ? (laLoi(v13) ? ' (chữ ' + String(v13).trim() + ')' : ' (trống)') : ' =' + String(f).slice(0, 60)));
         }
       });
     });
@@ -1928,4 +1930,4 @@ var TaoThangMoi = (function () {
   };
 })();
 
-var VAN_TAY_TAOTHANGMOI = '30924c4a';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay
+var VAN_TAY_TAOTHANGMOI = '61652ecf';   // dấu vân tay file này — MÁY sinh bằng `npm run dau-van-tay`, đừng sửa tay

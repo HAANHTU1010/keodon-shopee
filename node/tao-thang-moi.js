@@ -413,7 +413,9 @@ function ghiKhuon(ws, t) {
   for (let r = t.r1; r <= t.r2; r++) {
     for (const x of t.cot) {
       const cell = ws.getCell(r, x.c);
-      if (!congThucCua(cell) && cell.value != null && cell.value !== '') continue;
+      // 2.9.1: chữ lỗi không công thức (`#ERROR!`…, hay ô lỗi ExcelJS `{ error }`) KHÔNG phải gõ tay → khuôn dọn được (cùng luật `ghiKhuonTM_`).
+      const v = cell.value, loi = (v && typeof v === 'object' && v.error != null) || (typeof v === 'string' && /^#(REF!|N\/A|VALUE!|DIV\/0!|NAME\?|NUM!|NULL!|ERROR!)$/.test(v.trim()));
+      if (!congThucCua(cell) && v != null && v !== '' && !loi) continue;
       cell.value = x.text == null ? null : { formula: dichCT(x.text, t.r1, r) };
       dem++;
     }
